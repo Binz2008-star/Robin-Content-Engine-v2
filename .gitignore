@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+
+# Secrets and OAuth credentials
+.env
+client_secret*.json
+token*.json
+*.pem
+
+# Generated media and runtime state
+work/
+output/
+downloads/
+*.mp4
+*.mov
+*.mkv
+*.mp3
+*.wav
+*.part
+*.log
+
+# OS / IDE
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
