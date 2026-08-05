@@ -1,11 +1,13 @@
 import asyncio
 import logging
+from pathlib import Path
 
 import structlog
 import typer
 
 from . import __version__
 from .config import Settings
+from .database import JobRepository
 from .pipeline import ContentEngine
 
 app = typer.Typer(no_args_is_help=True, help="Robin Content Engine")
@@ -23,6 +25,39 @@ def configure_logging(level: str) -> None:
             getattr(logging, level.upper(), logging.INFO)
         ),
     )
+
+
+@app.command("enqueue-local")
+def enqueue_local(
+    source: Path = typer.Argument(
+        ...,
+        exists=True,
+        file_okay=True,
+        dir_okay=False,
+        readable=True,
+        resolve_path=True,
+    ),
+    title: str = typer.Option(..., "--title", help="Internal description of the footage."),
+    rights_note: str = typer.Option(
+        ...,
+        "--rights-note",
+        help="Why you are allowed to edit and publish this footage.",
+    ),
+    confirm_rights: bool = typer.Option(
+        False,
+        "--confirm-rights",
+        help="Confirm that you own the footage or hold a publishing licence.",
+    ),
+) -> None:
+    """Add one owned or licensed local video to the queue."""
+    if not confirm_rights:
+        raise typer.BadParameter("Pass --confirm-rights only after verifying publishing rights.")
+
+    settings = Settings()  # type: ignore[call-arg]
+    repository = JobRepository(settings.database_url, settings.max_job_attempts)
+    with repository.running():
+        job_id = repository.enqueue_local(source, title, rights_note)
+    typer.echo(f"Queued job {job_id}.")
 
 
 @app.command("run-once")
