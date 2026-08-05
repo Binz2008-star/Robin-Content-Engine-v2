@@ -34,6 +34,26 @@ class JobRepository:
         finally:
             self.close()
 
+    def enqueue_local(self, source_path: Path, source_title: str, rights_note: str) -> int:
+        resolved_path = source_path.expanduser().resolve()
+        if not resolved_path.is_file():
+            raise FileNotFoundError(f"Source file does not exist: {resolved_path}")
+
+        with self.pool.connection() as conn:
+            row = conn.execute(
+                """
+                INSERT INTO video_queue (
+                    source_path, source_title, rights_confirmed, rights_note
+                )
+                VALUES (%s, %s, TRUE, %s)
+                RETURNING id
+                """,
+                (str(resolved_path), source_title.strip(), rights_note.strip()),
+            ).fetchone()
+        if not row:
+            raise RuntimeError("Queue insert returned no job ID")
+        return int(row["id"])
+
     def quarantine_unconfirmed(self) -> int:
         with self.pool.connection() as conn:
             result = conn.execute(
