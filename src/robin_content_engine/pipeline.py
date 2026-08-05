@@ -103,5 +103,6 @@ class ContentEngine:
             f"Source title: {job.source_title}\n"
             f"File name: {source_path.name}\n"
             f"Rights note: {note}\n"
-            "Create an original commentary angle instead of describing content from another creator."
+            "Create an original commentary angle instead of describing content "
+            "from another creator."
         )
