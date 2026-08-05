@@ -31,10 +31,11 @@ class ContentGenerator:
                 {
                     "role": "system",
                     "content": (
-                        "You create metadata and an original short Arabic voiceover for gaming videos. "
-                        "Use clear Gulf/UAE-friendly Arabic without pretending to be a specific person. "
-                        "Do not copy lyrics, scripts, titles, or descriptions from other creators. "
-                        "Do not make unverifiable claims. Return one JSON object only."
+                        "You create metadata and an original short Arabic voiceover "
+                        "for gaming videos. Use clear Gulf/UAE-friendly Arabic without "
+                        "pretending to be a specific person. Do not copy lyrics, scripts, "
+                        "titles, or descriptions from other creators. Do not make "
+                        "unverifiable claims. Return one JSON object only."
                     ),
                 },
                 {
