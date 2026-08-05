@@ -47,20 +47,30 @@ copy .env.example .env       # Windows
 # cp .env.example .env      # macOS/Linux
 ```
 
-Run `schema.sql` in the Neon SQL editor, then add a local source video:
+Run `schema.sql` in the Neon SQL editor. Then queue footage that you own or are licensed to publish:
 
-```sql
-INSERT INTO video_queue (source_path, source_title, rights_confirmed)
-VALUES ('C:/media/my-gameplay.mp4', 'My original Fortnite match', TRUE);
+```bash
+robin-engine enqueue-local "C:\media\my-gameplay.mp4" ^
+  --title "My original Fortnite match" ^
+  --rights-note "Recorded by Robin for Robin Life & Gaming" ^
+  --confirm-rights
 ```
 
-Run one job:
+On macOS/Linux, replace `^` with `\` for multiline commands.
+
+Render one job without uploading:
+
+```bash
+robin-engine run-once --render-only
+```
+
+Process and upload one job:
 
 ```bash
 robin-engine run-once
 ```
 
-The first YouTube upload requires a local OAuth browser flow. Keep `client_secret.json`, OAuth tokens, `.env`, and generated media out of Git.
+The first YouTube upload requires a local OAuth browser flow. Uploads default to `private`. Keep `client_secret.json`, OAuth tokens, `.env`, and generated media out of Git.
 
 ## Development
 
@@ -75,4 +85,5 @@ pytest
 - Remote downloading: not enabled in the MVP
 - Missing rights confirmation: job is quarantined
 - Failed jobs: retain a bounded error message and increment attempts
-- Temporary media: isolated under `work/` and removed after success
+- Generated voice files: removed after a successful upload
+- Final rendered video: retained under `work/<job-id>/final.mp4`
