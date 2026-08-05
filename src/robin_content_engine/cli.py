@@ -1,6 +1,7 @@
 import asyncio
 import logging
 from pathlib import Path
+from typing import Annotated
 
 import structlog
 import typer
@@ -29,25 +30,34 @@ def configure_logging(level: str) -> None:
 
 @app.command("enqueue-local")
 def enqueue_local(
-    source: Path = typer.Argument(
-        ...,
-        exists=True,
-        file_okay=True,
-        dir_okay=False,
-        readable=True,
-        resolve_path=True,
-    ),
-    title: str = typer.Option(..., "--title", help="Internal description of the footage."),
-    rights_note: str = typer.Option(
-        ...,
-        "--rights-note",
-        help="Why you are allowed to edit and publish this footage.",
-    ),
-    confirm_rights: bool = typer.Option(
-        False,
-        "--confirm-rights",
-        help="Confirm that you own the footage or hold a publishing licence.",
-    ),
+    source: Annotated[
+        Path,
+        typer.Argument(
+            exists=True,
+            file_okay=True,
+            dir_okay=False,
+            readable=True,
+            resolve_path=True,
+        ),
+    ],
+    title: Annotated[
+        str,
+        typer.Option("--title", help="Internal description of the footage."),
+    ],
+    rights_note: Annotated[
+        str,
+        typer.Option(
+            "--rights-note",
+            help="Why you are allowed to edit and publish this footage.",
+        ),
+    ],
+    confirm_rights: Annotated[
+        bool,
+        typer.Option(
+            "--confirm-rights",
+            help="Confirm that you own the footage or hold a publishing licence.",
+        ),
+    ] = False,
 ) -> None:
     """Add one owned or licensed local video to the queue."""
     if not confirm_rights:
@@ -62,11 +72,13 @@ def enqueue_local(
 
 @app.command("run-once")
 def run_once(
-    render_only: bool = typer.Option(
-        False,
-        "--render-only",
-        help="Render and mark the job rendered without uploading to YouTube.",
-    ),
+    render_only: Annotated[
+        bool,
+        typer.Option(
+            "--render-only",
+            help="Render and mark the job rendered without uploading to YouTube.",
+        ),
+    ] = False,
 ) -> None:
     """Claim and process one pending job."""
     settings = Settings()  # type: ignore[call-arg]
