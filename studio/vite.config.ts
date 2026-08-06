@@ -9,7 +9,7 @@ export default defineConfig({
     host: '0.0.0.0',
   },
   build: {
-    outDir: '../dist',
+    outDir: '../dist/studio',
     emptyOutDir: true,
   },
   test: {
