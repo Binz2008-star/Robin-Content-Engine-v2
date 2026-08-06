@@ -1,86 +1,58 @@
-# Robin Engine Studio — Frontend Control Panel (v2)
+# Robin Engine Studio
 
-Robin Engine Studio is the Web UI for managing the **Robin Life & Gaming** YouTube Shorts automated content engine pipeline.
+Robin Engine Studio is the React/Vite control interface for Robin Content Engine v2.
 
----
+## Operating modes
 
-## 🚀 Operating Modes
-
-Robin Engine Studio supports two operational modes governed by environment variables:
-
-### 1. Demo Mode (`VITE_DEMO_MODE=true`)
-- Activated **only** when `VITE_DEMO_MODE` is strictly set to `'true'`.
-- Uses client-side in-memory simulated storage for offline evaluation and UI prototyping.
-- Allows operators to test enqueueing, script generation, video previewing, and pipeline actions without requiring a running FastAPI backend or Neon PostgreSQL database.
-
-### 2. Live API Mode (`VITE_DEMO_MODE=false`)
-- Connects directly to the real FastAPI Python backend specified by `VITE_API_BASE_URL`.
-- If `VITE_DEMO_MODE` is not `'true'` and `VITE_API_BASE_URL` is missing, Studio displays a prominent **Configuration Error** state.
-- Live network failures or backend 500 errors display explicit connection error states (**Backend Offline**, **Timed Out**, or **DB Unavailable**) and **never** fall back silently to mock demo data.
-
----
-
-## ⚙️ Environment Configuration
-
-Copy `.env.example` to `.env` inside `studio/` or configure environment variables at build/runtime:
+### Demo Mode
 
 ```env
-# Mandatory for Demo Mode (set strictly to 'true')
 VITE_DEMO_MODE=true
-
-# Mandatory for Live API Mode (e.g. http://localhost:8000/api)
-VITE_API_BASE_URL=
+VITE_API_BASE_URL=http://127.0.0.1:8000/api
 ```
 
-### Environment Rules
-| Variable | Value | Mode | Description |
-|---|---|---|---|
-| `VITE_DEMO_MODE` | `'true'` | Demo Mode | Activates in-memory simulated queue. |
-| `VITE_DEMO_MODE` | `'false'` or empty | Live API Mode | Expects `VITE_API_BASE_URL` to be present. |
-| `VITE_API_BASE_URL` | `http://...` | Live API Mode | Base URL for FastAPI backend endpoints. |
+Demo Mode uses clearly labelled in-memory sample jobs. It does not connect to Neon, DeepSeek, MoviePy workers, neural TTS, Google Drive OAuth, or YouTube.
 
----
+### Live API Mode
 
-## 📡 Canonical Backend API Contracts
+```env
+VITE_DEMO_MODE=false
+VITE_API_BASE_URL=http://127.0.0.1:8000/api
+```
 
-Studio interacts with the Python FastAPI backend (`src/robin_content_engine/`) using the following canonical API endpoints:
+Live Mode never falls back silently to demo records. If the API is unavailable, the Studio displays an explicit offline, timeout, database-unavailable, or configuration-error state.
 
-| Method | Endpoint | Description | Expected Payload / Response |
-|---|---|---|---|
-| `GET` | `/api/health` | Backend & Database Health Check | `{ "status": "ok", "database": "connected", "version": "1.0.0" }` |
-| `GET` | `/api/jobs` | Fetch queue jobs & status counts | `{ "jobs": [...], "counts": { "pending": 0, "processing": 0, "rendered": 0, "uploaded": 0, "failed": 0, "quarantined": 0, "total": 0 } }` |
-| `POST` | `/api/jobs` | Enqueue new gameplay video job | Body: `{ "source_title": "...", "source_path": "...", "rights_note": "...", "rights_confirmed": true }`<br>Returns: Enqueued `VideoJob` |
-| `POST` | `/api/jobs/{id}/run` | Execute pipeline for job | Body: `{ "render_only": false }`<br>Returns: `{ "status": "success", "message": "...", "job": VideoJob }` |
-| `POST` | `/api/jobs/{id}/actions` | Perform action on job | Body: `{ "action": "retry" \| "quarantine" }`<br>Returns: Updated `VideoJob` |
-| `GET` | `/api/system` | System info & CLI tool states | `{ "app_name": "...", "version": "...", "python_version": "...", "database": "..." }` |
-| `POST` | `/api/script/generate` | Generate DeepSeek AI script | Body: `{ "game_name": "...", "topic": "..." }`<br>Returns: `{ "title": "...", "description": "...", "tags": [...], "script": "..." }` |
+## Approved backend routes
 
----
+- `GET /api/health`
+- `GET /api/jobs`
+- `POST /api/jobs`
+- `POST /api/jobs/{id}/run`
+- `POST /api/jobs/{id}/actions`
+- `GET /api/system`
 
-## 🛠️ Local Development Commands
+Script generation is not yet part of the approved live FastAPI contract. The Script Studio returns simulated content only in Demo Mode and reports HTTP-style status `501` in Live Mode until a backend route is implemented and reviewed.
 
-All commands should be run from the root workspace or within `studio/`:
+## Safety rules
+
+- The frontend never contains database credentials.
+- Queue access occurs only through FastAPI.
+- Every video requires confirmed ownership or licensing and a rights note.
+- YouTube uploads remain Private by backend default.
+- Google Drive selection remains a simulated UI until OAuth and backend ingestion are implemented.
+- No Content ID evasion or third-party downloading is included.
+
+## Local commands
+
+Run from the repository root:
 
 ```bash
-# Run local Vite development server on port 3000
-npm run dev --workspace studio
-
-# Perform TypeScript type checking
-npm run typecheck --workspace studio
-
-# Run ESLint validation
-npm run lint --workspace studio
-
-# Run Vitest & React Testing Library contract test suite
-npm run test --workspace studio
-
-# Build studio SPA for production distribution
-npm run build --workspace studio
+npm ci
+npm run dev -- --host 0.0.0.0
+npm run typecheck
+npm run lint
+npm run test
+npm run build
 ```
 
----
-
-## 🔒 YouTube Upload & Safety Guarantees
-
-- **YouTube Upload Privacy**: Real uploads produced by the pipeline remain set to **Private** by backend default for copyright and content verification.
-- **Copyright & Rights Confirmation**: All enqueued gameplay footage requires mandatory confirmation (`--confirm-rights`) and citation notes (`--rights-note`).
+The production Studio bundle is written to `dist/studio/`, so building the frontend does not delete unrelated root distribution artifacts.
