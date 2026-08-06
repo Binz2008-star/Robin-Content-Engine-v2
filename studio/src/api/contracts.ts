@@ -28,12 +28,43 @@ export interface VideoJob {
   updated_at: string;
 }
 
+export interface JobCounts {
+  pending: number;
+  processing: number;
+  rendered: number;
+  uploaded: number;
+  failed: number;
+  quarantined: number;
+  total?: number;
+}
+
+export interface GetJobsResponse {
+  jobs: VideoJob[];
+  counts: JobCounts;
+}
+
 export interface EnqueueJobRequest {
   source_path?: string;
   source_url?: string;
   source_title: string;
   rights_confirmed: boolean;
   rights_note?: string;
+}
+
+export type JobActionType = 'retry' | 'quarantine';
+
+export interface JobActionRequest {
+  action: JobActionType;
+}
+
+export interface JobRunRequest {
+  render_only?: boolean;
+}
+
+export interface JobRunResponse {
+  status: string;
+  message: string;
+  job?: VideoJob | null;
 }
 
 export interface ScriptGenRequest {
@@ -49,16 +80,6 @@ export interface GeneratedContent {
   script: string;
 }
 
-export interface WorkerRunRequest {
-  render_only?: boolean;
-}
-
-export interface WorkerRunResponse {
-  status: string;
-  message: string;
-  job?: VideoJob | null;
-}
-
 export interface HealthResponse {
   status: string;
   database: string;
@@ -66,12 +87,13 @@ export interface HealthResponse {
   demo_mode?: boolean;
 }
 
-export interface JobCounts {
-  pending: number;
-  processing: number;
-  rendered: number;
-  uploaded: number;
-  failed: number;
-  quarantined: number;
-  total: number;
+export interface SystemInfoResponse {
+  app_name: string;
+  version: string;
+  python_version?: string;
+  ffmpeg_available?: boolean;
+  deepseek_configured?: boolean;
+  youtube_authenticated?: boolean;
+  database: string;
+  demo_mode: boolean;
 }

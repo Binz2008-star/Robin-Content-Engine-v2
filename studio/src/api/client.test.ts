@@ -11,6 +11,8 @@ describe('apiClient', () => {
   });
 
   it('fetches health status without error in demo or live mode', async () => {
+    vi.spyOn(apiClient, 'isConfigError').mockReturnValue(false);
+
     if (apiClient.isDemoMode()) {
       const health = await apiClient.getHealth();
       expect(health.status).toBe('ok');
@@ -27,33 +29,35 @@ describe('apiClient', () => {
   });
 
   it('throws ApiError when live API fails and never silently returns demo data', async () => {
-    if (!apiClient.isDemoMode()) {
-      globalThis.fetch = vi.fn().mockResolvedValue({
-        ok: false,
-        status: 500,
-        statusText: 'Internal Server Error',
-        text: async () => 'Database connection failed',
-      } as unknown as Response);
+    vi.spyOn(apiClient, 'isConfigError').mockReturnValue(false);
+    vi.spyOn(apiClient, 'isDemoMode').mockReturnValue(false);
 
-      await expect(apiClient.getJobs()).rejects.toThrow(ApiError);
-    }
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 500,
+      statusText: 'Internal Server Error',
+      text: async () => 'Database connection failed',
+    } as unknown as Response);
+
+    await expect(apiClient.getJobs()).rejects.toThrow(ApiError);
   });
 
   it('passes AbortSignal to fetch calls', async () => {
-    if (!apiClient.isDemoMode()) {
-      const fetchSpy = vi.fn().mockResolvedValue({
-        ok: true,
-        json: async () => [],
-      } as unknown as Response);
-      globalThis.fetch = fetchSpy;
+    vi.spyOn(apiClient, 'isConfigError').mockReturnValue(false);
+    vi.spyOn(apiClient, 'isDemoMode').mockReturnValue(false);
 
-      const controller = new AbortController();
-      await apiClient.getJobs({ signal: controller.signal });
+    const fetchSpy = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ jobs: [], counts: { pending: 0, total: 0 } }),
+    } as unknown as Response);
+    globalThis.fetch = fetchSpy;
 
-      expect(fetchSpy).toHaveBeenCalledWith(
-        expect.stringContaining('/jobs'),
-        expect.objectContaining({ signal: controller.signal })
-      );
-    }
+    const controller = new AbortController();
+    await apiClient.getJobs({ signal: controller.signal });
+
+    expect(fetchSpy).toHaveBeenCalledWith(
+      expect.stringContaining('/jobs'),
+      expect.objectContaining({ signal: controller.signal })
+    );
   });
 });

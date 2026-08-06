@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Terminal, Copy, Check, Layers } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Terminal, Copy, Check, Layers, X } from 'lucide-react';
 
 interface CLIConsoleModalProps {
   isOpen: boolean;
@@ -17,10 +17,20 @@ export const CLIConsoleModal: React.FC<CLIConsoleModalProps> = ({
   const [terminalLogs, setTerminalLogs] = useState<string[]>([
     '$ robin-engine --version',
     'robin-engine 1.0.0 (feat/initial-engine)',
-    'Neon PostgreSQL connection verified.',
+    'Database connection verified.',
     'DeepSeek JSON generator & Pydantic validator initialized.',
     'MoviePy v2 video renderer ready.',
   ]);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isOpen) {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
 
   if (!isOpen) return null;
 
@@ -56,7 +66,7 @@ export const CLIConsoleModal: React.FC<CLIConsoleModalProps> = ({
     } else if (input.includes('enqueue-local')) {
       setTerminalLogs((prev) => [
         ...prev,
-        '[QUEUE] Video enqueued with confirmed rights into Neon PostgreSQL database.',
+        '[QUEUE] Video enqueued with confirmed rights into database.',
       ]);
     } else {
       setTerminalLogs((prev) => [...prev, `Command executed: ${input}`]);
@@ -84,21 +94,27 @@ export const CLIConsoleModal: React.FC<CLIConsoleModalProps> = ({
   ];
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
-      <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-2xl max-h-[90vh] flex flex-col shadow-2xl overflow-hidden">
+    <div
+      className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="cli-modal-title"
+    >
+      <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-2xl max-h-[90vh] flex flex-col shadow-2xl overflow-hidden my-8">
         {/* Terminal Header */}
         <div className="p-4 border-b border-slate-800 bg-slate-950 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Terminal className="w-4 h-4 text-emerald-400" />
-            <h3 className="font-bold text-slate-100 text-sm font-mono">
+            <h2 id="cli-modal-title" className="font-bold text-slate-100 text-sm font-mono">
               robin-engine CLI Terminal
-            </h3>
+            </h2>
           </div>
           <button
             onClick={onClose}
-            className="p-1 text-slate-400 hover:text-slate-200 text-xs font-mono"
+            aria-label="Close CLI modal"
+            className="p-1.5 text-slate-400 hover:text-slate-200 hover:bg-slate-800 rounded-lg text-sm transition"
           >
-            ✕
+            <X className="w-4 h-4" />
           </button>
         </div>
 
@@ -106,10 +122,10 @@ export const CLIConsoleModal: React.FC<CLIConsoleModalProps> = ({
         <div className="p-5 overflow-y-auto space-y-5 text-xs">
           {/* Copyable CLI Commands */}
           <div className="space-y-3">
-            <h4 className="font-bold text-slate-200 text-xs flex items-center gap-2">
+            <h3 className="font-bold text-slate-200 text-xs flex items-center gap-2">
               <Layers className="w-4 h-4 text-amber-400" />
               <span>Standard CLI Commands Syntax</span>
-            </h4>
+            </h3>
 
             {commandsList.map((item) => (
               <div key={item.key} className="space-y-1">
@@ -120,6 +136,7 @@ export const CLIConsoleModal: React.FC<CLIConsoleModalProps> = ({
                   </pre>
                   <button
                     onClick={() => copyToClipboard(item.cmd, item.key)}
+                    aria-label={`Copy command ${item.key}`}
                     className="absolute right-2 top-2 p-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-[10px] font-mono flex items-center gap-1 transition"
                   >
                     {copiedCmd === item.key ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
@@ -148,7 +165,9 @@ export const CLIConsoleModal: React.FC<CLIConsoleModalProps> = ({
 
             {/* Command Input */}
             <form onSubmit={handleCommandSubmit} className="flex gap-2">
+              <label htmlFor="cli-command-input" className="sr-only">Type CLI Command</label>
               <input
+                id="cli-command-input"
                 type="text"
                 placeholder="Type command e.g. robin-engine run-once --render-only"
                 value={customTerminalInput}
