@@ -2,5 +2,5 @@
   "name": "Robin Engine Control Studio",
   "description": "Control Studio UI and pipeline management dashboard for Robin Content Engine v2",
   "requestFramePermissions": [],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+  "majorCapabilities": []
 }

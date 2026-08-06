@@ -33,16 +33,16 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "22"
           cache: "npm"
-          cache-dependency-path: "studio/package-lock.json"
+          cache-dependency-path: "package-lock.json"
       - name: Install dependencies
-        run: cd studio && npm ci
+        run: npm ci
       - name: Typecheck
-        run: cd studio && npm run typecheck
+        run: npm run typecheck
       - name: Lint
-        run: cd studio && npm run lint
+        run: npm run lint
       - name: Test
-        run: cd studio && npm run test
+        run: npm run test
       - name: Build
-        run: cd studio && npm run build
+        run: npm run build
