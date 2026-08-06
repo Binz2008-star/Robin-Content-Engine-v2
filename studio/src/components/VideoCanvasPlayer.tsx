@@ -1,12 +1,22 @@
-import React, { useState, useEffect } from 'react';
-import { Play, Pause, Volume2, VolumeX, Film, Sparkles, CheckCircle2 } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import {
+  CheckCircle2,
+  Film,
+  Pause,
+  Play,
+  Sparkles,
+  Volume2,
+  VolumeX,
+} from 'lucide-react';
 import { VideoJob } from '../types';
 
 interface VideoCanvasPlayerProps {
   job?: VideoJob | null;
 }
 
-export const VideoCanvasPlayer: React.FC<VideoCanvasPlayerProps> = ({ job }) => {
+export const VideoCanvasPlayer: React.FC<VideoCanvasPlayerProps> = ({
+  job,
+}) => {
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTimeSec, setCurrentTimeSec] = useState(0);
   const [gameAudioVolume, setGameAudioVolume] = useState(15);
@@ -15,29 +25,33 @@ export const VideoCanvasPlayer: React.FC<VideoCanvasPlayerProps> = ({ job }) => 
   const durationSec = 24;
 
   useEffect(() => {
-    let timer: ReturnType<typeof setTimeout>;
+    let timer: ReturnType<typeof setInterval> | undefined;
+
     if (isPlaying) {
       timer = setInterval(() => {
-        setCurrentTimeSec((prev) => {
-          if (prev >= durationSec) {
+        setCurrentTimeSec((previous) => {
+          if (previous >= durationSec - 1) {
             setIsPlaying(false);
             return 0;
           }
-          return prev + 1;
+          return previous + 1;
         });
       }, 1000);
     }
-    return () => clearInterval(timer);
+
+    return () => {
+      if (timer !== undefined) {
+        clearInterval(timer);
+      }
+    };
   }, [isPlaying, durationSec]);
 
-  const togglePlay = () => {
-    setIsPlaying(!isPlaying);
-  };
-
-  const sampleTitle = job?.source_title || 'مباراة فورتنايت حماسية - لقطة القنص الأسطورية';
+  const sampleTitle =
+    job?.source_title ||
+    'مباراة فورتنايت حماسية - لقطة القنص الأسطورية';
   const sampleScript =
     job?.generated_script ||
-    'يا خوي شوف هالسنيبة العجيبة! من أول جولة وأنا مترصد له.. وفجأة بوم! رأسية من نص الماب، شو رأيكم بالرمية؟';
+    'هذا تعليق تجريبي للمعاينة فقط. المعالجة الحقيقية تتم في عامل MoviePy الخلفي.';
 
   return (
     <div className="space-y-6">
@@ -45,95 +59,107 @@ export const VideoCanvasPlayer: React.FC<VideoCanvasPlayerProps> = ({ job }) => 
         <div>
           <div className="flex items-center gap-2 text-indigo-400 font-bold text-sm">
             <Film className="w-5 h-5" />
-            <span>MoviePy v2 Canvas Renderer Studio (9:16 Vertical 1080x1920)</span>
+            <span>MoviePy v2 Canvas Preview</span>
           </div>
           <h2 className="text-xl font-black text-slate-100 mt-1">
-            Shorts Video & Audio Composition Preview
+            Shorts Video & Audio Composition
           </h2>
           <p className="text-xs text-slate-400 mt-1">
-            Simulated MoviePy v2 composition preview for 9:16 vertical shorts video.
+            Simulated 9:16 preview. Rendering is performed by the backend
+            worker.
           </p>
         </div>
 
         <div className="flex items-center gap-2 bg-slate-950 px-3.5 py-2 rounded-xl border border-slate-800 text-xs font-mono">
-          <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-          <span className="text-slate-300">1080x1920 9:16 Preview</span>
+          <CheckCircle2 className="w-4 h-4 text-amber-400" />
+          <span className="text-slate-300">1080x1920 preview</span>
         </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
         <div className="lg:col-span-5 flex justify-center">
-          <div className="relative w-full max-w-[320px] aspect-[9/16] bg-slate-950 rounded-3xl border-4 border-slate-800 shadow-2xl overflow-hidden flex flex-col justify-between group">
-            <div
-              className="absolute inset-0 bg-cover bg-center transition-transform duration-700"
-              style={{
-                backgroundImage: `url('https://images.unsplash.com/photo-1542751371-adc38448a05e?auto=format&fit=crop&w=1080&q=80')`,
-                filter: isPlaying ? 'brightness(0.9)' : 'brightness(0.6)',
-              }}
-            >
-              <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-transparent to-slate-950/80" />
-            </div>
+          <div className="relative w-full max-w-[320px] aspect-[9/16] bg-slate-950 rounded-3xl border-4 border-slate-800 shadow-2xl overflow-hidden flex flex-col justify-between">
+            <div className="absolute inset-0 bg-gradient-to-b from-indigo-950 via-slate-900 to-slate-950" />
 
             <div className="relative z-10 p-4 flex items-center justify-between text-xs">
-              <span className="px-2.5 py-1 rounded-full bg-slate-900/80 backdrop-blur-md text-amber-400 font-bold border border-amber-500/30 text-[10px]">
+              <span className="px-2.5 py-1 rounded-full bg-slate-900/80 text-amber-400 font-bold border border-amber-500/30 text-[10px]">
                 9:16 Shorts ({currentTimeSec}s / {durationSec}s)
               </span>
               <span className="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 text-[10px] font-mono border border-emerald-500/30">
-                1080x1920
+                SIMULATED
               </span>
             </div>
 
             <div className="relative z-10 px-6 py-4 text-center space-y-4">
               {isPlaying && (
                 <div className="flex items-center justify-center gap-1 h-8">
-                  {[40, 70, 100, 60, 90, 50, 80, 40, 90, 60].map((height, i) => (
-                    <div
-                      key={i}
-                      className="w-1 bg-amber-400 rounded-full animate-pulse"
-                      style={{
-                        height: `${height}%`,
-                        animationDelay: `${i * 0.1}s`,
-                      }}
-                    />
-                  ))}
+                  {[40, 70, 100, 60, 90, 50, 80, 40].map(
+                    (height, index) => (
+                      <div
+                        key={`${height}-${index}`}
+                        className="w-1 bg-amber-400 rounded-full animate-pulse"
+                        style={{
+                          height: `${height}%`,
+                          animationDelay: `${index * 0.1}s`,
+                        }}
+                      />
+                    )
+                  )}
                 </div>
               )}
 
-              <div className="p-3 bg-slate-950/80 backdrop-blur-md rounded-2xl border border-amber-500/30 shadow-lg">
+              <div className="p-3 bg-slate-950/80 rounded-2xl border border-amber-500/30 shadow-lg">
                 <span className="text-amber-300 font-black text-sm tracking-wide leading-relaxed">
-                  "{sampleScript}"
+                  &quot;{sampleScript}&quot;
                 </span>
                 <div className="text-[10px] text-slate-400 mt-1 font-mono">
-                  Voiceover: ar-AE-HamdanNeural
+                  Browser preview — backend voiceover required
                 </div>
               </div>
             </div>
 
-            <div className="relative z-10 p-4 bg-slate-950/90 backdrop-blur-md border-t border-slate-800 space-y-2">
-              <div className="w-full bg-slate-800 rounded-full h-1.5 overflow-hidden cursor-pointer">
+            <div className="relative z-10 p-4 bg-slate-950/90 border-t border-slate-800 space-y-2">
+              <div className="w-full bg-slate-800 rounded-full h-1.5 overflow-hidden">
                 <div
                   className="bg-gradient-to-r from-amber-500 to-orange-500 h-full transition-all duration-300"
-                  style={{ width: `${(currentTimeSec / durationSec) * 100}%` }}
+                  style={{
+                    width: `${(currentTimeSec / durationSec) * 100}%`,
+                  }}
                 />
               </div>
 
               <div className="flex items-center justify-between pt-1">
                 <button
-                  onClick={togglePlay}
+                  type="button"
+                  onClick={() => setIsPlaying((playing) => !playing)}
+                  aria-label={isPlaying ? 'Pause preview' : 'Play preview'}
                   className="p-2.5 rounded-full bg-amber-500 text-slate-950 font-bold hover:bg-amber-400 transition"
                 >
-                  {isPlaying ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4 fill-current" />}
+                  {isPlaying ? (
+                    <Pause className="w-4 h-4" />
+                  ) : (
+                    <Play className="w-4 h-4 fill-current" />
+                  )}
                 </button>
 
                 <div className="text-slate-300 font-mono text-xs">
-                  00:{currentTimeSec < 10 ? `0${currentTimeSec}` : currentTimeSec} / 00:{durationSec}
+                  00:{String(currentTimeSec).padStart(2, '0')} / 00:
+                  {durationSec}
                 </div>
 
                 <button
-                  onClick={() => setIsGameMuted(!isGameMuted)}
+                  type="button"
+                  onClick={() => setIsGameMuted((muted) => !muted)}
+                  aria-label={
+                    isGameMuted ? 'Unmute game audio' : 'Mute game audio'
+                  }
                   className="p-2 rounded-lg bg-slate-800 text-slate-300 hover:text-white"
                 >
-                  {isGameMuted ? <VolumeX className="w-4 h-4 text-rose-400" /> : <Volume2 className="w-4 h-4 text-amber-400" />}
+                  {isGameMuted ? (
+                    <VolumeX className="w-4 h-4 text-rose-400" />
+                  ) : (
+                    <Volume2 className="w-4 h-4 text-amber-400" />
+                  )}
                 </button>
               </div>
             </div>
@@ -143,45 +169,56 @@ export const VideoCanvasPlayer: React.FC<VideoCanvasPlayerProps> = ({ job }) => 
         <div className="lg:col-span-7 bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-5">
           <h3 className="font-bold text-slate-100 text-base flex items-center gap-2">
             <Sparkles className="w-5 h-5 text-amber-400" />
-            <span>MoviePy v2 Pipeline Audio & Video Mix</span>
+            <span>Backend render settings</span>
           </h3>
 
-          <div className="space-y-4 text-xs">
-            <div className="p-4 bg-slate-950 border border-slate-800 rounded-xl space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="font-bold text-slate-200">Game Audio Ducking Level:</span>
-                <span className="text-amber-400 font-mono font-bold">{gameAudioVolume}% (Ducked)</span>
-              </div>
-              <input
-                type="range"
-                min={0}
-                max={50}
-                value={gameAudioVolume}
-                onChange={(e) => setGameAudioVolume(Number(e.target.value))}
-                className="w-full accent-amber-500 cursor-pointer"
-              />
-              <p className="text-[11px] text-slate-400 leading-relaxed">
-                MoviePy v2 lowers background game audio to <strong className="text-amber-300">{gameAudioVolume}%</strong> while the Emirati Neural voiceover plays.
-              </p>
+          <div className="p-4 bg-slate-950 border border-slate-800 rounded-xl space-y-3 text-xs">
+            <div className="flex items-center justify-between">
+              <span className="font-bold text-slate-200">
+                Game audio ducking level
+              </span>
+              <span className="text-amber-400 font-mono font-bold">
+                {gameAudioVolume}%
+              </span>
             </div>
+            <input
+              aria-label="Game audio ducking level"
+              type="range"
+              min={0}
+              max={50}
+              value={gameAudioVolume}
+              onChange={(event) =>
+                setGameAudioVolume(Number(event.target.value))
+              }
+              className="w-full accent-amber-500 cursor-pointer"
+            />
+          </div>
 
-            <div className="grid grid-cols-2 gap-3">
-              <div className="p-3 bg-slate-950 border border-slate-800 rounded-xl space-y-1">
-                <span className="text-slate-400 text-[11px]">Duration Constraint:</span>
-                <div className="text-slate-100 font-bold text-sm">Max 58 seconds</div>
-                <p className="text-[10px] text-slate-500">Auto-subclipped for Shorts eligibility</p>
-              </div>
-
-              <div className="p-3 bg-slate-950 border border-slate-800 rounded-xl space-y-1">
-                <span className="text-slate-400 text-[11px]">Codec & Container:</span>
-                <div className="text-slate-100 font-bold text-sm">H.264 / AAC</div>
-                <p className="text-[10px] text-slate-500">Universal YouTube compatibility</p>
+          <div className="grid grid-cols-2 gap-3 text-xs">
+            <div className="p-3 bg-slate-950 border border-slate-800 rounded-xl">
+              <span className="text-slate-400 text-[11px]">
+                Duration constraint
+              </span>
+              <div className="text-slate-100 font-bold text-sm">
+                Max 58 seconds
               </div>
             </div>
+            <div className="p-3 bg-slate-950 border border-slate-800 rounded-xl">
+              <span className="text-slate-400 text-[11px]">
+                Codec and container
+              </span>
+              <div className="text-slate-100 font-bold text-sm">
+                H.264 / AAC
+              </div>
+            </div>
+          </div>
 
-            <div className="p-4 bg-slate-950 border border-slate-800 rounded-xl space-y-2">
-              <div className="text-slate-300 font-bold">Active Gameplay Job Title:</div>
-              <div className="text-amber-300 font-semibold">{sampleTitle}</div>
+          <div className="p-4 bg-slate-950 border border-slate-800 rounded-xl text-xs">
+            <div className="text-slate-300 font-bold">
+              Active gameplay job
+            </div>
+            <div className="text-amber-300 font-semibold mt-1">
+              {sampleTitle}
             </div>
           </div>
         </div>

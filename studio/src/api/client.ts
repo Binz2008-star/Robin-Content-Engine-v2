@@ -1,17 +1,22 @@
-import { API_BASE_URL, IS_DEMO_MODE, IS_CONFIG_ERROR, REQUEST_TIMEOUT_MS } from '../config';
 import {
-  VideoJob,
-  GetJobsResponse,
+  API_BASE_URL,
+  IS_CONFIG_ERROR,
+  IS_DEMO_MODE,
+  REQUEST_TIMEOUT_MS,
+} from '../config';
+import {
   EnqueueJobRequest,
-  JobActionType,
+  GeneratedContent,
+  GetJobsResponse,
+  HealthResponse,
   JobActionRequest,
+  JobActionType,
+  JobCounts,
   JobRunRequest,
   JobRunResponse,
   ScriptGenRequest,
-  GeneratedContent,
-  HealthResponse,
   SystemInfoResponse,
-  JobCounts,
+  VideoJob,
 } from './contracts';
 
 export class ApiError extends Error {
@@ -24,7 +29,11 @@ export class ApiError extends Error {
   }
 }
 
-// Initial demo queue data
+export interface RequestOptions extends RequestInit {
+  timeoutMs?: number;
+  maxRetries?: number;
+}
+
 const INITIAL_DEMO_JOBS: VideoJob[] = [
   {
     id: 101,
@@ -44,8 +53,8 @@ const INITIAL_DEMO_JOBS: VideoJob[] = [
     last_error: null,
     claimed_at: null,
     completed_at: null,
-    created_at: new Date(Date.now() - 3600000).toISOString(),
-    updated_at: new Date(Date.now() - 3600000).toISOString(),
+    created_at: new Date(Date.now() - 3_600_000).toISOString(),
+    updated_at: new Date(Date.now() - 3_600_000).toISOString(),
   },
   {
     id: 102,
@@ -56,17 +65,19 @@ const INITIAL_DEMO_JOBS: VideoJob[] = [
     rights_note: 'Recorded by Robin Life & Gaming',
     status: 'rendered',
     generated_title: 'ريمونتادا أسطورية في الدقيقة 90! ⚽🔥',
-    generated_description: 'شاهد أروع أهداف إف سي 24 بتعليق إماراتي حماسي!',
+    generated_description:
+      'شاهد أروع أهداف إف سي 24 بتعليق إماراتي حماسي!',
     generated_tags: ['fc24', 'gaming', 'shorts', 'ريمونتادا'],
-    generated_script: 'يا ساتر على هالهجمة! بالدقيقة تسعين ورأسية أسطورية بالشبك! أروع فوز باللحظة الأخيرة!',
+    generated_script:
+      'يا ساتر على هالهجمة! بالدقيقة تسعين ورأسية أسطورية بالشبك!',
     output_path: 'C:\\renders\\render_102.mp4',
     youtube_id: null,
     attempts: 1,
     last_error: null,
-    claimed_at: new Date(Date.now() - 1800000).toISOString(),
-    completed_at: new Date(Date.now() - 1500000).toISOString(),
-    created_at: new Date(Date.now() - 7200000).toISOString(),
-    updated_at: new Date(Date.now() - 1500000).toISOString(),
+    claimed_at: new Date(Date.now() - 1_800_000).toISOString(),
+    completed_at: new Date(Date.now() - 1_500_000).toISOString(),
+    created_at: new Date(Date.now() - 7_200_000).toISOString(),
+    updated_at: new Date(Date.now() - 1_500_000).toISOString(),
   },
   {
     id: 103,
@@ -77,56 +88,60 @@ const INITIAL_DEMO_JOBS: VideoJob[] = [
     rights_note: 'Recorded by Robin Life & Gaming',
     status: 'uploaded',
     generated_title: 'أغبى حركة في قراند 5!! 😂🚗',
-    generated_description: 'لقطة كوميدية ساخرة من GTA V مع تعليق إماراتي سريح!',
+    generated_description:
+      'لقطة كوميدية من GTA V مع تعليق إماراتي.',
     generated_tags: ['gtav', 'funny', 'shorts'],
-    generated_script: 'شوف شوف وين رايح بالسيارة! طار بالفضاء ونزل على شجرة! لا يطوفكم الهبوط الخرافي!',
+    generated_script:
+      'شوف وين رايح بالسيارة! طار بالفضاء ونزل على شجرة!',
     output_path: 'C:\\renders\\render_103.mp4',
-    youtube_id: 'dQw4w9WgXcQ',
+    youtube_id: 'demo-youtube-id',
     attempts: 1,
     last_error: null,
-    claimed_at: new Date(Date.now() - 10800000).toISOString(),
-    completed_at: new Date(Date.now() - 9000000).toISOString(),
-    created_at: new Date(Date.now() - 14400000).toISOString(),
-    updated_at: new Date(Date.now() - 9000000).toISOString(),
+    claimed_at: new Date(Date.now() - 10_800_000).toISOString(),
+    completed_at: new Date(Date.now() - 9_000_000).toISOString(),
+    created_at: new Date(Date.now() - 14_400_000).toISOString(),
+    updated_at: new Date(Date.now() - 9_000_000).toISOString(),
   },
 ];
 
-let demoJobs: VideoJob[] = [...INITIAL_DEMO_JOBS];
+let demoJobs: VideoJob[] = INITIAL_DEMO_JOBS.map((job) => ({ ...job }));
 
-export interface RequestOptions extends RequestInit {
-  timeoutMs?: number;
-  maxRetries?: number;
+function configurationError(): ApiError {
+  return new ApiError(
+    0,
+    'Configuration Error: VITE_API_BASE_URL is missing in live API mode. Set VITE_API_BASE_URL or explicitly set VITE_DEMO_MODE=true.'
+  );
 }
 
-/**
- * Formats user-friendly HTTP error messages.
- */
 function formatHttpError(status: number, message: string): string {
-  const trimmed = message ? message.trim() : '';
+  const detail = message.trim();
+  const fallback = detail || 'The request could not be completed.';
+
   switch (status) {
     case 400:
-      return `Bad Request (400): ${trimmed || 'Invalid request parameters.'}`;
+      return `Bad Request (400): ${fallback}`;
     case 401:
-      return `Unauthorized (401): ${trimmed || 'Authentication credentials missing or invalid.'}`;
+      return `Unauthorized (401): ${fallback}`;
     case 403:
-      return `Forbidden (403): ${trimmed || 'You do not have permission to perform this action.'}`;
+      return `Forbidden (403): ${fallback}`;
     case 404:
-      return `Resource Not Found (404): ${trimmed || 'The requested resource was not found.'}`;
+      return `Resource Not Found (404): ${fallback}`;
     case 409:
-      return `Conflict Error (409): ${trimmed || 'Request conflicts with current resource state.'}`;
+      return `Conflict Error (409): ${fallback}`;
     case 422:
-      return `Validation Error (422): ${trimmed || 'Request payload failed schema validation.'}`;
+      return `Validation Error (422): ${fallback}`;
     default:
       if (status >= 500) {
-        return `Internal Server Error (${status}): ${trimmed || 'The server encountered an unhandled error.'}`;
+        return `Internal Server Error (${status}): ${fallback}`;
       }
-      return `HTTP ${status} Error: ${trimmed || 'An unexpected error occurred.'}`;
+      return `HTTP ${status} Error: ${fallback}`;
   }
 }
 
-/**
- * Base HTTP request handler with timeout, safe JSON parsing, and retry for GET.
- */
+async function waitBeforeRetry(attempt: number): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, attempt * 200));
+}
+
 async function httpRequest<T>(
   endpoint: string,
   options: RequestOptions = {}
@@ -140,136 +155,108 @@ async function httpRequest<T>(
     ...restOptions
   } = options;
 
-  const isGetMethod = method.toUpperCase() === 'GET';
+  const normalizedMethod = method.toUpperCase();
+  const isGet = normalizedMethod === 'GET';
+  const allowedRetries = isGet ? maxRetries : 0;
   const url = `${API_BASE_URL}/${endpoint.replace(/^\//, '')}`;
+  const mergedHeaders = {
+    'Content-Type': 'application/json',
+    ...headers,
+  };
 
-  let attempt = 0;
-  let lastError: Error | null = null;
+  let lastError: ApiError | null = null;
 
-  while (attempt <= (isGetMethod ? maxRetries : 0)) {
-    attempt++;
-
-    // Setup timeout AbortController
+  for (let attempt = 0; attempt <= allowedRetries; attempt += 1) {
     const controller = new AbortController();
-    let isTimeout = false;
+    let timedOut = false;
 
-    const timer = setTimeout(() => {
-      isTimeout = true;
+    const onUserAbort = () => controller.abort();
+    if (userSignal?.aborted) {
+      controller.abort();
+    } else {
+      userSignal?.addEventListener('abort', onUserAbort, { once: true });
+    }
+
+    const timeoutHandle = setTimeout(() => {
+      timedOut = true;
       controller.abort();
     }, timeoutMs);
 
-    // Forward user signal abort if provided
-    const handleUserAbort = () => controller.abort();
-    if (userSignal) {
-      if (userSignal.aborted) {
-        controller.abort();
-      } else {
-        userSignal.addEventListener('abort', handleUserAbort);
-      }
-    }
-
     try {
       const response = await fetch(url, {
-        method,
-        headers: {
-          'Content-Type': 'application/json',
-          ...headers,
-        },
-        signal: controller.signal,
         ...restOptions,
+        method: normalizedMethod,
+        headers: mergedHeaders,
+        signal: controller.signal,
       });
 
-      clearTimeout(timer);
-      if (userSignal) {
-        userSignal.removeEventListener('abort', handleUserAbort);
-      }
-
       if (!response.ok) {
-        let errorBody = '';
+        let body = '';
         try {
-          errorBody = await response.text();
+          body = await response.text();
         } catch {
-          // Ignore text reading error
+          body = '';
         }
 
-        const formattedError = formatHttpError(response.status, errorBody);
-        const apiError = new ApiError(response.status, formattedError);
+        const error = new ApiError(
+          response.status,
+          formatHttpError(response.status, body)
+        );
 
-        // Retry 5xx errors on GET request
-        if (isGetMethod && response.status >= 500 && attempt <= maxRetries) {
-          lastError = apiError;
-          await new Promise((resolve) => setTimeout(resolve, attempt * 200));
+        if (isGet && response.status >= 500 && attempt < allowedRetries) {
+          lastError = error;
+          await waitBeforeRetry(attempt + 1);
           continue;
         }
 
-        throw apiError;
+        throw error;
       }
 
-      // Safe JSON parsing
       try {
-        const data = await response.json();
-        return data as T;
-      } catch (jsonErr) {
+        return (await response.json()) as T;
+      } catch {
         throw new ApiError(
           response.status,
-          `Invalid JSON response from server at ${endpoint}: ${jsonErr instanceof Error ? jsonErr.message : String(jsonErr)}`
+          `Invalid JSON response from server at ${endpoint}.`
         );
       }
-    } catch (err) {
-      clearTimeout(timer);
-      if (userSignal) {
-        userSignal.removeEventListener('abort', handleUserAbort);
+    } catch (error) {
+      if (error instanceof ApiError) {
+        throw error;
       }
 
-      if (err instanceof ApiError) {
-        if (isGetMethod && (err.status >= 500 || err.status === 0) && attempt <= maxRetries) {
-          lastError = err;
-          await new Promise((resolve) => setTimeout(resolve, attempt * 200));
-          continue;
-        }
-        throw err;
+      if (userSignal?.aborted && !timedOut) {
+        const abortError = new Error('Request was cancelled by user.');
+        abortError.name = 'AbortError';
+        throw abortError;
       }
 
-      if (userSignal?.aborted && !isTimeout) {
-        const abortErr = new Error('Request was cancelled by user.');
-        abortErr.name = 'AbortError';
-        throw abortErr;
-      }
+      const apiError = timedOut
+        ? new ApiError(
+            408,
+            `Request timed out after ${timeoutMs}ms calling ${endpoint}.`
+          )
+        : new ApiError(
+            0,
+            `Network unavailable: Unable to reach API server at ${url}.`
+          );
 
-      if (isTimeout) {
-        const timeoutErr = new ApiError(
-          408,
-          `Request timed out after ${timeoutMs}ms calling ${endpoint}`
-        );
-        if (isGetMethod && attempt <= maxRetries) {
-          lastError = timeoutErr;
-          await new Promise((resolve) => setTimeout(resolve, attempt * 200));
-          continue;
-        }
-        throw timeoutErr;
-      }
-
-      const networkErr = new ApiError(
-        0,
-        `Network unavailable: Unable to reach API server at ${url}`
-      );
-
-      if (isGetMethod && attempt <= maxRetries) {
-        lastError = networkErr;
-        await new Promise((resolve) => setTimeout(resolve, attempt * 200));
+      if (isGet && attempt < allowedRetries) {
+        lastError = apiError;
+        await waitBeforeRetry(attempt + 1);
         continue;
       }
 
-      throw networkErr;
+      throw apiError;
+    } finally {
+      clearTimeout(timeoutHandle);
+      userSignal?.removeEventListener('abort', onUserAbort);
     }
   }
 
-  throw lastError || new ApiError(0, `Request failed after ${maxRetries} retries.`);
+  throw lastError ?? new ApiError(0, 'Request failed.');
 }
 
-/**
- * Calculate job counts from a list of jobs.
- */
 export function calculateJobCounts(jobs: VideoJob[]): JobCounts {
   const counts: JobCounts = {
     pending: 0,
@@ -280,11 +267,11 @@ export function calculateJobCounts(jobs: VideoJob[]): JobCounts {
     quarantined: 0,
     total: jobs.length,
   };
+
   for (const job of jobs) {
-    if (counts[job.status] !== undefined) {
-      counts[job.status]++;
-    }
+    counts[job.status] += 1;
   }
+
   return counts;
 }
 
@@ -298,21 +285,18 @@ export const apiClient = {
   },
 
   resetDemoData(): void {
-    demoJobs = INITIAL_DEMO_JOBS.map((j) => ({ ...j }));
+    demoJobs = INITIAL_DEMO_JOBS.map((job) => ({ ...job }));
   },
 
   async getHealth(options?: RequestOptions): Promise<HealthResponse> {
     if (this.isConfigError()) {
-      throw new ApiError(
-        0,
-        'Configuration Error: VITE_API_BASE_URL environment variable is missing in live API mode. Set VITE_API_BASE_URL or set VITE_DEMO_MODE=true.'
-      );
+      throw configurationError();
     }
 
     if (this.isDemoMode()) {
       return {
         status: 'ok',
-        database: 'connected (demo)',
+        database: 'demo-only',
         version: '1.0.0-demo',
         demo_mode: true,
       };
@@ -323,58 +307,42 @@ export const apiClient = {
 
   async getJobsAndCounts(options?: RequestOptions): Promise<GetJobsResponse> {
     if (this.isConfigError()) {
-      throw new ApiError(
-        0,
-        'Configuration Error: VITE_API_BASE_URL environment variable is missing in live API mode. Set VITE_API_BASE_URL or set VITE_DEMO_MODE=true.'
-      );
+      throw configurationError();
     }
 
     if (this.isDemoMode()) {
-      const copy = demoJobs.map((j) => ({ ...j }));
+      const jobs = demoJobs.map((job) => ({ ...job }));
+      return { jobs, counts: calculateJobCounts(jobs) };
+    }
+
+    const response = await httpRequest<GetJobsResponse | VideoJob[]>(
+      '/jobs',
+      options
+    );
+
+    if (Array.isArray(response)) {
       return {
-        jobs: copy,
-        counts: calculateJobCounts(copy),
+        jobs: response,
+        counts: calculateJobCounts(response),
       };
     }
 
-    const rawData = await httpRequest<GetJobsResponse | VideoJob[]>('/jobs', options);
-
-    if (Array.isArray(rawData)) {
-      return {
-        jobs: rawData,
-        counts: calculateJobCounts(rawData),
-      };
-    }
-
-    if (rawData && Array.isArray(rawData.jobs)) {
-      return {
-        jobs: rawData.jobs,
-        counts: rawData.counts || calculateJobCounts(rawData.jobs),
-      };
+    if (!response || !Array.isArray(response.jobs)) {
+      throw new ApiError(500, 'Invalid jobs response from backend.');
     }
 
     return {
-      jobs: [],
-      counts: {
-        pending: 0,
-        processing: 0,
-        rendered: 0,
-        uploaded: 0,
-        failed: 0,
-        quarantined: 0,
-        total: 0,
-      },
+      jobs: response.jobs,
+      counts: response.counts ?? calculateJobCounts(response.jobs),
     };
   },
 
   async getJobs(options?: RequestOptions): Promise<VideoJob[]> {
-    const res = await this.getJobsAndCounts(options);
-    return res.jobs;
+    return (await this.getJobsAndCounts(options)).jobs;
   },
 
   async getJobCounts(options?: RequestOptions): Promise<JobCounts> {
-    const res = await this.getJobsAndCounts(options);
-    return res.counts;
+    return (await this.getJobsAndCounts(options)).counts;
   },
 
   async enqueueJob(
@@ -382,15 +350,12 @@ export const apiClient = {
     options?: RequestOptions
   ): Promise<VideoJob> {
     if (this.isConfigError()) {
-      throw new ApiError(
-        0,
-        'Configuration Error: VITE_API_BASE_URL environment variable is missing in live API mode. Set VITE_API_BASE_URL or set VITE_DEMO_MODE=true.'
-      );
+      throw configurationError();
     }
 
     if (this.isDemoMode()) {
-      const newJob: VideoJob = {
-        id: Math.floor(Math.random() * 900) + 200,
+      const job: VideoJob = {
+        id: Math.max(200, ...demoJobs.map((item) => item.id + 1)),
         source_path: payload.source_path?.trim() || null,
         source_url: payload.source_url?.trim() || null,
         source_title: payload.source_title.trim(),
@@ -410,14 +375,14 @@ export const apiClient = {
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       };
-      demoJobs = [newJob, ...demoJobs];
-      return newJob;
+      demoJobs = [job, ...demoJobs];
+      return job;
     }
 
     return httpRequest<VideoJob>('/jobs', {
+      ...options,
       method: 'POST',
       body: JSON.stringify(payload),
-      ...options,
     });
   },
 
@@ -427,52 +392,51 @@ export const apiClient = {
     options?: RequestOptions
   ): Promise<JobRunResponse> {
     if (this.isConfigError()) {
-      throw new ApiError(
-        0,
-        'Configuration Error: VITE_API_BASE_URL environment variable is missing in live API mode. Set VITE_API_BASE_URL or set VITE_DEMO_MODE=true.'
-      );
+      throw configurationError();
     }
 
     if (this.isDemoMode()) {
-      const numericId = Number(jobId);
-      const jobIndex = demoJobs.findIndex((j) => j.id === numericId || String(j.id) === String(jobId));
+      const index = demoJobs.findIndex(
+        (job) => String(job.id) === String(jobId)
+      );
 
-      if (jobIndex !== -1) {
-        const job = demoJobs[jobIndex];
-        const nextStatus = renderOnly ? 'rendered' : 'uploaded';
-        const updatedJob: VideoJob = {
-          ...job,
-          status: nextStatus,
-          generated_title: job.generated_title || `${job.source_title} 🔥`,
-          generated_script:
-            job.generated_script ||
-            'يا هلا بالشباب! شوفوا هاللقطة الأسطورية وخذينا الفوز بآخر دقيقة!',
-          output_path: 'C:\\renders\\simulated_output.mp4',
-          youtube_id: renderOnly ? null : 'simulated_yt_' + Date.now(),
-          updated_at: new Date().toISOString(),
-        };
-        demoJobs[jobIndex] = updatedJob;
+      if (index < 0) {
         return {
-          status: 'success',
-          message: renderOnly
-            ? `Job #${jobId} rendered 9:16 video successfully (demo).`
-            : `Job #${jobId} rendered and uploaded 9:16 video successfully (demo).`,
-          job: updatedJob,
+          status: 'error',
+          message: `Job #${jobId} was not found in the demo queue.`,
+          job: null,
         };
       }
+
+      const current = demoJobs[index];
+      const updated: VideoJob = {
+        ...current,
+        status: renderOnly ? 'rendered' : 'uploaded',
+        generated_title:
+          current.generated_title || `[DEMO] ${current.source_title}`,
+        generated_script:
+          current.generated_script ||
+          'هذا تعليق تجريبي داخل وضع العرض فقط.',
+        output_path: 'C:\\renders\\simulated_output.mp4',
+        youtube_id: renderOnly ? null : `demo_${Date.now()}`,
+        updated_at: new Date().toISOString(),
+      };
+
+      demoJobs[index] = updated;
       return {
-        status: 'error',
-        message: `Job #${jobId} not found in demo queue.`,
-        job: null,
+        status: 'success',
+        message: renderOnly
+          ? `Job #${jobId} rendered in demo mode.`
+          : `Job #${jobId} rendered and simulated as uploaded in demo mode.`,
+        job: updated,
       };
     }
 
     const payload: JobRunRequest = { render_only: renderOnly };
-
     return httpRequest<JobRunResponse>(`/jobs/${jobId}/run`, {
+      ...options,
       method: 'POST',
       body: JSON.stringify(payload),
-      ...options,
     });
   },
 
@@ -482,80 +446,79 @@ export const apiClient = {
     options?: RequestOptions
   ): Promise<VideoJob> {
     if (this.isConfigError()) {
-      throw new ApiError(
-        0,
-        'Configuration Error: VITE_API_BASE_URL environment variable is missing in live API mode. Set VITE_API_BASE_URL or set VITE_DEMO_MODE=true.'
-      );
+      throw configurationError();
     }
 
     if (this.isDemoMode()) {
-      const numericId = Number(jobId);
-      const jobIndex = demoJobs.findIndex((j) => j.id === numericId || String(j.id) === String(jobId));
+      const index = demoJobs.findIndex(
+        (job) => String(job.id) === String(jobId)
+      );
 
-      if (jobIndex === -1) {
-        throw new ApiError(404, `Job #${jobId} not found.`);
+      if (index < 0) {
+        throw new ApiError(404, `Job #${jobId} was not found.`);
       }
 
-      const job = demoJobs[jobIndex];
+      const current = demoJobs[index];
+      let updated: VideoJob;
 
       if (action === 'retry') {
-        if (job.status !== 'failed' && job.status !== 'quarantined') {
-          throw new ApiError(400, `Cannot retry job #${jobId} with status '${job.status}'. Only failed or quarantined jobs can be retried.`);
+        if (
+          current.status !== 'failed' &&
+          current.status !== 'quarantined'
+        ) {
+          throw new ApiError(
+            400,
+            'Only failed or quarantined jobs can be retried.'
+          );
         }
-        const updated: VideoJob = {
-          ...job,
+
+        updated = {
+          ...current,
           status: 'pending',
-          last_error: null,
           attempts: 0,
+          last_error: null,
           updated_at: new Date().toISOString(),
         };
-        demoJobs[jobIndex] = updated;
-        return updated;
-      }
-
-      if (action === 'quarantine') {
-        if (job.status === 'uploaded') {
-          throw new ApiError(400, `Cannot quarantine uploaded job #${jobId}.`);
+      } else {
+        if (current.status === 'uploaded') {
+          throw new ApiError(400, 'Uploaded jobs cannot be quarantined.');
         }
-        const updated: VideoJob = {
-          ...job,
+
+        updated = {
+          ...current,
           status: 'quarantined',
-          last_error: job.last_error || 'Manually quarantined by operator.',
+          last_error:
+            current.last_error || 'Manually quarantined by the operator.',
           updated_at: new Date().toISOString(),
         };
-        demoJobs[jobIndex] = updated;
-        return updated;
       }
 
-      throw new ApiError(400, `Unsupported action '${action}'.`);
+      demoJobs[index] = updated;
+      return updated;
     }
 
     const payload: JobActionRequest = { action };
-
     return httpRequest<VideoJob>(`/jobs/${jobId}/actions`, {
+      ...options,
       method: 'POST',
       body: JSON.stringify(payload),
-      ...options,
     });
   },
 
   async getSystemInfo(options?: RequestOptions): Promise<SystemInfoResponse> {
     if (this.isConfigError()) {
-      throw new ApiError(
-        0,
-        'Configuration Error: VITE_API_BASE_URL environment variable is missing in live API mode. Set VITE_API_BASE_URL or set VITE_DEMO_MODE=true.'
-      );
+      throw configurationError();
     }
 
     if (this.isDemoMode()) {
       return {
         app_name: 'Robin Content Engine v2 (Demo)',
         version: '1.0.0-demo',
-        python_version: '3.11.8 (simulated)',
-        ffmpeg_available: true,
-        deepseek_configured: true,
-        youtube_authenticated: true,
-        database: 'connected (simulated)',
+        python_version: 'backend required',
+        ffmpeg_available: false,
+        deepseek_configured: false,
+        youtube_authenticated: false,
+        database: 'demo-only',
         demo_mode: true,
       };
     }
@@ -565,33 +528,30 @@ export const apiClient = {
 
   async generateScript(
     payload: ScriptGenRequest,
-    options?: RequestOptions
+    _options?: RequestOptions
   ): Promise<GeneratedContent> {
     if (this.isConfigError()) {
+      throw configurationError();
+    }
+
+    if (!this.isDemoMode()) {
       throw new ApiError(
-        0,
-        'Configuration Error: VITE_API_BASE_URL environment variable is missing in live API mode. Set VITE_API_BASE_URL or set VITE_DEMO_MODE=true.'
+        501,
+        'Script generation backend endpoint is not implemented yet.'
       );
     }
 
-    if (this.isDemoMode()) {
-      return {
-        title: `${payload.game_name} - ${payload.topic} 🔥`,
-        description: `شاهد أفضل لحظات ${payload.game_name} مع تعليق إماراتي حماسي وسريع!`,
-        tags: [
-          payload.game_name.toLowerCase().replace(/\s+/g, '_'),
-          'gaming',
-          'shorts',
-          'قيمنق',
-        ],
-        script: `يا مرحبا بالجميع! اليوم مع لقطة حماسية من ${payload.game_name}. ${payload.topic}، وبأفضل أسلوب تعليق! شوف النهاية ولا تفوت الفوز الأسطوري!`,
-      };
-    }
-
-    return httpRequest<GeneratedContent>('/script/generate', {
-      method: 'POST',
-      body: JSON.stringify(payload),
-      ...options,
-    });
+    return {
+      title: `[DEMO] ${payload.game_name}: ${payload.topic} 🔥`,
+      description:
+        'Simulated preview generated locally in Demo Mode. No backend AI request was made.',
+      tags: [
+        payload.game_name.toLowerCase().replace(/\s+/g, '_'),
+        'gaming',
+        'shorts',
+        'demo',
+      ],
+      script: `هذا نص تجريبي فقط: ${payload.topic} في ${payload.game_name}. لم يتم الاتصال بخدمة ذكاء اصطناعي حقيقية.`,
+    };
   },
 };

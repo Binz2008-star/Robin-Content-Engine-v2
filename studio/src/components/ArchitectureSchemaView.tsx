@@ -1,175 +1,208 @@
 import React, { useState } from 'react';
-import { Database, CheckCircle2, ShieldCheck, Cpu, Code2, Copy, Check } from 'lucide-react';
+import {
+  Check,
+  CheckCircle2,
+  Code2,
+  Copy,
+  Cpu,
+  Database,
+  ShieldCheck,
+} from 'lucide-react';
+import { copyTextToClipboard } from '../lib/clipboard';
 
-export const ArchitectureSchemaView: React.FC = () => {
-  const [copiedCode, setCopiedCode] = useState<string | null>(null);
+const QUEUE_FIELDS = [
+  'id',
+  'source_path',
+  'source_url',
+  'source_title',
+  'rights_confirmed',
+  'rights_note',
+  'status',
+  'generated_title',
+  'generated_description',
+  'generated_tags',
+  'generated_script',
+  'output_path',
+  'youtube_id',
+  'attempts',
+  'last_error',
+  'claimed_at',
+  'completed_at',
+  'created_at',
+  'updated_at',
+];
 
-  const copyCode = (code: string, key: string) => {
-    navigator.clipboard.writeText(code);
-    setCopiedCode(key);
-    setTimeout(() => setCopiedCode(null), 2000);
-  };
-
-  const schemaSQL = `-- Neon PostgreSQL Schema for Robin Engine Jobs Queue
-CREATE TYPE job_status AS ENUM (
+const QUEUE_STATUSES = [
   'pending',
   'processing',
   'rendered',
   'uploaded',
   'failed',
-  'quarantined'
-);
+  'quarantined',
+];
 
-CREATE TABLE IF NOT EXISTS jobs (
-  id VARCHAR(64) PRIMARY KEY,
-  title VARCHAR(255) NOT NULL,
-  source_path TEXT NOT NULL,
-  rights_confirmed BOOLEAN NOT NULL DEFAULT FALSE,
-  rights_note TEXT NOT NULL,
-  status job_status NOT NULL DEFAULT 'pending',
-  
-  -- Video Configuration
-  resolution VARCHAR(32) DEFAULT '1080x1920',
-  aspect_ratio VARCHAR(16) DEFAULT '9:16',
-  max_duration_sec INT DEFAULT 58,
-  game_audio_volume_pct INT DEFAULT 15,
-  
-  -- DeepSeek Pydantic Generated Script JSON
-  script_data JSONB,
-  
-  -- Voiceover & YouTube Status
-  voice_name VARCHAR(64) DEFAULT 'ar-AE-HamdanNeural',
-  youtube_id VARCHAR(64),
-  youtube_privacy VARCHAR(16) DEFAULT 'private',
-  
-  rendering_progress INT DEFAULT 0,
-  logs TEXT[],
-  created_at TIMESTAMPTZ DEFAULT NOW(),
-  updated_at TIMESTAMPTZ DEFAULT NOW()
-);
+const MOVIEPY_EXAMPLE = `# Backend-only MoviePy v2 processing outline
+clip = VideoFileClip(input_path)
+clip = clip.subclipped(0, min(58, clip.duration))
+clip = clip.cropped(...).resized((1080, 1920))
+final_clip = clip.with_audio(final_audio)
+final_clip.write_videofile(
+    output_path,
+    codec="libx264",
+    audio_codec="aac",
+)`;
 
--- Index for atomic lock acquisition speed
-CREATE INDEX idx_jobs_status ON jobs(status);`;
+export const ArchitectureSchemaView: React.FC = () => {
+  const [copied, setCopied] = useState(false);
+  const [copyError, setCopyError] = useState<string | null>(null);
 
-  const moviePyCode = `# MoviePy v2 Modern Video Editing Engine Implementation
-from moviepy.VideoFileClip import VideoFileClip
-from moviepy.AudioFileClip import AudioFileClip
+  const copyMoviePyExample = async () => {
+    setCopyError(null);
+    const success = await copyTextToClipboard(MOVIEPY_EXAMPLE);
 
-def process_shorts_video(input_path: str, voiceover_path: str, output_path: str):
-    # 1. Load raw gameplay clip
-    clip = VideoFileClip(input_path)
-    
-    # 2. Subclip to 58s max & crop/resize to 9:16 (1080x1920)
-    clip = clip.subclipped(0, min(58, clip.duration))
-    clip = clip.cropped(x1=clip.w * 0.25, x2=clip.w * 0.75)  # Center vertical crop
-    clip = clip.resized((1080, 1920))
-    
-    # 3. Game Audio Ducking to 15% & Merge ar-AE-HamdanNeural Voiceover
-    game_audio = clip.audio.with_volume_scaled(0.15) if clip.audio else None
-    voiceover = AudioFileClip(voiceover_path)
-    
-    # Composite audio: Voiceover + Ducked Game Sound
-    final_audio = CompositeAudioClip([game_audio, voiceover])
-    
-    # 4. Attach audio & export H.264 / AAC
-    final_clip = clip.with_audio(final_audio)
-    final_clip.write_videofile(
-        output_path,
-        codec="libx264",
-        audio_codec="aac",
-        fps=30
-    )`;
+    if (!success) {
+      setCopied(false);
+      setCopyError('Copy failed. Clipboard permission is unavailable.');
+      return;
+    }
+
+    setCopied(true);
+    window.setTimeout(() => setCopied(false), 2000);
+  };
 
   return (
     <div className="space-y-6">
-      {/* Top Banner */}
       <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
           <div className="flex items-center gap-2 text-amber-400 font-bold text-sm">
             <Cpu className="w-5 h-5" />
-            <span>Robin Engine Architecture Specs & Neon SQL Schema</span>
+            <span>Robin Engine Architecture Reference</span>
           </div>
           <h2 className="text-xl font-black text-slate-100 mt-1">
-            System Infrastructure & MoviePy v2 Codebase
+            Canonical Queue & Backend Processing
           </h2>
           <p className="text-xs text-slate-400 mt-1">
-            Robin Engine Architecture Alignment | Phase 2 Contract Alignment
+            Read-only facts aligned with the deployed Neon production schema.
           </p>
         </div>
 
-        {/* GitHub CI Status Pills */}
         <div className="flex items-center gap-2 bg-slate-950 p-2.5 rounded-xl border border-slate-800 text-xs font-mono">
-          <span className="px-2 py-1 bg-emerald-500/10 text-emerald-400 rounded border border-emerald-500/30 font-bold">
-            Frontend CI
-          </span>
-          <span className="px-2 py-1 bg-emerald-500/10 text-emerald-400 rounded border border-emerald-500/30 font-bold">
-            Python CI
+          <span className="px-2 py-1 bg-slate-800 text-slate-300 rounded border border-slate-700 font-bold">
+            Backend connection required
           </span>
         </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Neon PostgreSQL Schema */}
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-3">
-          <div className="flex items-center justify-between">
-            <h3 className="font-bold text-slate-100 text-sm flex items-center gap-2">
-              <Database className="w-4 h-4 text-emerald-400" />
-              <span>schema.sql (Neon PostgreSQL Jobs Table)</span>
+        <section className="bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-4">
+          <div className="flex items-center gap-2">
+            <Database className="w-4 h-4 text-emerald-400" />
+            <h3 className="font-bold text-slate-100 text-sm">
+              public.video_queue
             </h3>
-            <button
-              onClick={() => copyCode(schemaSQL, 'schema')}
-              className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-xs font-mono flex items-center gap-1"
-            >
-              {copiedCode === 'schema' ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
-              <span>{copiedCode === 'schema' ? 'Copied' : 'Copy SQL'}</span>
-            </button>
           </div>
 
-          <pre className="p-4 bg-slate-950 border border-slate-800 rounded-xl font-mono text-[11px] text-emerald-400/90 overflow-x-auto leading-relaxed">
-            {schemaSQL}
-          </pre>
+          <p className="text-xs text-slate-400 leading-relaxed">
+            The Studio reads and changes queue state only through the FastAPI
+            backend. Database credentials remain backend-only and are never
+            embedded in frontend variables or bundles.
+          </p>
 
-          <div className="p-3 bg-slate-950/80 border border-slate-800 rounded-xl text-xs space-y-1">
+          <div>
+            <h4 className="text-xs font-semibold text-slate-300 mb-2">
+              Canonical fields
+            </h4>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+              {QUEUE_FIELDS.map((field) => (
+                <code
+                  key={field}
+                  className="rounded-lg border border-slate-800 bg-slate-950 px-2 py-1 text-[11px] text-emerald-300"
+                >
+                  {field}
+                </code>
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <h4 className="text-xs font-semibold text-slate-300 mb-2">
+              Queue statuses
+            </h4>
+            <div className="flex flex-wrap gap-2">
+              {QUEUE_STATUSES.map((status) => (
+                <span
+                  key={status}
+                  className="rounded-full border border-amber-500/30 bg-amber-500/10 px-2.5 py-1 text-[11px] font-mono text-amber-300"
+                >
+                  {status}
+                </span>
+              ))}
+            </div>
+          </div>
+
+          <div className="p-3 bg-slate-950/80 border border-slate-800 rounded-xl text-xs space-y-2">
             <div className="text-amber-400 font-bold flex items-center gap-1.5">
               <ShieldCheck className="w-4 h-4" />
-              <span>Atomic Locking Mechanism</span>
+              <span>Atomic worker claims</span>
             </div>
             <p className="text-slate-400 text-[11px] leading-relaxed">
-              Uses <code className="text-slate-200">SELECT * FROM video_queue WHERE status = 'pending' FOR UPDATE SKIP LOCKED LIMIT 1</code> in Neon PostgreSQL.
+              Pending jobs are claimed with{' '}
+              <code className="text-slate-200">
+                FOR UPDATE SKIP LOCKED
+              </code>{' '}
+              so concurrent workers do not process the same video twice.
+            </p>
+            <p className="text-slate-400 text-[11px] leading-relaxed">
+              YouTube uploads remain Private by backend default until manual
+              review is complete.
             </p>
           </div>
-        </div>
+        </section>
 
-        {/* MoviePy v2 Codebase Snippet */}
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-3">
-          <div className="flex items-center justify-between">
-            <h3 className="font-bold text-slate-100 text-sm flex items-center gap-2">
+        <section className="bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-3">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
               <Code2 className="w-4 h-4 text-amber-400" />
-              <span>MoviePy v2 Modern Video Pipeline</span>
-            </h3>
+              <h3 className="font-bold text-slate-100 text-sm">
+                MoviePy v2 backend outline
+              </h3>
+            </div>
             <button
-              onClick={() => copyCode(moviePyCode, 'moviepy')}
+              type="button"
+              onClick={copyMoviePyExample}
+              aria-label="Copy MoviePy example"
               className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-xs font-mono flex items-center gap-1"
             >
-              {copiedCode === 'moviepy' ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
-              <span>{copiedCode === 'moviepy' ? 'Copied' : 'Copy Code'}</span>
+              {copied ? (
+                <Check className="w-3.5 h-3.5 text-emerald-400" />
+              ) : (
+                <Copy className="w-3.5 h-3.5" />
+              )}
+              <span>{copied ? 'Copied' : 'Copy Code'}</span>
             </button>
           </div>
 
+          {copyError && (
+            <p role="status" className="text-xs text-rose-400">
+              {copyError}
+            </p>
+          )}
+
           <pre className="p-4 bg-slate-950 border border-slate-800 rounded-xl font-mono text-[11px] text-amber-300/90 overflow-x-auto leading-relaxed">
-            {moviePyCode}
+            {MOVIEPY_EXAMPLE}
           </pre>
 
           <div className="p-3 bg-slate-950/80 border border-slate-800 rounded-xl text-xs space-y-1">
             <div className="text-emerald-400 font-bold flex items-center gap-1.5">
               <CheckCircle2 className="w-4 h-4" />
-              <span>MoviePy v2 API Compliance</span>
+              <span>Backend-only execution</span>
             </div>
             <p className="text-slate-400 text-[11px] leading-relaxed">
-              Updated from legacy <code className="text-slate-200">moviepy.editor</code> to modern v2 methods: <code className="text-amber-300">subclipped</code>, <code className="text-amber-300">cropped</code>, <code className="text-amber-300">resized</code>, and <code className="text-amber-300">with_audio</code>.
+              Rendering, DeepSeek generation, neural TTS, and YouTube OAuth are
+              performed by backend workers, never by the browser.
             </p>
           </div>
-        </div>
+        </section>
       </div>
     </div>
   );
