@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { Navbar } from './components/Navbar';
 import { DashboardOverview } from './components/DashboardOverview';
 import { QueueTable } from './components/QueueTable';
@@ -7,183 +7,204 @@ import { ScriptGeneratorStudio } from './components/ScriptGeneratorStudio';
 import { VideoCanvasPlayer } from './components/VideoCanvasPlayer';
 import { ArchitectureSchemaView } from './components/ArchitectureSchemaView';
 import { CLIConsoleModal } from './components/CLIConsoleModal';
-import { EngineJob, SystemInfo, ScriptData } from './types';
+import {
+  VideoJob,
+  JobCounts,
+  ConnectionStatus,
+  StudioTab,
+  EnqueueJobRequest,
+} from './types';
+import { apiClient } from './api/client';
+import { POLLING_INTERVAL_MS } from './config';
+import { WifiOff } from 'lucide-react';
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<string>('dashboard');
-  const [jobs, setJobs] = useState<EngineJob[]>([]);
-  const [counts, setCounts] = useState({
+  const [activeTab, setActiveTab] = useState<StudioTab>('overview');
+  const [jobs, setJobs] = useState<VideoJob[]>([]);
+  const [counts, setCounts] = useState<JobCounts>({
     pending: 0,
     processing: 0,
     rendered: 0,
     uploaded: 0,
     failed: 0,
     quarantined: 0,
+    total: 0,
   });
-  const [systemInfo, setSystemInfo] = useState<SystemInfo | null>(null);
+  const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>('connecting');
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isProcessingWorker, setIsProcessingWorker] = useState(false);
   const [isEnqueueOpen, setIsEnqueueOpen] = useState(false);
   const [isCLIOpen, setIsCLIOpen] = useState(false);
-  const [selectedJobForPreview, setSelectedJobForPreview] = useState<EngineJob | null>(null);
+  const [selectedJobForPreview, setSelectedJobForPreview] = useState<VideoJob | null>(null);
 
-  // Fetch Queue Jobs & System Specs
-  const fetchQueue = async () => {
+  const activeAbortController = useRef<AbortController | null>(null);
+
+  const fetchJobsAndHealth = useCallback(async () => {
+    if (activeAbortController.current) {
+      activeAbortController.current.abort();
+    }
+    const controller = new AbortController();
+    activeAbortController.current = controller;
+
     try {
-      const res = await fetch('/api/queue');
-      const data = await res.json();
-      if (data.jobs) {
-        setJobs(data.jobs);
-        setCounts(data.counts || {
-          pending: 0,
-          processing: 0,
-          rendered: 0,
-          uploaded: 0,
-          failed: 0,
-          quarantined: 0,
-        });
+      if (apiClient.isDemoMode()) {
+        setConnectionStatus('demo_mode');
+      } else {
+        await apiClient.getHealth({ signal: controller.signal });
+        setConnectionStatus('connected');
       }
-    } catch (e) {
-      console.error('Error fetching queue:', e);
+
+      const fetchedJobs = await apiClient.getJobs({ signal: controller.signal });
+      const fetchedCounts = await apiClient.getJobCounts({ signal: controller.signal });
+
+      setJobs(fetchedJobs);
+      setCounts(fetchedCounts);
+      setErrorMessage(null);
+    } catch (err) {
+      if (err instanceof Error && err.name === 'AbortError') {
+        return;
+      }
+      console.error('Failed to fetch API data:', err);
+
+      if (!apiClient.isDemoMode()) {
+        setConnectionStatus('offline');
+        setErrorMessage(
+          err instanceof Error
+            ? err.message
+            : 'Failed to connect to backend API.'
+        );
+      }
     }
-  };
-
-  const fetchSystemInfo = async () => {
-    try {
-      const res = await fetch('/api/system-info');
-      const data = await res.json();
-      setSystemInfo(data);
-    } catch (e) {
-      console.error('Error fetching system info:', e);
-    }
-  };
-
-  useEffect(() => {
-    fetchQueue();
-    fetchSystemInfo();
-
-    // Auto polling every 4 seconds for job updates
-    const interval = setInterval(fetchQueue, 4000);
-    return () => clearInterval(interval);
   }, []);
 
-  // Enqueue New Video Job
-  const handleEnqueueJob = async (data: {
-    title: string;
-    sourcePath: string;
-    rightsNote: string;
-    confirmRights: boolean;
-    privacy: 'private' | 'unlisted' | 'public';
-    customScript?: ScriptData;
-  }) => {
-    try {
-      const res = await fetch('/api/queue/enqueue', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data),
-      });
-      const result = await res.json();
-      if (result.success) {
-        fetchQueue();
+  useEffect(() => {
+    fetchJobsAndHealth();
+
+    let intervalId: ReturnType<typeof setInterval> | null = null;
+
+    const startPolling = () => {
+      if (!intervalId && !document.hidden) {
+        intervalId = setInterval(() => {
+          if (!document.hidden) {
+            fetchJobsAndHealth();
+          }
+        }, POLLING_INTERVAL_MS);
       }
-    } catch (e) {
-      console.error('Enqueue error:', e);
+    };
+
+    const stopPolling = () => {
+      if (intervalId) {
+        clearInterval(intervalId);
+        intervalId = null;
+      }
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        stopPolling();
+        if (activeAbortController.current) {
+          activeAbortController.current.abort();
+        }
+      } else {
+        fetchJobsAndHealth();
+        startPolling();
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    startPolling();
+
+    return () => {
+      stopPolling();
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      if (activeAbortController.current) {
+        activeAbortController.current.abort();
+      }
+    };
+  }, [fetchJobsAndHealth]);
+
+  const handleEnqueueJob = async (payload: EnqueueJobRequest) => {
+    try {
+      await apiClient.enqueueJob(payload);
+      setIsEnqueueOpen(false);
+      await fetchJobsAndHealth();
+    } catch (err) {
+      console.error('Enqueue job failed:', err);
+      alert(`Enqueue failed: ${err instanceof Error ? err.message : String(err)}`);
     }
   };
 
-  // Run Worker (All pending jobs or specific job)
-  const handleRunWorker = async (renderOnly: boolean = false, jobId?: string) => {
+  const handleRunWorker = async (renderOnly = false) => {
     setIsProcessingWorker(true);
     try {
-      const res = await fetch('/api/queue/run-worker', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ jobId, renderOnly }),
-      });
-      const result = await res.json();
-      if (result.success) {
-        fetchQueue();
-      }
-    } catch (e) {
-      console.error('Worker error:', e);
+      await apiClient.runWorker(renderOnly);
+      await fetchJobsAndHealth();
+    } catch (err) {
+      console.error('Worker run failed:', err);
     } finally {
-      setTimeout(() => setIsProcessingWorker(false), 3000);
+      setIsProcessingWorker(false);
     }
   };
 
-  // Update Job Status (Quarantine, Retry, Delete)
-  const handleUpdateJobStatus = async (jobId: string, action: 'quarantine' | 'retry' | 'delete') => {
-    try {
-      const res = await fetch('/api/queue/update-job', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ jobId, action }),
-      });
-      const result = await res.json();
-      if (result.success) {
-        fetchQueue();
-      }
-    } catch (e) {
-      console.error('Update status error:', e);
-    }
-  };
-
-  const handleSelectJobForPreview = (job: EngineJob) => {
+  const handleSelectJobForPreview = (job: VideoJob) => {
     setSelectedJobForPreview(job);
-    setActiveTab('video-canvas');
+    setActiveTab('schema');
   };
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 font-sans antialiased selection:bg-amber-500 selection:text-slate-950">
-      {/* Top Header Navbar */}
       <Navbar
-        systemInfo={systemInfo}
-        onOpenEnqueue={() => setIsEnqueueOpen(true)}
-        onOpenCLI={() => setIsCLIOpen(true)}
-        onRunWorker={(renderOnly) => handleRunWorker(renderOnly)}
-        isProcessingWorker={isProcessingWorker}
+        connectionStatus={connectionStatus}
         activeTab={activeTab}
         setActiveTab={setActiveTab}
+        onOpenEnqueue={() => setIsEnqueueOpen(true)}
+        onOpenCLI={() => setIsCLIOpen(true)}
+        onRefresh={fetchJobsAndHealth}
       />
 
-      {/* Main Content Area */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
-        {activeTab === 'dashboard' && (
-          <div className="space-y-8">
-            <DashboardOverview
-              jobs={jobs}
-              counts={counts}
-              onRunWorker={(renderOnly) => handleRunWorker(renderOnly)}
-              isProcessingWorker={isProcessingWorker}
-            />
-
-            <QueueTable
-              jobs={jobs}
-              onRunWorkerJob={(jobId, renderOnly) => handleRunWorker(renderOnly, jobId)}
-              onUpdateJobStatus={handleUpdateJobStatus}
-              onSelectJobForPreview={handleSelectJobForPreview}
-              isProcessing={isProcessingWorker}
-            />
+      {connectionStatus === 'offline' && errorMessage && (
+        <div className="bg-rose-950/80 border-b border-rose-800 text-rose-200 px-4 py-3 text-xs flex items-center justify-between">
+          <div className="max-w-7xl mx-auto flex items-center gap-2 w-full">
+            <WifiOff className="w-4 h-4 text-rose-400 shrink-0" />
+            <span>
+              <strong>Backend Offline:</strong> {errorMessage} Live mode will not silently load demo data.
+            </span>
           </div>
+        </div>
+      )}
+
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
+        {activeTab === 'overview' && (
+          <DashboardOverview
+            counts={counts}
+            connectionStatus={connectionStatus}
+            onOpenEnqueueModal={() => setIsEnqueueOpen(true)}
+          />
         )}
 
-        {activeTab === 'script-studio' && (
-          <ScriptGeneratorStudio />
+        {activeTab === 'queue' && (
+          <QueueTable
+            jobs={jobs}
+            onRunWorkerJob={(_jobId, renderOnly) => handleRunWorker(renderOnly)}
+            onSelectJobForPreview={handleSelectJobForPreview}
+            isProcessing={isProcessingWorker}
+          />
         )}
 
-        {activeTab === 'video-canvas' && (
-          <VideoCanvasPlayer activeJob={selectedJobForPreview} />
-        )}
+        {activeTab === 'script' && <ScriptGeneratorStudio />}
 
-        {activeTab === 'architecture' && (
-          <ArchitectureSchemaView />
+        {activeTab === 'schema' && (
+          <div className="space-y-8">
+            <VideoCanvasPlayer job={selectedJobForPreview} />
+            <ArchitectureSchemaView />
+          </div>
         )}
       </main>
 
-      {/* Footer */}
       <footer className="border-t border-slate-900 bg-slate-950/80 py-6 mt-12 text-xs text-slate-500">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-4">
           <div className="flex items-center gap-2">
-            <span className="font-bold text-slate-300">Robin Engine Studio UI</span>
+            <span className="font-bold text-slate-300">Robin Engine Control Studio v2</span>
             <span>•</span>
             <span>Robin Life & Gaming Shorts Pipeline</span>
           </div>
@@ -193,7 +214,6 @@ export default function App() {
         </div>
       </footer>
 
-      {/* Modals */}
       <EnqueueModal
         isOpen={isEnqueueOpen}
         onClose={() => setIsEnqueueOpen(false)}

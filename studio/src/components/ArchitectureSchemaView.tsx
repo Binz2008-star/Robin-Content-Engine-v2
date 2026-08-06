@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Database, FileCode, CheckCircle2, ShieldCheck, Cpu, Code2, Copy, Check, GitPullRequest } from 'lucide-react';
+import { Database, CheckCircle2, ShieldCheck, Cpu, Code2, Copy, Check } from 'lucide-react';
 
 export const ArchitectureSchemaView: React.FC = () => {
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
@@ -93,20 +93,17 @@ def process_shorts_video(input_path: str, voiceover_path: str, output_path: str)
             System Infrastructure & MoviePy v2 Codebase
           </h2>
           <p className="text-xs text-slate-400 mt-1">
-            Commit <code className="text-emerald-400 font-mono">779c4d62</code> | Branch <code className="text-amber-400 font-mono">feat/initial-engine</code> | Draft PR #1
+            Robin Engine Architecture Alignment | Phase 2 Contract Alignment
           </p>
         </div>
 
         {/* GitHub CI Status Pills */}
         <div className="flex items-center gap-2 bg-slate-950 p-2.5 rounded-xl border border-slate-800 text-xs font-mono">
           <span className="px-2 py-1 bg-emerald-500/10 text-emerald-400 rounded border border-emerald-500/30 font-bold">
-            Install: SUCCESS
+            Frontend CI
           </span>
           <span className="px-2 py-1 bg-emerald-500/10 text-emerald-400 rounded border border-emerald-500/30 font-bold">
-            Ruff Lint: SUCCESS
-          </span>
-          <span className="px-2 py-1 bg-emerald-500/10 text-emerald-400 rounded border border-emerald-500/30 font-bold">
-            Pytest: SUCCESS
+            Python CI
           </span>
         </div>
       </div>
@@ -138,7 +135,7 @@ def process_shorts_video(input_path: str, voiceover_path: str, output_path: str)
               <span>Atomic Locking Mechanism</span>
             </div>
             <p className="text-slate-400 text-[11px] leading-relaxed">
-              Uses <code className="text-slate-200">SELECT * FROM jobs WHERE status = 'pending' FOR UPDATE SKIP LOCKED LIMIT 1</code> in Neon PostgreSQL to ensure multiple workers never pick up or render the same gameplay video concurrently.
+              Uses <code className="text-slate-200">SELECT * FROM video_queue WHERE status = 'pending' FOR UPDATE SKIP LOCKED LIMIT 1</code> in Neon PostgreSQL.
             </p>
           </div>
         </div>

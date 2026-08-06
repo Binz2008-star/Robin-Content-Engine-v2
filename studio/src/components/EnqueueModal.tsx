@@ -1,24 +1,13 @@
 import React, { useState } from 'react';
-import { ShieldAlert, Video, FileCheck, CheckCircle2, AlertCircle, Plus, FolderOpen } from 'lucide-react';
+import { ShieldAlert, Video, Plus, FolderOpen } from 'lucide-react';
 import { GoogleDrivePicker } from './GoogleDrivePicker';
 import { GoogleDriveFile } from '../lib/googleDrive';
+import { EnqueueJobRequest } from '../types';
 
 interface EnqueueModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onEnqueue: (data: {
-    title: string;
-    sourcePath: string;
-    rightsNote: string;
-    confirmRights: boolean;
-    privacy: 'private' | 'unlisted' | 'public';
-    customScript?: {
-      title: string;
-      description: string;
-      tags: string[];
-      script: string;
-    };
-  }) => void;
+  onEnqueue: (payload: EnqueueJobRequest) => void;
 }
 
 export const EnqueueModal: React.FC<EnqueueModalProps> = ({
@@ -30,10 +19,6 @@ export const EnqueueModal: React.FC<EnqueueModalProps> = ({
   const [sourcePath, setSourcePath] = useState('C:\\media\\my-gameplay.mp4');
   const [rightsNote, setRightsNote] = useState('Recorded by Robin for Robin Life & Gaming');
   const [confirmRights, setConfirmRights] = useState(true);
-  const [privacy, setPrivacy] = useState<'private' | 'unlisted' | 'public'>('private');
-  const [useCustomScript, setUseCustomScript] = useState(false);
-  const [customTitle, setCustomTitle] = useState('أقوى مواجهة فورتنايت! 🎯🔥 #Shorts');
-  const [customScriptText, setCustomScriptText] = useState('يا خوي شوف هالسنيبة الأسطورية من نص الماب! لا تنسى اللايك والدعم يا بطل 🇦🇪✨');
 
   if (!isOpen) return null;
 
@@ -50,19 +35,10 @@ export const EnqueueModal: React.FC<EnqueueModalProps> = ({
     }
 
     onEnqueue({
-      title,
-      sourcePath,
-      rightsNote,
-      confirmRights,
-      privacy,
-      customScript: useCustomScript
-        ? {
-            title: customTitle,
-            description: `${customTitle}\nVideo created with Robin Engine Pipeline for Robin Life & Gaming.`,
-            tags: ['Gaming', 'Shorts', 'Fortnite', 'الإمارات'],
-            script: customScriptText,
-          }
-        : undefined,
+      source_title: title,
+      source_path: sourcePath,
+      rights_note: rightsNote,
+      rights_confirmed: confirmRights,
     });
 
     onClose();
@@ -70,7 +46,7 @@ export const EnqueueModal: React.FC<EnqueueModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
-      <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-xl shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+      <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-xl shadow-2xl overflow-hidden">
         {/* Modal Header */}
         <div className="p-5 border-b border-slate-800 bg-slate-950/60 flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -78,14 +54,9 @@ export const EnqueueModal: React.FC<EnqueueModalProps> = ({
               <Video className="w-5 h-5" />
             </div>
             <div>
-              <div className="flex items-center gap-2">
-                <h3 className="font-bold text-slate-100 text-sm">
-                  Enqueue Gameplay Video
-                </h3>
-                <span className="px-2 py-0.5 text-[9px] font-mono font-bold bg-amber-500/20 text-amber-300 rounded">
-                  SIMULATED
-                </span>
-              </div>
+              <h3 className="font-bold text-slate-100 text-sm">
+                Enqueue Gameplay Video
+              </h3>
               <p className="text-xs text-slate-400 font-mono">
                 CLI equivalent: robin-engine enqueue-local
               </p>
@@ -101,7 +72,6 @@ export const EnqueueModal: React.FC<EnqueueModalProps> = ({
 
         {/* Modal Form */}
         <form onSubmit={handleSubmit} className="p-5 space-y-4 max-h-[80vh] overflow-y-auto">
-          {/* Google Drive Import Section */}
           <GoogleDrivePicker onSelectDriveFile={handleSelectDriveFile} />
 
           {/* Title */}
@@ -123,7 +93,7 @@ export const EnqueueModal: React.FC<EnqueueModalProps> = ({
           <div className="space-y-1.5">
             <label className="text-xs font-semibold text-slate-300 flex items-center justify-between">
               <span>Video File Path or Google Drive Source</span>
-              <span className="text-[10px] text-slate-500 font-mono">9:16 or 16:9 vertical crop</span>
+              <span className="text-[10px] text-slate-500 font-mono">9:16 vertical crop</span>
             </label>
             <div className="relative">
               <input
@@ -173,57 +143,6 @@ export const EnqueueModal: React.FC<EnqueueModalProps> = ({
                 </span>
               </label>
             </div>
-          </div>
-
-          {/* YouTube Privacy Default */}
-          <div className="space-y-1.5">
-            <label className="text-xs font-semibold text-slate-300 flex items-center justify-between">
-              <span>YouTube Upload Privacy Level</span>
-              <span className="text-[10px] text-emerald-400 font-mono">Private by default</span>
-            </label>
-            <select
-              value={privacy}
-              onChange={(e: any) => setPrivacy(e.target.value)}
-              className="w-full px-3.5 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-200 focus:outline-none focus:border-amber-500/50 cursor-pointer"
-            >
-              <option value="private">Private (Recommended - Review before releasing)</option>
-              <option value="unlisted">Unlisted (Shareable preview link)</option>
-              <option value="public">Public (Immediate publish)</option>
-            </select>
-          </div>
-
-          {/* Optional Script Customization */}
-          <div className="pt-2">
-            <button
-              type="button"
-              onClick={() => setUseCustomScript(!useCustomScript)}
-              className="text-xs font-medium text-amber-400 hover:text-amber-300 transition flex items-center gap-1"
-            >
-              <span>{useCustomScript ? '▼ Hide Script Overrides' : '► Provide Manual Script Overrides (Optional)'}</span>
-            </button>
-
-            {useCustomScript && (
-              <div className="mt-2.5 p-3 bg-slate-950 border border-slate-800 rounded-xl space-y-2.5 text-xs">
-                <div>
-                  <label className="text-slate-400">Shorts Title:</label>
-                  <input
-                    type="text"
-                    value={customTitle}
-                    onChange={(e) => setCustomTitle(e.target.value)}
-                    className="w-full px-3 py-1.5 bg-slate-900 border border-slate-800 rounded-lg text-slate-200 mt-1"
-                  />
-                </div>
-                <div>
-                  <label className="text-slate-400">Emirati Voiceover Script:</label>
-                  <textarea
-                    rows={2}
-                    value={customScriptText}
-                    onChange={(e) => setCustomScriptText(e.target.value)}
-                    className="w-full px-3 py-1.5 bg-slate-900 border border-slate-800 rounded-lg text-amber-300/90 mt-1"
-                  />
-                </div>
-              </div>
-            )}
           </div>
 
           {/* Footer Actions */}

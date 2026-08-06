@@ -1,26 +1,17 @@
 import React from 'react';
-import { Database, ShieldCheck, Film, Volume2, Youtube, Clock, CheckCircle2, AlertTriangle, Play, Sparkles } from 'lucide-react';
-import { EngineJob } from '../types';
+import { Database, ShieldCheck, Film, Volume2, Youtube, AlertTriangle, Sparkles, Plus } from 'lucide-react';
+import { JobCounts, ConnectionStatus } from '../types';
 
 interface DashboardOverviewProps {
-  jobs: EngineJob[];
-  counts: {
-    pending: number;
-    processing: number;
-    rendered: number;
-    uploaded: number;
-    failed: number;
-    quarantined: number;
-  };
-  onRunWorker: (renderOnly: boolean) => void;
-  isProcessingWorker: boolean;
+  counts: JobCounts;
+  connectionStatus: ConnectionStatus;
+  onOpenEnqueueModal: () => void;
 }
 
 export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
-  jobs,
   counts,
-  onRunWorker,
-  isProcessingWorker,
+  connectionStatus,
+  onOpenEnqueueModal,
 }) => {
   return (
     <div className="space-y-6">
@@ -35,35 +26,30 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
               <h2 className="text-base font-bold text-white tracking-wide">
                 Robin Engine Studio UI
               </h2>
-              <span className="px-2 py-0.5 text-[10px] uppercase tracking-wider font-mono font-bold bg-amber-500/10 text-amber-400 border border-amber-500/30 rounded">
-                SIMULATED PREVIEW
-              </span>
-              <span className="px-2 py-0.5 text-[10px] uppercase tracking-wider font-mono font-bold bg-rose-500/10 text-rose-300 border border-rose-500/30 rounded">
-                DEMO DATA
-              </span>
+              {connectionStatus === 'demo_mode' && (
+                <span className="px-2 py-0.5 text-[10px] uppercase tracking-wider font-mono font-bold bg-amber-500/10 text-amber-400 border border-amber-500/30 rounded">
+                  DEMO MODE ENABLED
+                </span>
+              )}
+              {connectionStatus === 'connected' && (
+                <span className="px-2 py-0.5 text-[10px] uppercase tracking-wider font-mono font-bold bg-emerald-500/10 text-emerald-300 border border-emerald-500/30 rounded">
+                  API CONNECTED
+                </span>
+              )}
             </div>
             <p className="text-xs text-slate-300 mt-1 leading-relaxed">
-              ⚠️ UI actions are currently simulated. Full Neon PostgreSQL atomic queue locks, DeepSeek script generation, MoviePy v2 rendering, and YouTube uploads will execute via the Python engine (<code className="text-amber-300 font-mono">src/robin_content_engine/</code>) once connected to <code className="text-amber-300 font-mono">VITE_API_BASE_URL</code>.
+              Managing Robin Life & Gaming content queue. Real Robin Engine API endpoints run via Python backend (<code className="text-amber-300 font-mono">src/robin_content_engine/</code>).
             </p>
           </div>
         </div>
 
         <div className="flex items-center gap-2 self-end md:self-center shrink-0">
           <button
-            onClick={() => onRunWorker(true)}
-            disabled={isProcessingWorker}
-            className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-medium transition flex items-center gap-1.5"
+            onClick={onOpenEnqueueModal}
+            className="px-3.5 py-1.5 rounded-lg bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-400 hover:to-orange-500 text-slate-950 font-bold text-xs transition shadow flex items-center gap-1.5"
           >
-            <Film className="w-3.5 h-3.5 text-amber-400" />
-            <span>Render Only (Simulated)</span>
-          </button>
-          <button
-            onClick={() => onRunWorker(false)}
-            disabled={isProcessingWorker}
-            className="px-3.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs transition shadow flex items-center gap-1.5"
-          >
-            <Play className="w-3.5 h-3.5 fill-current" />
-            <span>Run Pipeline (Simulated)</span>
+            <Plus className="w-3.5 h-3.5 stroke-[3]" />
+            <span>Enqueue Gameplay Job</span>
           </button>
         </div>
       </div>
@@ -74,7 +60,6 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
         <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-4 shadow-sm hover:border-amber-500/40 transition">
           <div className="flex items-center justify-between text-slate-400">
             <span className="text-xs font-medium">Pending Queue</span>
-            <span className="text-[9px] font-mono font-bold px-1.5 py-0.2 bg-slate-800 text-amber-400 rounded">DEMO DATA</span>
           </div>
           <div className="mt-2 flex items-baseline justify-between">
             <span className="text-2xl font-black text-amber-400 font-mono">{counts.pending}</span>
@@ -86,7 +71,6 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
         <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-4 shadow-sm hover:border-blue-500/40 transition">
           <div className="flex items-center justify-between text-slate-400">
             <span className="text-xs font-medium">Processing</span>
-            <span className="text-[9px] font-mono font-bold px-1.5 py-0.2 bg-slate-800 text-blue-400 rounded">DEMO DATA</span>
           </div>
           <div className="mt-2 flex items-baseline justify-between">
             <span className="text-2xl font-black text-blue-400 font-mono">{counts.processing}</span>
@@ -98,7 +82,6 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
         <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-4 shadow-sm hover:border-indigo-500/40 transition">
           <div className="flex items-center justify-between text-slate-400">
             <span className="text-xs font-medium">MoviePy Rendered</span>
-            <span className="text-[9px] font-mono font-bold px-1.5 py-0.2 bg-slate-800 text-indigo-400 rounded">DEMO DATA</span>
           </div>
           <div className="mt-2 flex items-baseline justify-between">
             <span className="text-2xl font-black text-indigo-400 font-mono">{counts.rendered}</span>
@@ -110,7 +93,6 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
         <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-4 shadow-sm hover:border-emerald-500/40 transition">
           <div className="flex items-center justify-between text-slate-400">
             <span className="text-xs font-medium">YouTube Uploaded</span>
-            <span className="text-[9px] font-mono font-bold px-1.5 py-0.2 bg-slate-800 text-emerald-400 rounded">DEMO DATA</span>
           </div>
           <div className="mt-2 flex items-baseline justify-between">
             <span className="text-2xl font-black text-emerald-400 font-mono">{counts.uploaded}</span>

@@ -3,8 +3,6 @@ import {
   Play, 
   Film, 
   AlertTriangle, 
-  RotateCcw, 
-  Trash2, 
   Eye, 
   CheckCircle2, 
   Clock, 
@@ -13,35 +11,33 @@ import {
   Search, 
   Filter,
   FileText,
-  Volume2,
-  ExternalLink
+  Volume2
 } from 'lucide-react';
-import { EngineJob, JobStatus } from '../types';
+import { VideoJob, JobStatus } from '../types';
 
 interface QueueTableProps {
-  jobs: EngineJob[];
+  jobs: VideoJob[];
   onRunWorkerJob: (jobId: string, renderOnly: boolean) => void;
-  onUpdateJobStatus: (jobId: string, action: 'quarantine' | 'retry' | 'delete') => void;
-  onSelectJobForPreview: (job: EngineJob) => void;
+  onSelectJobForPreview: (job: VideoJob) => void;
   isProcessing: boolean;
 }
 
 export const QueueTable: React.FC<QueueTableProps> = ({
   jobs,
   onRunWorkerJob,
-  onUpdateJobStatus,
   onSelectJobForPreview,
   isProcessing,
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
-  const [selectedLogJob, setSelectedLogJob] = useState<EngineJob | null>(null);
+  const [selectedLogJob, setSelectedLogJob] = useState<VideoJob | null>(null);
 
   const filteredJobs = jobs.filter((job) => {
+    const searchLower = searchTerm.toLowerCase();
     const matchesSearch =
-      job.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      job.sourcePath.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (job.scriptData?.title || '').toLowerCase().includes(searchTerm.toLowerCase());
+      job.source_title.toLowerCase().includes(searchLower) ||
+      (job.source_path || '').toLowerCase().includes(searchLower) ||
+      (job.generated_script || '').toLowerCase().includes(searchLower);
 
     const matchesStatus = statusFilter === 'all' || job.status === statusFilter;
     return matchesSearch && matchesStatus;
@@ -130,11 +126,9 @@ export const QueueTable: React.FC<QueueTableProps> = ({
         </div>
 
         <div className="text-xs text-slate-400 font-mono flex items-center gap-2 self-end sm:self-center">
-          <span className="px-2 py-0.5 text-[10px] font-bold bg-rose-500/10 text-rose-300 border border-rose-500/30 rounded">DEMO DATA</span>
-          <span className="text-slate-700">•</span>
           <span>Database: <strong className="text-emerald-400">Neon PostgreSQL</strong></span>
           <span className="text-slate-700">•</span>
-          <span>Table: <strong className="text-amber-400">jobs</strong></span>
+          <span>Table: <strong className="text-amber-400">video_queue</strong></span>
         </div>
       </div>
 
@@ -155,7 +149,7 @@ export const QueueTable: React.FC<QueueTableProps> = ({
             {filteredJobs.length === 0 ? (
               <tr>
                 <td colSpan={6} className="py-12 text-center text-slate-500">
-                  No jobs found matching your criteria. Click "Enqueue Gameplay" to add a new video job.
+                  No jobs found matching your criteria. Click "Enqueue Job" to add a new video job.
                 </td>
               </tr>
             ) : (
@@ -166,17 +160,17 @@ export const QueueTable: React.FC<QueueTableProps> = ({
                     <div className="space-y-1">
                       <div className="flex items-center gap-2">
                         <span className="font-mono font-bold text-amber-400 text-xs">
-                          {job.id}
+                          #{job.id}
                         </span>
                         <span className="text-[10px] text-slate-500 font-mono">
-                          {new Date(job.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          {job.created_at ? new Date(job.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}
                         </span>
                       </div>
                       <p className="font-semibold text-slate-200 text-xs line-clamp-1">
-                        {job.scriptData?.title || job.title}
+                        {job.source_title}
                       </p>
-                      <p className="text-[11px] text-slate-400 font-mono truncate max-w-xs" title={job.sourcePath}>
-                        📁 {job.sourcePath}
+                      <p className="text-[11px] text-slate-400 font-mono truncate max-w-xs" title={job.source_path || ''}>
+                        📁 {job.source_path || 'No source path'}
                       </p>
                     </div>
                   </td>
@@ -185,8 +179,8 @@ export const QueueTable: React.FC<QueueTableProps> = ({
                   <td className="py-3.5 px-4">
                     <div className="flex items-center gap-1.5 text-slate-300">
                       <ShieldCheck className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                      <span className="text-xs line-clamp-2" title={job.rightsNote}>
-                        {job.rightsNote}
+                      <span className="text-xs line-clamp-2" title={job.rights_note || ''}>
+                        {job.rights_note || 'Recorded by Robin'}
                       </span>
                     </div>
                   </td>
@@ -195,14 +189,6 @@ export const QueueTable: React.FC<QueueTableProps> = ({
                   <td className="py-3.5 px-4">
                     <div className="space-y-1">
                       {getStatusBadge(job.status)}
-                      {job.status === 'processing' && job.renderingProgress !== undefined && (
-                        <div className="w-24 bg-slate-800 rounded-full h-1.5 overflow-hidden">
-                          <div
-                            className="bg-blue-400 h-full transition-all duration-300"
-                            style={{ width: `${job.renderingProgress}%` }}
-                          />
-                        </div>
-                      )}
                     </div>
                   </td>
 
@@ -211,11 +197,11 @@ export const QueueTable: React.FC<QueueTableProps> = ({
                     <div className="space-y-1 text-slate-400 font-mono text-[11px]">
                       <div className="flex items-center gap-1 text-slate-300">
                         <Film className="w-3 h-3 text-indigo-400" />
-                        <span>{job.videoFormat.aspectRatio} ({job.videoFormat.resolution})</span>
+                        <span>9:16 (1080x1920)</span>
                       </div>
                       <div className="flex items-center gap-1 text-amber-400">
                         <Volume2 className="w-3 h-3" />
-                        <span>{job.voiceover?.voice || "ar-AE-HamdanNeural"}</span>
+                        <span>ar-AE-HamdanNeural</span>
                       </div>
                     </div>
                   </td>
@@ -235,7 +221,6 @@ export const QueueTable: React.FC<QueueTableProps> = ({
                   {/* Actions */}
                   <td className="py-3.5 px-4 text-right">
                     <div className="flex items-center justify-end gap-1.5">
-                      {/* View Canvas Preview */}
                       {(job.status === 'rendered' || job.status === 'uploaded') && (
                         <button
                           onClick={() => onSelectJobForPreview(job)}
@@ -246,9 +231,8 @@ export const QueueTable: React.FC<QueueTableProps> = ({
                         </button>
                       )}
 
-                      {/* Run Worker on this Job */}
                       <button
-                        onClick={() => onRunWorkerJob(job.id, false)}
+                        onClick={() => onRunWorkerJob(String(job.id), false)}
                         disabled={isProcessing}
                         title="Run Pipeline (Render + Upload)"
                         className="p-1.5 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 transition disabled:opacity-50"
@@ -256,9 +240,8 @@ export const QueueTable: React.FC<QueueTableProps> = ({
                         <Play className="w-3.5 h-3.5 fill-current" />
                       </button>
 
-                      {/* Render Only */}
                       <button
-                        onClick={() => onRunWorkerJob(job.id, true)}
+                        onClick={() => onRunWorkerJob(String(job.id), true)}
                         disabled={isProcessing}
                         title="Render Only (Skip YouTube Upload)"
                         className="p-1.5 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-amber-500/30 transition disabled:opacity-50"
@@ -266,42 +249,12 @@ export const QueueTable: React.FC<QueueTableProps> = ({
                         <Film className="w-3.5 h-3.5" />
                       </button>
 
-                      {/* Logs Modal */}
                       <button
                         onClick={() => setSelectedLogJob(job)}
                         title="View Execution Logs & Script"
                         className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 transition"
                       >
                         <FileText className="w-3.5 h-3.5" />
-                      </button>
-
-                      {/* Quarantine */}
-                      {job.status !== 'quarantined' && (
-                        <button
-                          onClick={() => onUpdateJobStatus(job.id, 'quarantine')}
-                          title="Quarantine Job"
-                          className="p-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 transition"
-                        >
-                          <AlertTriangle className="w-3.5 h-3.5" />
-                        </button>
-                      )}
-
-                      {/* Reset / Retry */}
-                      <button
-                        onClick={() => onUpdateJobStatus(job.id, 'retry')}
-                        title="Reset Job to Pending"
-                        className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 transition"
-                      >
-                        <RotateCcw className="w-3.5 h-3.5" />
-                      </button>
-
-                      {/* Delete */}
-                      <button
-                        onClick={() => onUpdateJobStatus(job.id, 'delete')}
-                        title="Delete Job"
-                        className="p-1.5 rounded-lg bg-slate-800 hover:bg-rose-900/40 hover:text-rose-400 text-slate-500 transition"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
                       </button>
                     </div>
                   </td>
@@ -320,9 +273,9 @@ export const QueueTable: React.FC<QueueTableProps> = ({
               <div>
                 <h3 className="font-bold text-slate-200 text-sm flex items-center gap-2">
                   <FileText className="w-4 h-4 text-amber-400" />
-                  <span>Execution Logs & Script: {selectedLogJob.id}</span>
+                  <span>Execution Logs & Script: #{selectedLogJob.id}</span>
                 </h3>
-                <p className="text-xs text-slate-400 truncate mt-0.5">{selectedLogJob.title}</p>
+                <p className="text-xs text-slate-400 truncate mt-0.5">{selectedLogJob.source_title}</p>
               </div>
               <button
                 onClick={() => setSelectedLogJob(null)}
@@ -333,45 +286,25 @@ export const QueueTable: React.FC<QueueTableProps> = ({
             </div>
 
             <div className="p-4 space-y-4 overflow-y-auto font-sans text-xs">
-              {/* Script Data */}
-              {selectedLogJob.scriptData && (
+              {selectedLogJob.generated_script && (
                 <div className="bg-slate-950 border border-slate-800/80 rounded-xl p-3 space-y-2">
                   <div className="text-amber-400 font-bold text-xs flex items-center justify-between">
                     <span>DeepSeek AI Generated Script (Emirati Dialect)</span>
-                    <span className="text-[10px] text-emerald-400 font-mono">Pydantic OK</span>
-                  </div>
-                  <div>
-                    <span className="text-slate-400 font-medium">Title: </span>
-                    <span className="text-slate-200 font-bold">{selectedLogJob.scriptData.title}</span>
                   </div>
                   <div>
                     <span className="text-slate-400 font-medium">Voiceover Script: </span>
                     <p className="p-2.5 bg-slate-900 rounded-lg text-amber-200/90 italic mt-1 leading-relaxed border border-slate-800">
-                      "{selectedLogJob.scriptData.script}"
+                      "{selectedLogJob.generated_script}"
                     </p>
-                  </div>
-                  <div className="flex flex-wrap gap-1 pt-1">
-                    {selectedLogJob.scriptData.tags.map((tag, idx) => (
-                      <span key={idx} className="px-2 py-0.5 bg-slate-900 text-slate-400 rounded text-[10px] font-mono">
-                        #{tag}
-                      </span>
-                    ))}
                   </div>
                 </div>
               )}
 
-              {/* Logs Output */}
-              <div className="space-y-1">
-                <div className="text-slate-400 font-mono text-[11px] font-semibold">Process Execution Log:</div>
-                <div className="bg-slate-950 p-3 rounded-xl border border-slate-800/80 font-mono text-[11px] text-slate-300 space-y-1.5 max-h-48 overflow-y-auto">
-                  {selectedLogJob.logs.map((log, index) => (
-                    <div key={index} className="flex gap-2">
-                      <span className="text-amber-500/70 select-none">&gt;</span>
-                      <span className="break-all">{log}</span>
-                    </div>
-                  ))}
+              {selectedLogJob.last_error && (
+                <div className="bg-rose-950/40 border border-rose-800 rounded-xl p-3 text-rose-300">
+                  <strong>Last Error:</strong> {selectedLogJob.last_error}
                 </div>
-              </div>
+              )}
             </div>
 
             <div className="p-3 border-t border-slate-800 bg-slate-950/80 flex justify-end">

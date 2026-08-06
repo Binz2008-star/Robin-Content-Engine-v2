@@ -1,14 +1,8 @@
 import React, { useState } from 'react';
-import { Sparkles, Volume2, Play, Pause, Copy, Check, RefreshCw, Layers, CheckCircle2, ShieldCheck, FileJson } from 'lucide-react';
+import { Sparkles, Play, Pause, Copy, Check, RefreshCw, Layers, CheckCircle2, FileJson } from 'lucide-react';
 import { ScriptData } from '../types';
 
-interface ScriptGeneratorStudioProps {
-  onApplyScriptToEnqueue?: (script: ScriptData) => void;
-}
-
-export const ScriptGeneratorStudio: React.FC<ScriptGeneratorStudioProps> = ({
-  onApplyScriptToEnqueue,
-}) => {
+export const ScriptGeneratorStudio: React.FC = () => {
   const [topic, setTopic] = useState('لقطة قنص مستحيلة في فورتنايت');
   const [gameName, setGameName] = useState('Fortnite');
   const [style, setStyle] = useState('حماسي وكوميدي');
@@ -56,7 +50,7 @@ export const ScriptGeneratorStudio: React.FC<ScriptGeneratorStudioProps> = ({
     }
 
     const utterance = new SpeechSynthesisUtterance(generatedScript.script);
-    utterance.lang = 'ar-AE'; // Emirati Arabic accent request
+    utterance.lang = 'ar-AE';
     utterance.rate = voiceRate;
 
     utterance.onend = () => setIsPlayingAudio(false);
@@ -80,9 +74,6 @@ export const ScriptGeneratorStudio: React.FC<ScriptGeneratorStudioProps> = ({
           <div className="flex items-center gap-2 text-amber-400 font-bold text-sm">
             <Sparkles className="w-5 h-5" />
             <span>DeepSeek AI Generator & Emirati TTS (ar-AE-HamdanNeural)</span>
-            <span className="px-2 py-0.5 text-[10px] font-mono font-bold bg-amber-500/20 text-amber-300 rounded">
-              SIMULATED
-            </span>
           </div>
           <h2 className="text-xl font-black text-slate-100 mt-1">
             Shorts Script Generator Studio
@@ -148,7 +139,7 @@ export const ScriptGeneratorStudio: React.FC<ScriptGeneratorStudioProps> = ({
                 <span className="text-amber-400 font-mono">ar-AE-HamdanNeural</span>
               </div>
               <p className="text-[11px] text-slate-400 leading-relaxed">
-                Native Emirati voice synthesizer calibrated for high-speed YouTube Shorts commentary. MoviePy v2 merges this voiceover with background audio ducked to 15%.
+                Native Emirati voice synthesizer calibrated for high-speed YouTube Shorts commentary.
               </p>
             </div>
           </div>
@@ -159,7 +150,7 @@ export const ScriptGeneratorStudio: React.FC<ScriptGeneratorStudioProps> = ({
             className="w-full py-3 bg-gradient-to-r from-amber-500 via-orange-500 to-red-500 hover:from-amber-400 hover:to-orange-400 text-slate-950 font-black text-xs rounded-xl shadow-lg transition flex items-center justify-center gap-2"
           >
             <RefreshCw className={`w-4 h-4 ${isGenerating ? 'animate-spin' : ''}`} />
-            <span>{isGenerating ? 'Generating JSON Script...' : 'Generate AI Script (DeepSeek Mode)'}</span>
+            <span>{isGenerating ? 'Generating JSON Script...' : 'Generate AI Script'}</span>
           </button>
         </div>
 

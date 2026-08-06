@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Terminal, Copy, Check, Play, RefreshCw, Layers } from 'lucide-react';
+import { Terminal, Copy, Check, Layers } from 'lucide-react';
 
 interface CLIConsoleModalProps {
   isOpen: boolean;
@@ -16,7 +16,7 @@ export const CLIConsoleModal: React.FC<CLIConsoleModalProps> = ({
   const [customTerminalInput, setCustomTerminalInput] = useState('');
   const [terminalLogs, setTerminalLogs] = useState<string[]>([
     '$ robin-engine --version',
-    'robin-engine 1.0.0 (feat/initial-engine, commit 779c4d62)',
+    'robin-engine 1.0.0 (feat/initial-engine)',
     'Neon PostgreSQL connection verified.',
     'DeepSeek JSON generator & Pydantic validator initialized.',
     'MoviePy v2 video renderer ready.',
