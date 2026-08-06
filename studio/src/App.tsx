@@ -13,10 +13,11 @@ import {
   ConnectionStatus,
   StudioTab,
   EnqueueJobRequest,
+  JobActionType,
 } from './types';
-import { apiClient } from './api/client';
+import { apiClient, ApiError } from './api/client';
 import { POLLING_INTERVAL_MS } from './config';
-import { WifiOff } from 'lucide-react';
+import { WifiOff, AlertCircle, Clock, Database } from 'lucide-react';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<StudioTab>('overview');
@@ -47,19 +48,41 @@ export default function App() {
     activeAbortController.current = controller;
 
     try {
-      if (apiClient.isDemoMode()) {
-        setConnectionStatus('demo_mode');
-      } else {
-        await apiClient.getHealth({ signal: controller.signal });
-        setConnectionStatus('connected');
+      if (apiClient.isConfigError()) {
+        setConnectionStatus('config_error');
+        setErrorMessage(
+          'Configuration Error: VITE_API_BASE_URL environment variable is missing in live API mode. Set VITE_API_BASE_URL or set VITE_DEMO_MODE=true.'
+        );
+        setJobs([]);
+        setCounts({
+          pending: 0,
+          processing: 0,
+          rendered: 0,
+          uploaded: 0,
+          failed: 0,
+          quarantined: 0,
+          total: 0,
+        });
+        return;
       }
 
-      const fetchedJobs = await apiClient.getJobs({ signal: controller.signal });
-      const fetchedCounts = await apiClient.getJobCounts({ signal: controller.signal });
+      if (apiClient.isDemoMode()) {
+        setConnectionStatus('demo_mode');
+        setErrorMessage(null);
+      } else {
+        const health = await apiClient.getHealth({ signal: controller.signal });
+        if (health.database && health.database.includes('disconnected')) {
+          setConnectionStatus('db_unavailable');
+          setErrorMessage('Database Connection Failure: FastAPI backend is running but database is unreachable.');
+        } else {
+          setConnectionStatus('connected');
+          setErrorMessage(null);
+        }
+      }
 
-      setJobs(fetchedJobs);
-      setCounts(fetchedCounts);
-      setErrorMessage(null);
+      const res = await apiClient.getJobsAndCounts({ signal: controller.signal });
+      setJobs(res.jobs);
+      setCounts(res.counts);
     } catch (err) {
       if (err instanceof Error && err.name === 'AbortError') {
         return;
@@ -67,12 +90,15 @@ export default function App() {
       console.error('Failed to fetch API data:', err);
 
       if (!apiClient.isDemoMode()) {
-        setConnectionStatus('offline');
-        setErrorMessage(
-          err instanceof Error
-            ? err.message
-            : 'Failed to connect to backend API.'
-        );
+        if (err instanceof ApiError && err.status === 408) {
+          setConnectionStatus('timeout');
+          setErrorMessage('API Connection Timeout: The backend request timed out.');
+        } else {
+          setConnectionStatus('offline');
+          setErrorMessage(
+            err instanceof Error ? err.message : 'Backend Offline: Unable to reach FastAPI server.'
+          );
+        }
       }
     }
   }, []);
@@ -134,13 +160,27 @@ export default function App() {
     }
   };
 
-  const handleRunWorker = async (renderOnly = false) => {
+  const handleRunJob = async (jobId: string, renderOnly: boolean) => {
     setIsProcessingWorker(true);
     try {
-      await apiClient.runWorker(renderOnly);
+      await apiClient.runJob(jobId, renderOnly);
       await fetchJobsAndHealth();
     } catch (err) {
-      console.error('Worker run failed:', err);
+      console.error('Run job failed:', err);
+      alert(`Run failed: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setIsProcessingWorker(false);
+    }
+  };
+
+  const handleJobAction = async (jobId: string, action: JobActionType) => {
+    setIsProcessingWorker(true);
+    try {
+      await apiClient.performJobAction(jobId, action);
+      await fetchJobsAndHealth();
+    } catch (err) {
+      console.error(`Job action '${action}' failed:`, err);
+      alert(`Action '${action}' failed: ${err instanceof Error ? err.message : String(err)}`);
     } finally {
       setIsProcessingWorker(false);
     }
@@ -162,12 +202,46 @@ export default function App() {
         onRefresh={fetchJobsAndHealth}
       />
 
-      {connectionStatus === 'offline' && errorMessage && (
-        <div className="bg-rose-950/80 border-b border-rose-800 text-rose-200 px-4 py-3 text-xs flex items-center justify-between">
-          <div className="max-w-7xl mx-auto flex items-center gap-2 w-full">
+      {/* Connection Status Banners */}
+      {connectionStatus === 'config_error' && (
+        <div className="bg-purple-950/90 border-b border-purple-800 text-purple-200 px-4 py-3 text-xs">
+          <div className="max-w-7xl mx-auto flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 text-purple-400 shrink-0" />
+            <span>
+              <strong>Configuration Error:</strong> VITE_API_BASE_URL environment variable is missing in live API mode. Set VITE_API_BASE_URL or set VITE_DEMO_MODE=true.
+            </span>
+          </div>
+        </div>
+      )}
+
+      {connectionStatus === 'offline' && (
+        <div className="bg-rose-950/90 border-b border-rose-800 text-rose-200 px-4 py-3 text-xs">
+          <div className="max-w-7xl mx-auto flex items-center gap-2">
             <WifiOff className="w-4 h-4 text-rose-400 shrink-0" />
             <span>
-              <strong>Backend Offline:</strong> {errorMessage} Live mode will not silently load demo data.
+              <strong>Backend Offline:</strong> {errorMessage || 'Unable to connect to FastAPI backend.'} Live API mode will not silently load demo data.
+            </span>
+          </div>
+        </div>
+      )}
+
+      {connectionStatus === 'timeout' && (
+        <div className="bg-orange-950/90 border-b border-orange-800 text-orange-200 px-4 py-3 text-xs">
+          <div className="max-w-7xl mx-auto flex items-center gap-2">
+            <Clock className="w-4 h-4 text-orange-400 shrink-0" />
+            <span>
+              <strong>Request Timed Out:</strong> FastAPI backend response exceeded {10000}ms. Check backend server logs.
+            </span>
+          </div>
+        </div>
+      )}
+
+      {connectionStatus === 'db_unavailable' && (
+        <div className="bg-rose-950/90 border-b border-rose-800 text-rose-200 px-4 py-3 text-xs">
+          <div className="max-w-7xl mx-auto flex items-center gap-2">
+            <Database className="w-4 h-4 text-rose-400 shrink-0" />
+            <span>
+              <strong>Database Unavailable:</strong> The FastAPI backend is running but PostgreSQL database connection failed.
             </span>
           </div>
         </div>
@@ -185,9 +259,12 @@ export default function App() {
         {activeTab === 'queue' && (
           <QueueTable
             jobs={jobs}
-            onRunWorkerJob={(_jobId, renderOnly) => handleRunWorker(renderOnly)}
-            onSelectJobForPreview={handleSelectJobForPreview}
+            isDemoMode={connectionStatus === 'demo_mode'}
             isProcessing={isProcessingWorker}
+            onRunWorkerJob={handleRunJob}
+            onJobAction={handleJobAction}
+            onSelectJobForPreview={handleSelectJobForPreview}
+            onOpenEnqueueModal={() => setIsEnqueueOpen(true)}
           />
         )}
 
@@ -209,7 +286,7 @@ export default function App() {
             <span>Robin Life & Gaming Shorts Pipeline</span>
           </div>
           <div className="font-mono text-[11px] text-slate-400">
-            Branch: feat/studio-ui | Target Dir: studio/
+            Branch: feat/studio-api-readiness | Target Dir: studio/
           </div>
         </div>
       </footer>
@@ -223,7 +300,14 @@ export default function App() {
       <CLIConsoleModal
         isOpen={isCLIOpen}
         onClose={() => setIsCLIOpen(false)}
-        onRunOnceCLI={(renderOnly) => handleRunWorker(renderOnly)}
+        onRunOnceCLI={(renderOnly) => {
+          if (jobs.length > 0) {
+            const firstPending = jobs.find((j) => j.status === 'pending');
+            if (firstPending) {
+              handleRunJob(String(firstPending.id), renderOnly);
+            }
+          }
+        }}
       />
     </div>
   );

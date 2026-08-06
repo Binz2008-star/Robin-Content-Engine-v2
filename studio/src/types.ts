@@ -5,4 +5,11 @@ export type ScriptData = GeneratedContent;
 
 export type StudioTab = 'overview' | 'queue' | 'script' | 'schema';
 
-export type ConnectionStatus = 'connecting' | 'connected' | 'demo_mode' | 'offline';
+export type ConnectionStatus =
+  | 'connecting'
+  | 'connected'
+  | 'demo_mode'
+  | 'offline'
+  | 'config_error'
+  | 'timeout'
+  | 'db_unavailable';

@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
-import { Terminal, Copy, Check, Layers } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { Check, Copy, Layers, Terminal, X } from 'lucide-react';
+import { copyTextToClipboard } from '../lib/clipboard';
 
 interface CLIConsoleModalProps {
   isOpen: boolean;
@@ -13,53 +14,70 @@ export const CLIConsoleModal: React.FC<CLIConsoleModalProps> = ({
   onRunOnceCLI,
 }) => {
   const [copiedCmd, setCopiedCmd] = useState<string | null>(null);
+  const [copyError, setCopyError] = useState<string | null>(null);
   const [customTerminalInput, setCustomTerminalInput] = useState('');
   const [terminalLogs, setTerminalLogs] = useState<string[]>([
     '$ robin-engine --version',
     'robin-engine 1.0.0 (feat/initial-engine)',
-    'Neon PostgreSQL connection verified.',
-    'DeepSeek JSON generator & Pydantic validator initialized.',
-    'MoviePy v2 video renderer ready.',
+    'Backend services are required for live execution.',
   ]);
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && isOpen) {
+        onClose();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
 
   if (!isOpen) return null;
 
-  const copyToClipboard = (cmd: string, key: string) => {
-    navigator.clipboard.writeText(cmd);
+  const copyToClipboard = async (command: string, key: string) => {
+    setCopyError(null);
+    const success = await copyTextToClipboard(command);
+
+    if (!success) {
+      setCopiedCmd(null);
+      setCopyError('Copy failed. Clipboard permission is unavailable.');
+      return;
+    }
+
     setCopiedCmd(key);
-    setTimeout(() => setCopiedCmd(null), 2000);
+    window.setTimeout(() => setCopiedCmd(null), 2000);
   };
 
-  const handleCommandSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleCommandSubmit = (event: React.FormEvent) => {
+    event.preventDefault();
     if (!customTerminalInput.trim()) return;
 
     const input = customTerminalInput.trim();
-    setTerminalLogs((prev) => [...prev, `$ ${input}`]);
+    setTerminalLogs((previous) => [...previous, `$ ${input}`]);
 
     if (input.includes('run-once') && input.includes('--render-only')) {
-      setTerminalLogs((prev) => [
-        ...prev,
-        '[WORKER] Processing pending job atomically...',
-        '[MOVIEPY] Rendered 9:16 vertical 1080x1920 video with ar-AE-HamdanNeural voiceover.',
-        '[DONE] Render complete. Skipped upload.',
+      setTerminalLogs((previous) => [
+        ...previous,
+        '[SIMULATED] Render-only worker command queued in the Studio preview.',
       ]);
       onRunOnceCLI(true);
     } else if (input.includes('run-once')) {
-      setTerminalLogs((prev) => [
-        ...prev,
-        '[WORKER] Processing pending job atomically...',
-        '[MOVIEPY] Rendered 9:16 vertical 1080x1920 video.',
-        '[YOUTUBE] Uploaded Private video via resumable OAuth2.',
+      setTerminalLogs((previous) => [
+        ...previous,
+        '[SIMULATED] Full worker command queued in the Studio preview.',
       ]);
       onRunOnceCLI(false);
     } else if (input.includes('enqueue-local')) {
-      setTerminalLogs((prev) => [
-        ...prev,
-        '[QUEUE] Video enqueued with confirmed rights into Neon PostgreSQL database.',
+      setTerminalLogs((previous) => [
+        ...previous,
+        '[SIMULATED] Enqueue command accepted by the Studio preview.',
       ]);
     } else {
-      setTerminalLogs((prev) => [...prev, `Command executed: ${input}`]);
+      setTerminalLogs((previous) => [
+        ...previous,
+        `[SIMULATED] Command recorded: ${input}`,
+      ]);
     }
 
     setCustomTerminalInput('');
@@ -68,61 +86,84 @@ export const CLIConsoleModal: React.FC<CLIConsoleModalProps> = ({
   const commandsList = [
     {
       key: 'enqueue',
-      label: '1. Enqueue Local Gameplay Video (with mandatory rights note):',
-      cmd: `robin-engine enqueue-local "C:\\media\\my-gameplay.mp4" ^\n  --title "My original Fortnite match" ^\n  --rights-note "Recorded by Robin for Robin Life & Gaming" ^\n  --confirm-rights`,
+      label: '1. Enqueue local gameplay video with mandatory rights note',
+      cmd: `robin-engine enqueue-local "C:\\media\\my-gameplay.mp4" ^
+  --title "My original Fortnite match" ^
+  --rights-note "Recorded by Robin for Robin Life & Gaming" ^
+  --confirm-rights`,
     },
     {
       key: 'render-only',
-      label: '2. Run Pipeline (Render Only - Review before upload):',
-      cmd: `robin-engine run-once --render-only`,
+      label: '2. Run pipeline in render-only mode',
+      cmd: 'robin-engine run-once --render-only',
     },
     {
       key: 'upload-run',
-      label: '3. Run Full Pipeline (Render + Resumable YouTube Upload):',
-      cmd: `robin-engine run-once`,
+      label: '3. Run the full private-upload pipeline',
+      cmd: 'robin-engine run-once',
     },
   ];
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
-      <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-2xl max-h-[90vh] flex flex-col shadow-2xl overflow-hidden">
-        {/* Terminal Header */}
+    <div
+      className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="cli-modal-title"
+    >
+      <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-2xl max-h-[90vh] flex flex-col shadow-2xl overflow-hidden my-8">
         <div className="p-4 border-b border-slate-800 bg-slate-950 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Terminal className="w-4 h-4 text-emerald-400" />
-            <h3 className="font-bold text-slate-100 text-sm font-mono">
-              robin-engine CLI Terminal
-            </h3>
+            <h2
+              id="cli-modal-title"
+              className="font-bold text-slate-100 text-sm font-mono"
+            >
+              robin-engine CLI reference
+            </h2>
           </div>
           <button
+            type="button"
             onClick={onClose}
-            className="p-1 text-slate-400 hover:text-slate-200 text-xs font-mono"
+            aria-label="Close CLI modal"
+            className="p-1.5 text-slate-400 hover:text-slate-200 hover:bg-slate-800 rounded-lg text-sm transition"
           >
-            ✕
+            <X className="w-4 h-4" />
           </button>
         </div>
 
-        {/* Content */}
         <div className="p-5 overflow-y-auto space-y-5 text-xs">
-          {/* Copyable CLI Commands */}
+          <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-[11px] text-amber-200">
+            Commands shown here are references. Live execution requires the
+            Python backend and worker.
+          </div>
+
           <div className="space-y-3">
-            <h4 className="font-bold text-slate-200 text-xs flex items-center gap-2">
+            <h3 className="font-bold text-slate-200 text-xs flex items-center gap-2">
               <Layers className="w-4 h-4 text-amber-400" />
-              <span>Standard CLI Commands Syntax</span>
-            </h4>
+              <span>Standard CLI commands</span>
+            </h3>
 
             {commandsList.map((item) => (
               <div key={item.key} className="space-y-1">
-                <div className="text-slate-400 font-medium text-[11px]">{item.label}</div>
+                <div className="text-slate-400 font-medium text-[11px]">
+                  {item.label}
+                </div>
                 <div className="relative group">
                   <pre className="p-3 bg-slate-950 border border-slate-800/80 rounded-xl font-mono text-[11px] text-amber-300 overflow-x-auto whitespace-pre-wrap">
                     {item.cmd}
                   </pre>
                   <button
+                    type="button"
                     onClick={() => copyToClipboard(item.cmd, item.key)}
+                    aria-label={`Copy command ${item.key}`}
                     className="absolute right-2 top-2 p-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-[10px] font-mono flex items-center gap-1 transition"
                   >
-                    {copiedCmd === item.key ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                    {copiedCmd === item.key ? (
+                      <Check className="w-3 h-3 text-emerald-400" />
+                    ) : (
+                      <Copy className="w-3 h-3" />
+                    )}
                     <span>{copiedCmd === item.key ? 'Copied' : 'Copy'}</span>
                   </button>
                 </div>
@@ -130,44 +171,57 @@ export const CLIConsoleModal: React.FC<CLIConsoleModalProps> = ({
             ))}
           </div>
 
-          {/* Interactive Live Terminal Feed */}
+          {copyError && (
+            <p role="status" className="text-xs text-rose-400">
+              {copyError}
+            </p>
+          )}
+
           <div className="space-y-2">
             <div className="flex items-center justify-between text-slate-400 text-[11px] font-mono">
-              <span>Interactive CLI Output Logs:</span>
-              <span className="text-emerald-400">STATUS: READY</span>
+              <span>Simulated terminal output</span>
+              <span className="text-amber-400">PREVIEW ONLY</span>
             </div>
 
             <div className="bg-slate-950 p-4 rounded-xl border border-slate-800/80 font-mono text-[11px] text-emerald-400/90 space-y-1.5 h-44 overflow-y-auto">
               {terminalLogs.map((log, index) => (
-                <div key={index} className="flex gap-2 leading-relaxed">
+                <div
+                  key={`${index}-${log}`}
+                  className="flex gap-2 leading-relaxed"
+                >
                   <span className="text-slate-600 select-none">&gt;</span>
                   <span>{log}</span>
                 </div>
               ))}
             </div>
 
-            {/* Command Input */}
             <form onSubmit={handleCommandSubmit} className="flex gap-2">
+              <label htmlFor="cli-command-input" className="sr-only">
+                Type CLI command
+              </label>
               <input
+                id="cli-command-input"
                 type="text"
-                placeholder="Type command e.g. robin-engine run-once --render-only"
+                placeholder="Type a command for simulated preview"
                 value={customTerminalInput}
-                onChange={(e) => setCustomTerminalInput(e.target.value)}
+                onChange={(event) =>
+                  setCustomTerminalInput(event.target.value)
+                }
                 className="flex-1 px-3.5 py-2 bg-slate-950 border border-slate-800 rounded-xl font-mono text-xs text-amber-300 focus:outline-none focus:border-amber-500/50"
               />
               <button
                 type="submit"
                 className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl font-mono transition"
               >
-                Execute
+                Simulate
               </button>
             </form>
           </div>
         </div>
 
-        {/* Footer */}
         <div className="p-3 border-t border-slate-800 bg-slate-950 flex justify-end">
           <button
+            type="button"
             onClick={onClose}
             className="px-4 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg text-xs font-semibold"
           >
