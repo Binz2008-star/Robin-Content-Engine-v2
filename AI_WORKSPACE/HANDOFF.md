@@ -279,3 +279,34 @@ Operator reported the 3 pre-fix production rows (IDs 6, 7, 8) corrected to `stat
 
 Merge authorized: yes (feat/initial-engine only)
 Deploy authorized: no
+
+## RCE-20260808-RIGHTS — 2026-08-08 (started)
+
+Task ID: RCE-20260808-RIGHTS
+Agent: claude
+Branch: feat/rights-approval-flow
+Base SHA: a0feaedcf6e47f1aeca0ccc76dbba37d6bc704e1 (verified via `git rev-parse origin/feat/initial-engine` and `git pull --ff-only` before starting)
+Current HEAD: n/a — implementation not started yet, this entry records the task start
+PR: none yet — will open draft targeting feat/initial-engine, not main
+Status: active
+Files changed: none yet
+Tests: none yet
+CI: n/a
+Known blockers: none
+Next action: implement approve/reject/list/show rights-review flow on JobRepository + CLI, per the security decision below.
+
+### Verified current model (before writing any code)
+
+- `video_queue.status` is a fixed CHECK-constraint enum: pending, processing, rendered, uploaded, failed, quarantined — no new status value without a migration.
+- `rights_confirmed BOOLEAN`, `rights_note TEXT` — no verified_at/verified_by audit columns exist.
+- `quarantine_job(job_id)` already does exactly the atomic-conditional-UPDATE pattern needed for rejection (`WHERE id=%s AND status IN (...)`, rowcount-checked) — reused as the template, not called directly (its precondition is broader than what Phase 6 needs).
+- `retry_job(job_id)` requires `rights_confirmed = TRUE` already, so it cannot be used to un-quarantine an already-auto-quarantined unconfirmed row (a gap noted, not solved this phase — out of the narrow scope given).
+- No existing method sets `rights_confirmed = TRUE`. This is the actual gap Phase 6 fills.
+- `claim_next()`/`claim_job()` only match `status='pending' AND rights_confirmed=TRUE` — so approval alone (leaving status at 'pending') is sufficient to make a row eligible for later processing under the existing rules; no additional code is needed to "enable" it.
+
+### Security decision (per explicit instruction)
+
+No HTTP mutation added. `api.py` is in `forbidden_paths` for this task. Local operator CLI only (`robin-engine rights-*`), reusing `JobRepository` as the domain boundary so a future authenticated Studio surface can call the same methods later without duplicating the rules.
+
+Merge authorized: no
+Deploy authorized: no

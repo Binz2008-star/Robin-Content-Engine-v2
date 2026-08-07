@@ -349,6 +349,78 @@ tasks:
       independent verification of the production row remediation
       (item 8), enable the Neon connector for this chat.
 
+  - id: RCE-20260808-RIGHTS
+    title: Phase 6 — Rights Verification / Approval Flow
+    status: active
+    owner: claude
+    branch: feat/rights-approval-flow
+    base_branch: feat/initial-engine
+    base_sha: a0feaedcf6e47f1aeca0ccc76dbba37d6bc704e1
+    allowed_paths:
+      - src/robin_content_engine/database.py
+      - src/robin_content_engine/cli.py
+      - tests/test_database.py
+      - tests/test_rights_approval.py
+    forbidden_paths:
+      - studio/**
+      - AGENTS.md
+      - CLAUDE.md
+      - AI_WORKSPACE/**
+      - main
+      - schema.sql
+      - src/robin_content_engine/api.py
+      - src/robin_content_engine/uploader.py
+      - src/robin_content_engine/pipeline.py
+      - src/robin_content_engine/youtube_auth.py
+      - src/robin_content_engine/capture_scan.py
+      - client_secret.json
+      - client_secret*.json
+      - token.json
+      - .env
+    merge_allowed: false
+    deploy_allowed: false
+    security_decision: >-
+      Rights approval is a sensitive write operation. Per explicit task
+      instruction: no new unauthenticated HTTP endpoint for setting
+      rights_confirmed=TRUE. This phase is a LOCAL OPERATOR CLI-only
+      approval path (robin-engine rights-*). api.py is in forbidden_paths
+      - no HTTP mutation added. A future authenticated Studio/API
+      approval surface can reuse the same JobRepository domain methods
+      later, but that is out of scope here.
+    build_vs_adopt: >-
+      To be recorded once verified against the actual current codebase
+      (see HANDOFF entry for this task).
+    schema_migration_needed: >-
+      To be determined after inspecting the current model - default
+      assumption is No (reuse rights_confirmed/rights_note/status/
+      source_path/source_title). If audit fields are found to be
+      genuinely required, this agent will STOP and report the proposed
+      migration before touching Neon, per instruction - none is
+      pre-authorized this phase.
+    stop_conditions:
+      - do not merge to main
+      - do not deploy
+      - do not add an unauthenticated HTTP endpoint that can set
+        rights_confirmed=TRUE
+      - do not implement highlight detection, AI clip scoring, video/voice
+        generation, autonomous pipeline execution, Content Radar,
+        scheduler, publishing automation, analytics, learning loop,
+        background filesystem watcher, or a Studio rights UI
+      - do not merge PR, do not deploy
+      - do not mutate the real production Neon rows (IDs 6/7/8) during
+        implementation - read-only until explicit authorization after
+        code complete + tests green + CI green
+      - do not schedule self check-ins / periodic PR polling for this
+        task - report CI state once after opening the draft PR
+      - never read, print, commit, log, or expose .env, token.json,
+        client_secret*.json, or any access/refresh token or API key
+    next_action: >-
+      Implement approve/reject/list/show rights-review CLI commands atop
+      JobRepository (small domain/repository boundary, no new framework),
+      validate (pytest/ruff/focused mypy), open a draft PR targeting
+      feat/initial-engine (not main), report exact evidence once - no
+      recurring check-ins.
+
 # Other branches observed on origin at the time this registry was created
 # that are NOT yet registered as tasks (owner/scope unknown to this agent —
 # not fabricated here). Whoever owns them should add a task entry above
