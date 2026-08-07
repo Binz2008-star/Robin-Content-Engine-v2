@@ -221,11 +221,20 @@ tasks:
 
   - id: RCE-20260807-CAPTURE
     title: Phase 5 — Local Capture Source Integration
-    status: active
+    status: review
     owner: claude
     branch: feat/local-capture-source
     base_branch: feat/initial-engine
     base_sha: 8a55704611bb4ae666951db487013a818f44730c
+    current_sha: 2a56d2d1f2004054344933aa040d581e7d7bb332
+    pr: 9
+    pr_state: open (draft)
+    ci: >-
+      Queued at time of writing (check run "test" on GitHub). Independently
+      run by this agent in the implementation worktree before opening the
+      PR: pytest 92 passed/1 warning (77 baseline + 15 new), ruff all
+      checks passed, focused mypy on capture_scan.py/cli.py/config.py -
+      no issues found, git diff --check clean.
     allowed_paths:
       - src/robin_content_engine/capture_scan.py
       - src/robin_content_engine/config.py
@@ -288,10 +297,14 @@ tasks:
         those are later phases
       - do not call render/upload from capture-scan
     next_action: >-
-      Implement capture_scan.py + CLI command + tests in a dedicated
-      worktree, validate (pytest/ruff/mypy), open a draft PR targeting
-      feat/initial-engine (not main), then report exact evidence and
-      real-local-smoke instructions for the operator's Windows machine.
+      Wait for PR #9 GitHub CI to finish (queued at time of writing), then
+      the operator runs `robin-engine capture-scan` locally against the
+      real capture directory. Verify: new owned gameplay videos are
+      discovered and registered on first scan, zero duplicates on a
+      second scan, no original file modified/moved/renamed/deleted, no
+      render/upload occurred. Report back, then this agent updates the
+      registry/HANDOFF and the operator decides on merging PR #9 into
+      feat/initial-engine (not main).
 
 # Other branches observed on origin at the time this registry was created
 # that are NOT yet registered as tasks (owner/scope unknown to this agent —

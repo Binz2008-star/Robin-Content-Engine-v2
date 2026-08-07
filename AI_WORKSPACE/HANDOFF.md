@@ -180,3 +180,37 @@ Merge authorized: no
 Deploy authorized: no
 
 Scope reminder for this phase: discovery and registration only — never render, upload, move, rename, or delete original files; no highlight detection, Content Radar, autonomous production, scheduler, or background watcher (those are later phases); no database migration is pre-authorized.
+
+## RCE-20260807-CAPTURE — 2026-08-07 (implementation complete, draft PR open)
+
+Task ID: RCE-20260807-CAPTURE
+Agent: claude
+Branch: feat/local-capture-source
+Base SHA: 8a55704611bb4ae666951db487013a818f44730c
+Current HEAD: 2a56d2d1f2004054344933aa040d581e7d7bb332
+PR: #9 (draft, targeting feat/initial-engine, not main)
+Status: review — CI queued at time of writing
+Files changed: src/robin_content_engine/capture_scan.py (new), src/robin_content_engine/cli.py, src/robin_content_engine/config.py, .env.example, tests/test_capture_scan.py (new) — 5 files
+Tests: 92 passed/1 warning (77 baseline + 15 new), independently run in the implementation worktree before opening the PR
+Ruff: all checks passed
+Mypy (focused: capture_scan.py, cli.py, config.py): no issues found
+Diff check: clean
+CI: queued (GitHub check run "test") at time of writing — this is my own PR, drive-to-green posture applies; self check-in scheduled
+Known blockers: none for the implementation. Real local smoke against the actual capture directory still needed from the operator (this sandbox has no access to C:\Users\loyal\Videos\Captures).
+Next action: wait for CI; operator runs `robin-engine capture-scan` locally per the smoke instructions below; report result; then update registry and decide on merge.
+Merge authorized: no
+Deploy authorized: no
+
+### Real local smoke instructions (Windsurf / operator machine)
+
+1. Pull `feat/local-capture-source` (or fetch PR #9) and install: `pip install -e ".[dev]"`
+2. Confirm `.env` has `DATABASE_URL` set (existing production Neon — this only writes new `pending` rows to `video_queue`, same as any other `enqueue-local`/`capture-scan` call; nothing is rendered or uploaded).
+3. Discover the actual current files in `C:\Users\loyal\Videos\Captures` first — do not assume `Fortnite 2026-08-07 23-14-11.mp4` (or any specific file) still exists; list the directory and use whatever `.mp4`/`.mov`/`.mkv` files are actually present.
+4. Run: `robin-engine capture-scan` (uses the default configured directory) or `robin-engine capture-scan --path "C:\Users\loyal\Videos\Captures"` to be explicit.
+5. Expected first-run output shape: `Capture scan completed.` / `Directory: ...` / `Videos discovered: N` / `New captures registered: N` (should be > 0 if new files are present) / `Already known: 0` (or however many were already queued from a prior manual `enqueue-local`) / `Skipped unstable: 0` (unless a recording was actively in progress) / `Skipped unsupported: <screenshot/other file count>`.
+6. Immediately run it again: `robin-engine capture-scan`. Expected: `New captures registered: 0`, `Already known: N` (same N as the newly-registered count from step 5) — proves idempotency, no duplicate jobs.
+7. Verify no originals changed: check file sizes/timestamps in the Captures folder are unchanged from before the scan (the tool never opens files for writing).
+8. Verify no render/upload happened: `robin-engine run-once` was **not** invoked by capture-scan, and no YouTube activity should appear — this command only inserts `pending` rows.
+9. Optional: inspect the new rows via `robin-engine enqueue-local`'s sibling read path (`GET /api/jobs` if the FastAPI service is running, or a direct read-only query) to confirm `status = 'pending'`, `rights_confirmed = true`, and a `rights_note` mentioning capture-scan provenance.
+
+Report back: discovered/registered/already-known counts from both runs, confirmation originals are untouched, confirmation no render/upload occurred.
