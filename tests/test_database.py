@@ -13,7 +13,11 @@ if str(SRC) not in sys.path:
 
 import pytest  # noqa: E402
 
-from robin_content_engine.database import JobRepository, _rows_to_dicts  # noqa: E402
+from robin_content_engine.database import (  # noqa: E402
+    AUTO_QUARANTINE_REASON,
+    JobRepository,
+    _rows_to_dicts,
+)
 
 
 @dataclass
@@ -167,16 +171,20 @@ _REVIEW_DESCRIPTION = [
 ]
 
 
-def test_list_pending_rights_review_sql_scopes_to_unconfirmed_pending() -> None:
+def test_list_pending_rights_review_sql_scopes_to_unconfirmed_pending_or_auto_quarantined() -> (
+    None
+):
     repo, conn = _repo_with_fake_pool(FakeResult(description=_REVIEW_DESCRIPTION, rows=[]))
 
     repo.list_pending_rights_review()
 
     sql, params = conn.executed[-1]
     normalized = " ".join(sql.split())
-    assert "WHERE status = 'pending' AND rights_confirmed = FALSE" in normalized
+    assert "WHERE rights_confirmed = FALSE" in normalized
+    assert "status = 'pending'" in normalized
+    assert "OR (status = 'quarantined' AND last_error = %s)" in normalized
     assert "ORDER BY created_at, id" in normalized
-    assert params is None
+    assert params == (AUTO_QUARANTINE_REASON,)
 
 
 def test_approve_rights_sql_is_atomic_conditional_update() -> None:
@@ -190,12 +198,29 @@ def test_approve_rights_sql_is_atomic_conditional_update() -> None:
     sql, params = conn.executed[-1]
     normalized = " ".join(sql.split())
     assert "SET rights_confirmed = TRUE" in normalized
+    assert "status = 'pending'" in normalized
+    assert "last_error = NULL" in normalized
     assert "rights_note = COALESCE(rights_note, '') || %s" in normalized
     assert "WHERE id = %s" in normalized
-    assert "AND status = 'pending'" in normalized
     assert "AND rights_confirmed = FALSE" in normalized
+    assert "status = 'pending' OR (status = 'quarantined' AND last_error = %s)" in normalized
     assert "RETURNING" in normalized
-    assert params == ("\n\nOperator verification: confirmed by operator", 6)
+    assert params == (
+        "\n\nOperator verification: confirmed by operator",
+        6,
+        AUTO_QUARANTINE_REASON,
+    )
+
+
+def test_approve_rights_allows_auto_quarantined_unconfirmed() -> None:
+    row = _rights_review_row(status="quarantined", last_error=None)
+    repo, conn = _repo_with_fake_pool(FakeResult(description=_REVIEW_DESCRIPTION, rows=[row]))
+
+    result = repo.approve_rights(6, "confirmed after auto-quarantine")
+
+    assert result is not None
+    _, params = conn.executed[-1]
+    assert params[-1] == AUTO_QUARANTINE_REASON
 
 
 def test_approve_rights_returns_none_on_conflict() -> None:
@@ -226,9 +251,20 @@ def test_reject_rights_sql_is_atomic_conditional_update() -> None:
     assert "SET status = 'quarantined'" in normalized
     assert "last_error = 'Rights rejected by operator.'" in normalized
     assert "rights_note = COALESCE(rights_note, '') || %s" in normalized
-    assert "AND status = 'pending'" in normalized
     assert "AND rights_confirmed = FALSE" in normalized
-    assert params == ("\n\nOperator rejection: not owned by operator", 6)
+    assert "status = 'pending' OR (status = 'quarantined' AND last_error = %s)" in normalized
+    assert params == ("\n\nOperator rejection: not owned by operator", 6, AUTO_QUARANTINE_REASON)
+
+
+def test_reject_rights_allows_auto_quarantined_unconfirmed() -> None:
+    row = _rights_review_row(status="quarantined", last_error="Rights rejected by operator.")
+    repo, conn = _repo_with_fake_pool(FakeResult(description=_REVIEW_DESCRIPTION, rows=[row]))
+
+    result = repo.reject_rights(6, "not owned")
+
+    assert result is not None
+    _, params = conn.executed[-1]
+    assert params[-1] == AUTO_QUARANTINE_REASON
 
 
 def test_reject_rights_returns_none_on_conflict() -> None:
@@ -241,3 +277,16 @@ def test_reject_rights_rejects_empty_reason() -> None:
     with pytest.raises(ValueError, match="must not be empty"):
         repo.reject_rights(6, "")
     assert conn.executed == []
+
+
+def test_quarantine_unconfirmed_sql_uses_auto_quarantine_reason_constant() -> None:
+    repo, conn = _repo_with_fake_pool(FakeResult(description=None, rows=[], rowcount=1))
+
+    repo.quarantine_unconfirmed()
+
+    sql, params = conn.executed[-1]
+    normalized = " ".join(sql.split())
+    assert "SET status = 'quarantined'" in normalized
+    assert "last_error = %s" in normalized
+    assert "WHERE status = 'pending' AND rights_confirmed = FALSE" in normalized
+    assert params == (AUTO_QUARANTINE_REASON,)

@@ -10,6 +10,13 @@ from .models import GeneratedContent, VideoJob
 
 RowDict: TypeAlias = dict[str, Any]
 
+# Reason text set by quarantine_unconfirmed() when it auto-quarantines a
+# pending-but-unconfirmed job before it can be claimed. Jobs in this exact
+# state are a safety side effect, not an operator decision, so the rights
+# review flow must still treat them as reviewable. Any other quarantined
+# state (e.g. explicit operator rejection) must not match this marker.
+AUTO_QUARANTINE_REASON = "Publishing rights were not confirmed."
+
 
 def _row_to_dict(row: tuple[Any, ...] | None, description: Any) -> RowDict | None:
     if row is None:
@@ -164,9 +171,10 @@ class JobRepository:
                 """
                 UPDATE video_queue
                 SET status = 'quarantined',
-                    last_error = 'Publishing rights were not confirmed.'
+                    last_error = %s
                 WHERE status = 'pending' AND rights_confirmed = FALSE
-                """
+                """,
+                (AUTO_QUARANTINE_REASON,),
             )
             return result.rowcount
 
@@ -262,7 +270,15 @@ class JobRepository:
         return bool(result.rowcount)
 
     def list_pending_rights_review(self) -> list[RowDict]:
-        """Sources still awaiting explicit operator rights verification."""
+        """Sources still awaiting explicit operator rights verification.
+
+        Includes both jobs never reviewed yet (pending/unconfirmed) and
+        jobs auto-quarantined by quarantine_unconfirmed() before an
+        operator could review them - that auto-quarantine is a safety
+        side effect of run_once(), not an operator decision, so it must
+        stay reviewable. Explicitly operator-rejected jobs are excluded:
+        they carry a different last_error and must not resurface here.
+        """
         with self.pool.connection() as conn:
             result = conn.execute(
                 """
@@ -272,9 +288,14 @@ class JobRepository:
                        attempts, last_error, claimed_at, completed_at, created_at,
                        updated_at
                 FROM video_queue
-                WHERE status = 'pending' AND rights_confirmed = FALSE
+                WHERE rights_confirmed = FALSE
+                  AND (
+                    status = 'pending'
+                    OR (status = 'quarantined' AND last_error = %s)
+                  )
                 ORDER BY created_at, id
-                """
+                """,
+                (AUTO_QUARANTINE_REASON,),
             )
             rows = result.fetchall()
         return _rows_to_dicts(rows, result.description)
@@ -282,13 +303,16 @@ class JobRepository:
     def approve_rights(self, job_id: int, verification_note: str) -> RowDict | None:
         """Explicitly confirm publishing rights for one reviewable source.
 
-        Only mutates a job that is pending with rights still unconfirmed
-        (an atomic conditional UPDATE, not read-then-write) - already-
-        confirmed, in-progress, or terminal jobs are left untouched and
-        this returns None as a safe conflict signal. Never claims,
-        renders, or uploads; status stays 'pending' so the existing queue
-        rules pick it up normally. The rights_note is appended to, never
-        overwritten, so discovery provenance is preserved.
+        Only mutates a job that is either pending/unconfirmed or was
+        auto-quarantined by quarantine_unconfirmed() while still
+        unconfirmed (an atomic conditional UPDATE, not read-then-write) -
+        already-confirmed, operator-rejected, in-progress, or terminal
+        jobs are left untouched and this returns None as a safe conflict
+        signal. Never claims, renders, or uploads; status is (re)set to
+        'pending' so the existing queue rules pick it up normally, and
+        the auto-quarantine last_error is cleared. The rights_note is
+        appended to, never overwritten, so discovery provenance is
+        preserved.
         """
         cleaned_note = verification_note.strip()
         if not cleaned_note:
@@ -298,17 +322,22 @@ class JobRepository:
                 """
                 UPDATE video_queue
                 SET rights_confirmed = TRUE,
+                    status = 'pending',
+                    last_error = NULL,
                     rights_note = COALESCE(rights_note, '') || %s
                 WHERE id = %s
-                  AND status = 'pending'
                   AND rights_confirmed = FALSE
+                  AND (
+                    status = 'pending'
+                    OR (status = 'quarantined' AND last_error = %s)
+                  )
                 RETURNING id, source_path, source_url, source_title, rights_confirmed,
                           rights_note, status, generated_title, generated_description,
                           generated_tags, generated_script, output_path, youtube_id,
                           attempts, last_error, claimed_at, completed_at, created_at,
                           updated_at
                 """,
-                (f"\n\nOperator verification: {cleaned_note}", job_id),
+                (f"\n\nOperator verification: {cleaned_note}", job_id, AUTO_QUARANTINE_REASON),
             )
             row = result.fetchone()
         return _row_to_dict(row, result.description)
@@ -317,10 +346,12 @@ class JobRepository:
         """Reject one reviewable source. rights_confirmed stays FALSE; the
         job is quarantined (existing status value, no schema change) so it
         is excluded from claim_next()/claim_job(). The source row and file
-        are never deleted - only jobs pending with unconfirmed rights can
-        be rejected via this atomic conditional UPDATE (not read-then-
-        write); already-confirmed, in-progress, or terminal jobs return
-        None as a safe conflict signal.
+        are never deleted - only jobs pending/unconfirmed or auto-
+        quarantined/unconfirmed can be rejected via this atomic
+        conditional UPDATE (not read-then-write); already-confirmed,
+        operator-rejected, in-progress, or terminal jobs return None as a
+        safe conflict signal, so an already-rejected job cannot be
+        rejected again or otherwise silently mutated.
         """
         cleaned_reason = reason.strip()
         if not cleaned_reason:
@@ -333,15 +364,18 @@ class JobRepository:
                     last_error = 'Rights rejected by operator.',
                     rights_note = COALESCE(rights_note, '') || %s
                 WHERE id = %s
-                  AND status = 'pending'
                   AND rights_confirmed = FALSE
+                  AND (
+                    status = 'pending'
+                    OR (status = 'quarantined' AND last_error = %s)
+                  )
                 RETURNING id, source_path, source_url, source_title, rights_confirmed,
                           rights_note, status, generated_title, generated_description,
                           generated_tags, generated_script, output_path, youtube_id,
                           attempts, last_error, claimed_at, completed_at, created_at,
                           updated_at
                 """,
-                (f"\n\nOperator rejection: {cleaned_reason}", job_id),
+                (f"\n\nOperator rejection: {cleaned_reason}", job_id, AUTO_QUARANTINE_REASON),
             )
             row = result.fetchone()
         return _row_to_dict(row, result.description)

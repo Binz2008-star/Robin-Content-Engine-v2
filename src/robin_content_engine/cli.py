@@ -214,7 +214,9 @@ def rights_list(
     ] = False,
 ) -> None:
     """List source candidates. Defaults to only those still awaiting
-    explicit operator rights verification."""
+    explicit operator rights verification - pending/unconfirmed sources
+    and sources auto-quarantined by run_once() before review. Explicitly
+    operator-rejected sources are excluded from this default view."""
     settings = Settings()  # type: ignore[call-arg]
     repository = JobRepository(settings.database_url, settings.max_job_attempts)
     with repository.running():
@@ -251,10 +253,15 @@ def rights_approve(
 ) -> None:
     """Explicitly confirm publishing rights for one reviewable source.
 
-    Only pending jobs with unconfirmed rights can be approved. This never
-    claims, renders, generates content, or uploads anything - it only
-    marks the source rights-confirmed so the existing queue rules become
-    eligible to pick it up later. rights_confirmed = TRUE means the
+    Reviewable means pending with unconfirmed rights, OR auto-quarantined
+    by run_once() (quarantine_unconfirmed()) while still unconfirmed -
+    that auto-quarantine is a safety side effect, not an operator
+    decision, so it stays approvable. Explicitly operator-rejected jobs
+    and any other quarantined/terminal state are NOT reviewable here.
+    This never claims, renders, generates content, or uploads anything -
+    it only marks the source rights-confirmed (and, if it was auto-
+    quarantined, restores status to pending) so the existing queue rules
+    become eligible to pick it up later. rights_confirmed = TRUE means the
     operator approves the source's provenance to proceed through Robin's
     rights gate - it does NOT guarantee every frame/audio element is
     copyright-clear, that monetization is guaranteed, or that YouTube's
@@ -277,7 +284,7 @@ def rights_approve(
         raise typer.BadParameter(
             f"Job {job_id} is not in a reviewable state "
             f"(status={existing['status']}, rights_confirmed={existing['rights_confirmed']}). "
-            "Only pending jobs with unconfirmed rights can be approved."
+            "Only pending or auto-quarantined jobs with unconfirmed rights can be approved."
         )
 
     typer.echo(f"Rights approved for job {job_id}.")
@@ -290,9 +297,13 @@ def rights_reject(
     job_id: Annotated[int, typer.Argument(help="Job ID to reject.")],
     note: Annotated[str, typer.Option("--note", help="Reason the source was rejected.")],
 ) -> None:
-    """Reject one reviewable source. Rights remain unconfirmed; the job is
-    quarantined and removed from normal processing. The source file and
-    database row are never deleted - the record is kept for audit/history.
+    """Reject one reviewable source. Reviewable means pending with
+    unconfirmed rights, OR auto-quarantined by run_once() while still
+    unconfirmed; an already operator-rejected job is not reviewable and
+    cannot be rejected (or approved) again. Rights remain unconfirmed; the
+    job is quarantined and removed from normal processing. The source
+    file and database row are never deleted - the record is kept for
+    audit/history.
     """
     cleaned_note = note.strip()
     if not cleaned_note:
@@ -310,7 +321,7 @@ def rights_reject(
         raise typer.BadParameter(
             f"Job {job_id} is not in a reviewable state "
             f"(status={existing['status']}, rights_confirmed={existing['rights_confirmed']}). "
-            "Only pending jobs with unconfirmed rights can be rejected."
+            "Only pending or auto-quarantined jobs with unconfirmed rights can be rejected."
         )
 
     typer.echo(f"Rights rejected for job {job_id}.")
