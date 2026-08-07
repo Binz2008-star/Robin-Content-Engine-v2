@@ -27,7 +27,7 @@ class ChannelRepository:
         self.pool.close()
 
     @contextmanager
-    def running(self) -> Iterator["ChannelRepository"]:
+    def running(self) -> Iterator[ChannelRepository]:
         self.open()
         try:
             yield self

@@ -31,7 +31,11 @@ class FakeAuth:
 
 
 class FakeRequest:
-    def __init__(self, response: dict[str, Any] | None = None, error: Exception | None = None) -> None:
+    def __init__(
+        self,
+        response: dict[str, Any] | None = None,
+        error: Exception | None = None,
+    ) -> None:
         self.response = response or {}
         self.error = error
 
@@ -71,7 +75,7 @@ class FakeYouTubeClient:
     def channels(self) -> FakeResource:
         return self.channels_resource
 
-    def playlistItems(self) -> FakeResource:  # noqa: N802
+    def playlistItems(self) -> FakeResource:
         return self.playlist_items_resource
 
     def videos(self) -> FakeResource:
@@ -231,7 +235,9 @@ def test_expected_channel_id_mismatch_stops_before_playlist_read(
     monkeypatch.setattr(ys, "build", lambda *args, **kwargs: client)
 
     with pytest.raises(YouTubeSyncError, match="YOUTUBE_EXPECTED_CHANNEL_ID"):
-        YouTubeChannelSync(FakeAuth(), expected_channel_id="UC123").fetch_snapshot()  # type: ignore[arg-type]
+        YouTubeChannelSync(
+            FakeAuth(), expected_channel_id="UC123"  # type: ignore[arg-type]
+        ).fetch_snapshot()
 
     assert client.playlist_items_resource.calls == []
     assert client.videos_resource.calls == []

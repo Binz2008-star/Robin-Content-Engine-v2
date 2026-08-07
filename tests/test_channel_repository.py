@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import sys
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -41,7 +41,7 @@ class FakePool:
 
 
 def _snapshot() -> YouTubeSyncSnapshot:
-    now = datetime(2026, 8, 7, tzinfo=timezone.utc)
+    now = datetime(2026, 8, 7, tzinfo=UTC)
     channel = YouTubeChannelSnapshot(
         channel_id="UC123",
         title="Robin",

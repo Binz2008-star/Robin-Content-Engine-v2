@@ -107,7 +107,7 @@ class YouTubeChannelSync:
         page_token: str | None = None
         while True:
             response = self._api_call(
-                lambda: youtube.playlistItems()
+                lambda page_token=page_token: youtube.playlistItems()
                 .list(
                     part="contentDetails",
                     playlistId=uploads_playlist_id,
@@ -202,7 +202,9 @@ class YouTubeChannelSync:
         )
 
     @staticmethod
-    def _parse_video(item: dict[str, Any], expected_channel_id: str) -> YouTubeVideoSnapshot | None:
+    def _parse_video(
+        item: dict[str, Any], expected_channel_id: str
+    ) -> YouTubeVideoSnapshot | None:
         video_id = item.get("id")
         if not isinstance(video_id, str) or not video_id:
             return None
@@ -214,7 +216,11 @@ class YouTubeChannelSync:
         content_details = item.get("contentDetails") or {}
         status = item.get("status") or {}
         raw_tags = snippet.get("tags") or []
-        tags = tuple(str(tag).strip() for tag in raw_tags if str(tag).strip()) if isinstance(raw_tags, list) else ()
+        tags = (
+            tuple(str(tag).strip() for tag in raw_tags if str(tag).strip())
+            if isinstance(raw_tags, list)
+            else ()
+        )
 
         return YouTubeVideoSnapshot(
             video_id=video_id,
