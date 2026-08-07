@@ -90,10 +90,21 @@ def scan_captures(
             continue
 
         rights_note = (
-            f"Discovered via capture-scan from configured local capture "
-            f"directory: {resolved_dir}. Assumed user-owned gameplay recording."
+            "Discovered from configured local capture directory. "
+            "Publishing rights require explicit verification before processing."
         )
-        repository.enqueue_local(entry, entry.stem, rights_note)
+        # Discovery/provenance is NOT the same as verified publishing rights.
+        # A file existing in the capture directory must never auto-confirm
+        # rights_confirmed - that stays FALSE until an operator explicitly
+        # confirms it (e.g. via `enqueue-local --confirm-rights`), which also
+        # means the existing Rights Gate (quarantine_unconfirmed()) applies
+        # normally to every capture-scan-discovered row.
+        repository.enqueue_api_job(
+            source_path=resolved_entry,
+            source_title=entry.stem,
+            rights_confirmed=False,
+            rights_note=rights_note,
+        )
         known_paths.add(resolved_entry)
         new_registered += 1
 

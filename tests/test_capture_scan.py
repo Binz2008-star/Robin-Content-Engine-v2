@@ -38,21 +38,39 @@ class FakeRepository:
     def list_jobs(self) -> list[dict[str, Any]]:
         return [dict(job) for job in self.jobs.values()]
 
-    def enqueue_local(self, source_path: Path, source_title: str, rights_note: str) -> int:
-        resolved = source_path.expanduser().resolve()
-        if not resolved.is_file():
-            raise FileNotFoundError(f"Source file does not exist: {resolved}")
+    def _insert(
+        self, source_path: str, source_title: str, rights_confirmed: bool, rights_note: str
+    ) -> int:
         job_id = self.next_id
         self.next_id += 1
         self.jobs[job_id] = {
             "id": job_id,
-            "source_path": str(resolved),
+            "source_path": source_path,
             "source_title": source_title,
+            "rights_confirmed": rights_confirmed,
             "rights_note": rights_note,
             "status": "pending",
         }
-        self.enqueue_calls.append((str(resolved), source_title, rights_note))
+        self.enqueue_calls.append((source_path, source_title, rights_note))
         return job_id
+
+    def enqueue_local(self, source_path: Path, source_title: str, rights_note: str) -> int:
+        # Matches the real JobRepository.enqueue_local(): always confirmed.
+        # Used only as a test fixture helper to seed pre-existing rows.
+        resolved = source_path.expanduser().resolve()
+        if not resolved.is_file():
+            raise FileNotFoundError(f"Source file does not exist: {resolved}")
+        return self._insert(str(resolved), source_title, True, rights_note)
+
+    def enqueue_api_job(
+        self,
+        *,
+        source_path: str,
+        source_title: str,
+        rights_confirmed: bool,
+        rights_note: str,
+    ) -> int:
+        return self._insert(source_path, source_title, rights_confirmed, rights_note)
 
 
 def _write(path: Path, content: bytes = b"fake-video-bytes") -> Path:
@@ -184,6 +202,66 @@ def test_nonexistent_directory_returns_safe_operator_error(tmp_path: Path) -> No
         scan_captures(missing, repo, stability_wait_seconds=FAST_STABILITY_WAIT)
 
 
+def test_discovered_mp4_does_not_auto_confirm_rights(tmp_path: Path) -> None:
+    _write(tmp_path / "clip.mp4")
+    repo = FakeRepository()
+
+    result = scan_captures(tmp_path, repo, stability_wait_seconds=FAST_STABILITY_WAIT)
+
+    assert result.new_registered == 1
+    job = next(iter(repo.jobs.values()))
+    assert job["rights_confirmed"] is False
+    assert job["status"] == "pending"
+    assert "explicit verification" in job["rights_note"]
+
+
+def test_mixed_content_folder_is_safe(tmp_path: Path) -> None:
+    _write(tmp_path / "clip1.mp4")
+    _write(tmp_path / "clip2.mov")
+    _write(tmp_path / "clip3.mkv")
+    _write(tmp_path / "screenshot1.png")
+    _write(tmp_path / "screenshot2.jpg")
+    _write(tmp_path / "desktop.ini")
+    repo = FakeRepository()
+
+    result = scan_captures(tmp_path, repo, stability_wait_seconds=FAST_STABILITY_WAIT)
+
+    assert result.videos_discovered == 3
+    assert result.new_registered == 3
+    assert result.skipped_unsupported == 3
+    assert all(job["rights_confirmed"] is False for job in repo.jobs.values())
+
+
+def test_game_like_filename_does_not_imply_rights(tmp_path: Path) -> None:
+    _write(tmp_path / "Fortnite 2026-08-07 23-14-11.mp4")
+    _write(tmp_path / "ChatGPT Classic 2026-08-07 23-17-33.mp4")
+    repo = FakeRepository()
+
+    result = scan_captures(tmp_path, repo, stability_wait_seconds=FAST_STABILITY_WAIT)
+
+    assert result.new_registered == 2
+    for job in repo.jobs.values():
+        assert job["rights_confirmed"] is False, (
+            f"{job['source_title']} must not have auto-confirmed rights "
+            "just because its filename looks like gameplay footage"
+        )
+
+
+def test_second_scan_stays_idempotent_with_unconfirmed_rights(tmp_path: Path) -> None:
+    _write(tmp_path / "clip1.mp4")
+    _write(tmp_path / "clip2.mp4")
+    repo = FakeRepository()
+
+    first = scan_captures(tmp_path, repo, stability_wait_seconds=FAST_STABILITY_WAIT)
+    second = scan_captures(tmp_path, repo, stability_wait_seconds=FAST_STABILITY_WAIT)
+
+    assert first.new_registered == 2
+    assert second.new_registered == 0
+    assert second.already_known == 2
+    assert len(repo.jobs) == 2
+    assert all(job["rights_confirmed"] is False for job in repo.jobs.values())
+
+
 def test_capture_scan_module_never_imports_pipeline_or_uploader() -> None:
     source = inspect.getsource(capture_scan_module)
     assert "ContentEngine" not in source
@@ -222,6 +300,7 @@ def test_cli_custom_path_overrides_configured_default(
     assert "Videos discovered: 1" in result.output
     assert "New captures registered: 1" in result.output
     assert len(repo.jobs) == 1
+    assert next(iter(repo.jobs.values()))["rights_confirmed"] is False
 
 
 def test_cli_nonexistent_directory_is_safe_error(monkeypatch: pytest.MonkeyPatch) -> None:
