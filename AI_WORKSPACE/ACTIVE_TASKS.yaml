@@ -356,17 +356,39 @@ tasks:
     branch: feat/rights-approval-flow
     base_branch: feat/initial-engine
     base_sha: a0feaedcf6e47f1aeca0ccc76dbba37d6bc704e1
-    current_sha: 6686b42a9296f9047e3306aa60c2f5d1d8679202
+    current_sha: c9054f6f02fbf341885d7b8a479e153d3b86a0b5
     pr: 10
     pr_state: open (draft)
     ci: >-
-      In progress at time of writing (check run "test" on GitHub) on
-      current_sha, reported once per this task's explicit no-polling
-      instruction - no self check-in scheduled. Independently run by this
-      agent before pushing: pytest 124 passed/1 warning (96 baseline + 7
-      repository SQL tests + 21 CLI regression tests), ruff all checks
-      passed, focused mypy on database.py/cli.py - no issues found, git
-      diff --check clean.
+      Correction pushed after review found a real state-machine gap (see
+      correction_2026-08-08 note below). In progress at time of writing
+      (check run "test" on GitHub) on current_sha c9054f6, reported once
+      per this task's explicit no-polling instruction - no self check-in
+      scheduled. CI on the prior sha (6686b42) was independently verified
+      SUCCESS before this correction. Independently run by this agent
+      before pushing the correction: pytest 139 passed/1 warning (124
+      prior baseline + 15 new auto-quarantine regression tests), ruff all
+      checks passed, focused mypy on database.py/cli.py - no issues
+      found, git diff --check clean.
+    correction_2026-08-08: >-
+      Auto-quarantined captures are now reviewable. run_once() calls
+      quarantine_unconfirmed() before claim_next(), which moves any
+      pending+unconfirmed row to quarantined with a fixed last_error
+      before an operator can review it; the original
+      list_pending_rights_review()/approve_rights()/reject_rights() only
+      matched status='pending', so such a row became invisible to
+      rights-list and unrecoverable via rights-approve/rights-reject.
+      Fixed: reviewable state is now rights_confirmed=FALSE AND
+      (status='pending' OR (status='quarantined' AND last_error equals
+      the exact quarantine_unconfirmed() marker)), still via one atomic
+      conditional UPDATE per operation. Approval of an auto-quarantined
+      row restores status='pending' and clears last_error. Explicit
+      operator rejection (last_error='Rights rejected by operator.')
+      remains excluded from the default list and from both mutations -
+      it is not reviewable. This supersedes the "known limitation" noted
+      in the 2026-08-08 HANDOFF entry for this task; that limitation no
+      longer exists as of c9054f6. No change to pipeline.py, schema.sql,
+      or the HTTP surface.
     allowed_paths:
       - src/robin_content_engine/database.py
       - src/robin_content_engine/cli.py
@@ -432,13 +454,16 @@ tasks:
       - never read, print, commit, log, or expose .env, token.json,
         client_secret*.json, or any access/refresh token or API key
     next_action: >-
-      Wait for PR #10 GitHub CI to finish on current_sha (in progress at
-      time of writing; not polled further per this task's explicit
-      no-background-polling instruction). Once green and reviewed:
-      real operator smoke against production rows 6/7/8 (approve the
-      Fortnite row, reject the two ChatGPT Classic rows) ONLY after
-      explicit authorization - not performed yet. PR #10 stays draft
-      until then. Do not merge to main.
+      Wait for PR #10 GitHub CI to finish on current_sha c9054f6 (in
+      progress at time of writing; not polled further per this task's
+      explicit no-background-polling instruction). Once green and
+      reviewed: real operator smoke against production rows 6/7/8
+      (approve the Fortnite row, reject the two ChatGPT Classic rows)
+      ONLY after explicit authorization - not performed yet. PR #10
+      stays draft until then. Do not merge to main. Task status stays
+      "review", not "complete", until CI is confirmed green on this
+      corrected head and the operator smoke is either run or explicitly
+      deferred.
 
 # Other branches observed on origin at the time this registry was created
 # that are NOT yet registered as tasks (owner/scope unknown to this agent —

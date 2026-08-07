@@ -368,3 +368,53 @@ Production rows were not touched during implementation (read-only). Proposed pla
 
 Merge authorized: no
 Deploy authorized: no
+
+## RCE-20260808-RIGHTS — 2026-08-08 (state-machine correction, supersedes prior "known limitation")
+
+Task ID: RCE-20260808-RIGHTS
+Agent: claude
+Branch: feat/rights-approval-flow
+Base SHA: a0feaedcf6e47f1aeca0ccc76dbba37d6bc704e1
+Prior HEAD (verified before this correction): 6686b42a9296f9047e3306aa60c2f5d1d8679202 (GitHub CI on this exact sha independently confirmed SUCCESS before starting the correction)
+Current HEAD: c9054f6f02fbf341885d7b8a479e153d3b86a0b5
+PR: #10 (still draft, targeting feat/initial-engine, not main; description updated to document this correction)
+Status: review — CI in progress on c9054f6 at time of writing
+Files changed: src/robin_content_engine/database.py, src/robin_content_engine/cli.py, tests/test_database.py, tests/test_rights_approval.py — same 4 files as the original implementation, no other paths touched
+Tests: 139 passed/1 warning (124 prior baseline + 15 new auto-quarantine regression tests), independently run before pushing
+Ruff: all checks passed
+Mypy (focused: database.py, cli.py): no issues found
+Diff check: clean
+CI: in progress on c9054f6f02fbf341885d7b8a479e153d3b86a0b5 at time of writing — checked once after push, no self check-in scheduled per this task's explicit no-background-polling instruction
+Known blockers: none for the correction itself. Real operator smoke against production rows 6/7/8 still needs explicit authorization and is unaffected in scope by this fix.
+Next action: wait for CI on c9054f6 (operator will bring the result back, or it will be checked on the next turn touching this task); once green, proceed to the same proposed operator smoke plan as before, only after explicit authorization.
+Merge authorized: no
+Deploy authorized: no
+
+### What triggered this correction
+
+A review (relayed by the operator, independently verified against the actual code in this repository before any change was made) found that `ContentEngine.run_once()` (`pipeline.py`) calls `repository.quarantine_unconfirmed()` before `claim_next()`. That method performs `UPDATE video_queue SET status='quarantined', last_error='Publishing rights were not confirmed.' WHERE status='pending' AND rights_confirmed=FALSE` — moving any not-yet-reviewed discovered capture straight to `quarantined`. The original `list_pending_rights_review()`/`approve_rights()`/`reject_rights()` from the prior handoff entry only matched `status='pending'`, so a single engine run before an operator got to review a capture would strand it: invisible to `rights-list`, and both `rights-approve` and `rights-reject` would return the same safe-conflict `None` as if the job didn't exist in a reviewable state. This directly contradicted the "Known limitation" note in the prior handoff entry, which had judged this out of scope — a CTO-level review correctly identified it as a Phase 6 blocker instead, since it makes the just-built rights-review flow silently unable to recover captures under a common real operational sequence (discover, then a stray/scheduled `run-once` before the operator gets to reviewing).
+
+### Corrected state model
+
+- **Reviewable** (shown by default `rights-list`, mutable by `rights-approve`/`rights-reject`): `rights_confirmed=FALSE` AND (`status='pending'` OR (`status='quarantined'` AND `last_error` exactly equals `AUTO_QUARANTINE_REASON` = `"Publishing rights were not confirmed."`, the literal `quarantine_unconfirmed()` sets)).
+- **Not reviewable, permanently excluded from the default list and from both mutations**: `status='quarantined'` with `last_error='Rights rejected by operator.'` (explicit operator rejection — final), any other quarantined state (e.g. `quarantine_job()`'s generic `'Quarantined by operator.'` marker), `rights_confirmed=TRUE` already, or any in-progress/terminal status (`processing`/`rendered`/`uploaded`/`failed`).
+- `approve_rights()` now sets `rights_confirmed=TRUE, status='pending', last_error=NULL` (previously left `status`/`last_error` untouched, which was correct only because it never matched an already-quarantined row before). The append-only `rights_note` behavior is unchanged.
+- `reject_rights()`'s effect is unchanged (`status='quarantined'`, `last_error='Rights rejected by operator.'`) but its WHERE clause now also accepts the auto-quarantined starting state.
+- All three queries remain single atomic conditional `UPDATE`/`SELECT` statements — no read-then-write, no new lock pattern, no schema change.
+
+### Correction to the prior handoff entry
+
+The "Known limitation (not solved this phase, out of narrow scope)" paragraph in the entry immediately above this one is **superseded**: as of `c9054f6`, an auto-quarantined row (`status='quarantined'`, `rights_confirmed=FALSE`, `last_error='Publishing rights were not confirmed.'`) has a full review path again through `rights-approve`/`rights-reject`. Per this repository's append-only handoff convention, that entry's text is left as-is (it was accurate at the time it was written); this entry is the correction of record.
+
+### Explicitly not done in this correction
+
+- `pipeline.py` was not modified — `quarantine_unconfirmed()`'s existing safety behavior is unchanged, only made recoverable.
+- `schema.sql` was not modified — no new column, no new status value.
+- No HTTP endpoint was added or changed — still CLI-only.
+- No new dependency was added.
+- Production rows 6/7/8 were not touched.
+- PR #10 was not merged, and remains in draft.
+- Phase 7 was not started.
+
+Merge authorized: no
+Deploy authorized: no
