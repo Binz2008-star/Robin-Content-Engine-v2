@@ -251,3 +251,31 @@ The Neon MCP connector is connected at the org level but **not enabled for this 
 ### Item 9 — 15 vs 16 unsupported-file count: no code bug found
 
 Reviewed the extension-filtering logic in `scan_captures()`: `entry.suffix.lower() not in ALLOWED_CAPTURE_EXTENSIONS` counts every non-video file as `skipped_unsupported` with no special-casing for hidden/system files — `desktop.ini` (suffix `.ini`) would be counted identically to a `.png`. `Path.iterdir()` does not filter hidden/system files on Windows (that's an Explorer/shell-level default, not an OS-level listing filter). No mechanism in the code would silently drop or miscount `desktop.ini`. Most likely explanation: a difference in how the operator described the count in natural language ("15 PNG files + desktop.ini" could mean 15 total including the ini, or 16 total — ambiguous), or `desktop.ini` not actually being present in the directory at the moment the scan ran. No speculative fix was made, per instruction not to invent one without a confirmed code problem.
+
+## RCE-20260807-CAPTURE — 2026-08-07 (Phase 5 CLOSED)
+
+Task ID: RCE-20260807-CAPTURE
+Agent: claude
+Branch: feat/local-capture-source
+Base SHA: 8a55704611bb4ae666951db487013a818f44730c
+Final HEAD (pre-merge): ce23bd33e3d61f0e951ac1a8bf23f3640929fdae (verified via GitHub before merging: CI completed/success, mergeable_state=clean, draft=false, base still feat/initial-engine, head unchanged from prior push)
+PR: #9 — body updated to remove stale pre-fix language, marked ready for review, then squash-merged
+Status: COMPLETE / CLOSED
+Files changed (final): src/robin_content_engine/capture_scan.py, src/robin_content_engine/cli.py, src/robin_content_engine/config.py, .env.example, tests/test_capture_scan.py (5 files)
+Tests: independently re-run immediately before merging at head ce23bd33e3d61f0e951ac1a8bf23f3640929fdae: pytest 96 passed/1 warning, ruff all checks passed, focused mypy (capture_scan.py/cli.py/config.py) no issues found, git diff --check clean
+CI: PASS (verified via GitHub check run "test", completed/success)
+Known blockers: none — closed
+Next action: Phase 5 closed. Wait for explicit human direction before starting any further phase. New baseline: feat/initial-engine @ a0feaedcf6e47f1aeca0ccc76dbba37d6bc704e1.
+Merge authorized: yes — explicit direct chat authorization, scoped to feat/initial-engine only, never main
+Deploy authorized: no
+
+### Merge
+
+Verified via GitHub before merging: PR #9 `draft: false`, `state: open`, `mergeable_state: clean`, base still `feat/initial-engine`, head still `ce23bd33e3d61f0e951ac1a8bf23f3640929fdae`, CI still `completed`/`success` on that exact head (re-checked immediately before merging, not reused from an earlier check). Squash-merged via `merge_pull_request` (method: squash). Merge commit: `a0feaedcf6e47f1aeca0ccc76dbba37d6bc704e1`. Verified post-merge: PR #9 auto-unsubscribed (merged outcome confirmed by webhook); `feat/initial-engine` fetched and confirmed at `a0feaedcf6e47f1aeca0ccc76dbba37d6bc704e1`; `main` independently re-checked and confirmed unchanged at `5387af1f14888964b463b1fcaed8751d40ecbde6` (same SHA as the start of this entire engagement, across all six phases).
+
+### Production remediation — reported, not agent-verified
+
+Operator reported the 3 pre-fix production rows (IDs 6, 7, 8) corrected to `status = pending`, `rights_confirmed = false`, with the corrected provenance `rights_note`, and that no other rows were touched. This agent never independently queried production Neon at any point during this task — the Neon MCP connector remained connected at the org level but not enabled in this chat session throughout. If independent verification is wanted, enable the connector for this chat and it can be checked directly.
+
+Merge authorized: yes (feat/initial-engine only)
+Deploy authorized: no

@@ -221,23 +221,27 @@ tasks:
 
   - id: RCE-20260807-CAPTURE
     title: Phase 5 — Local Capture Source Integration
-    status: review
+    status: complete
     owner: claude
     branch: feat/local-capture-source
     base_branch: feat/initial-engine
     base_sha: 8a55704611bb4ae666951db487013a818f44730c
-    current_sha: ce23bd33e3d61f0e951ac1a8bf23f3640929fdae
+    final_sha: ce23bd33e3d61f0e951ac1a8bf23f3640929fdae
     pr: 9
-    pr_state: open (draft)
+    merged: true
+    merge_method: squash
+    merge_commit_sha: a0feaedcf6e47f1aeca0ccc76dbba37d6bc704e1
+    merged_into: feat/initial-engine
+    result_sha_on_feat_initial_engine: a0feaedcf6e47f1aeca0ccc76dbba37d6bc704e1
+    merged_by: Binz2008-star
     ci: >-
-      In progress at time of writing (check run "test" on GitHub) on
-      current_sha. Independently run by this agent in the implementation
-      worktree before pushing: pytest 96 passed/1 warning (92 baseline +
-      4 new rights-safety regression tests), ruff all checks passed,
-      focused mypy on capture_scan.py/cli.py/config.py - no issues found,
-      git diff --check clean.
+      Verified via GitHub: check run "test" completed/success on final_sha
+      ce23bd33e3d61f0e951ac1a8bf23f3640929fdae. Independently re-run by
+      this agent immediately before merging: pytest 96 passed/1 warning,
+      ruff all checks passed, focused mypy on capture_scan.py/cli.py/
+      config.py - no issues found, git diff --check clean.
     rights_safety_correction: >-
-      Real local smoke surfaced that capture_scan.py called
+      Real local smoke surfaced that capture_scan.py originally called
       JobRepository.enqueue_local(), which hardcodes rights_confirmed=
       TRUE - meaning every discovered file (including non-gameplay files
       that happened to be in the capture folder) was auto-confirmed for
@@ -248,25 +252,33 @@ tasks:
       provenance rights_note stating rights require explicit
       verification. No schema/database.py change. This correctly engages
       the existing Rights Gate (quarantine_unconfirmed()) rather than
-      weakening it - unconfirmed rows are quarantined if a pipeline run
-      is ever attempted before explicit operator confirmation.
-    unresolved_items_from_correction_request:
-      - >-
-        Item 8 (inspect the 3 production rows from the real smoke): NOT
-        done. The Neon MCP connector is connected at the org level but
-        not enabled in this chat session, so this agent has no way to
-        query production Neon right now. Those 3 rows were NOT modified
-        or deleted. Needs either the connector enabled for this chat, or
-        the operator to run a direct read-only query themselves.
-      - >-
-        Item 9 (15 vs 16 unsupported-file count discrepancy): reviewed
-        the extension-filtering code - no bug found. desktop.ini (.ini)
-        would be counted as skipped_unsupported identically to any other
-        non-allowed extension; nothing in the scan loop special-cases or
-        skips hidden/system files. Most likely explanation is a
-        difference in how the operator described the count in natural
-        language, or desktop.ini not actually being present at scan
-        time, not a scanner defect. No speculative fix was made.
+      weakening it.
+    production_remediation: >-
+      Operator reported: 3 Neon production rows (IDs 6, 7, 8, created by
+      the first pre-fix smoke) corrected to status=pending,
+      rights_confirmed=false, with the corrected provenance rights_note.
+      No other rows modified. NOT independently verified by this agent -
+      the Neon MCP connector remained connected at the org level but not
+      enabled in this chat session throughout this task, so this agent
+      never queried production Neon directly at any point in this phase.
+    count_discrepancy_item9: >-
+      15 vs 16 unsupported-file count: reviewed the extension-filtering
+      code, no bug found. desktop.ini (.ini) would be counted as
+      skipped_unsupported identically to any other non-allowed extension;
+      nothing in the scan loop special-cases or skips hidden/system
+      files. Most likely a difference in how the operator described the
+      count in natural language, or desktop.ini not actually present at
+      scan time - not a scanner defect. No speculative fix was made.
+    note: >-
+      PR #9 body updated to remove stale pre-fix language
+      (enqueue_local()/rights_confirmed=TRUE claims) before merge, marked
+      ready for review, re-confirmed immediately before merging (head
+      unchanged, mergeable_state=clean, CI still success), then
+      squash-merged. Merge commit a0feaedcf6e47f1aeca0ccc76dbba37d6bc704e1
+      verified as the new feat/initial-engine HEAD via git fetch. main
+      independently re-confirmed unchanged
+      (5387af1f14888964b463b1fcaed8751d40ecbde6, same as at the start of
+      this entire engagement). No deploy performed.
     allowed_paths:
       - src/robin_content_engine/capture_scan.py
       - src/robin_content_engine/config.py
@@ -313,7 +325,7 @@ tasks:
     schema_migration_needed: >-
       No. video_queue already supports this use case via existing
       source_path/source_title/rights_confirmed/rights_note fields and
-      the existing enqueue_local()/list_jobs() methods, both reused
+      the existing enqueue_api_job()/list_jobs() methods, both reused
       unmodified. database.py is in forbidden_paths for this task.
     stop_conditions:
       - do not merge to main
@@ -329,14 +341,13 @@ tasks:
         those are later phases
       - do not call render/upload from capture-scan
     next_action: >-
-      Wait for PR #9 GitHub CI to finish on current_sha (in progress at
-      time of writing). Separately: (1) enable the Neon connector for
-      this chat (or have the operator query directly) so the 3 existing
-      production rows from the first smoke can be inspected read-only
-      and a remediation proposed/authorized; (2) operator re-runs
-      `robin-engine capture-scan` against the real directory to confirm
-      the corrected rights_confirmed=False behavior on fresh discoveries.
-      PR #9 stays draft until both are resolved. Do not merge to main.
+      Phase 5 closed. Wait for explicit human direction before starting
+      any further phase (highlight detection, Content Radar, autonomous
+      production, scheduler, analytics/learning loop, background
+      watcher). New baseline for the next phase is feat/initial-engine @
+      a0feaedcf6e47f1aeca0ccc76dbba37d6bc704e1. If the operator wants
+      independent verification of the production row remediation
+      (item 8), enable the Neon connector for this chat.
 
 # Other branches observed on origin at the time this registry was created
 # that are NOT yet registered as tasks (owner/scope unknown to this agent —
