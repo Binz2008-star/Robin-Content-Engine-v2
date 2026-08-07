@@ -219,6 +219,80 @@ tasks:
       closed phase. New baseline for the next phase is feat/initial-engine
       @ 8a55704611bb4ae666951db487013a818f44730c.
 
+  - id: RCE-20260807-CAPTURE
+    title: Phase 5 — Local Capture Source Integration
+    status: active
+    owner: claude
+    branch: feat/local-capture-source
+    base_branch: feat/initial-engine
+    base_sha: 8a55704611bb4ae666951db487013a818f44730c
+    allowed_paths:
+      - src/robin_content_engine/capture_scan.py
+      - src/robin_content_engine/config.py
+      - src/robin_content_engine/cli.py
+      - tests/test_capture_scan.py
+      - .env.example
+    forbidden_paths:
+      - studio/**
+      - AGENTS.md
+      - CLAUDE.md
+      - AI_WORKSPACE/**
+      - main
+      - schema.sql
+      - src/robin_content_engine/database.py
+      - src/robin_content_engine/uploader.py
+      - src/robin_content_engine/pipeline.py
+      - client_secret.json
+      - client_secret*.json
+      - token.json
+      - .env
+    merge_allowed: false
+    deploy_allowed: false
+    build_vs_adopt: >-
+      Evaluated before coding: no new dependency justified. Scope is a
+      single non-recursive directory listing, extension filtering, and a
+      two-snapshot stat()-based stability check — stdlib pathlib/os
+      fully covers this. A filesystem-watcher library (e.g. watchdog)
+      was considered and explicitly rejected: the phase brief requires a
+      manual scan command only, not a background watcher. Decision:
+      stdlib-only implementation, zero new dependencies.
+    duplicate_detection_strategy: >-
+      Resolved absolute file path checked against existing
+      video_queue.source_path values (via the existing
+      JobRepository.list_jobs(), reused as-is) before insert. No schema
+      change: no uniqueness is enforced at the DB level, only at the
+      application layer during a single sequential manual scan (no
+      concurrent writers in this phase, so this is sufficient).
+    file_stability_strategy: >-
+      Two stat() snapshots (size + mtime) of a candidate file taken a
+      short configurable interval apart (default 2.0s, Settings-
+      configurable); only registered if unchanged, otherwise skipped
+      this run (will be reconsidered on the next scan) — guards against
+      ingesting a file Xbox Game Bar is still actively writing.
+    schema_migration_needed: >-
+      No. video_queue already supports this use case via existing
+      source_path/source_title/rights_confirmed/rights_note fields and
+      the existing enqueue_local()/list_jobs() methods, both reused
+      unmodified. database.py is in forbidden_paths for this task.
+    stop_conditions:
+      - do not merge to main
+      - do not deploy
+      - do not modify, move, rename, or delete original capture files
+      - never read, print, commit, log, or expose .env, token.json,
+        client_secret*.json, or any access/refresh token or API key
+      - do not introduce a database/schema migration without stopping
+        and reporting it first — none is pre-authorized this phase
+      - do not start highlight detection, AI clip scoring, Content
+        Radar, autonomous production, scheduler, publishing automation,
+        analytics/learning loop, or a background directory watcher —
+        those are later phases
+      - do not call render/upload from capture-scan
+    next_action: >-
+      Implement capture_scan.py + CLI command + tests in a dedicated
+      worktree, validate (pytest/ruff/mypy), open a draft PR targeting
+      feat/initial-engine (not main), then report exact evidence and
+      real-local-smoke instructions for the operator's Windows machine.
+
 # Other branches observed on origin at the time this registry was created
 # that are NOT yet registered as tasks (owner/scope unknown to this agent —
 # not fabricated here). Whoever owns them should add a task entry above

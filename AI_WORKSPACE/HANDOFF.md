@@ -161,3 +161,22 @@ Verified via GitHub before merging: PR #8 `draft: false`, `state: open`, `mergea
 
 Merge authorized: yes (feat/initial-engine only)
 Deploy authorized: no
+
+## RCE-20260807-CAPTURE — 2026-08-07 (started)
+
+Task ID: RCE-20260807-CAPTURE
+Agent: claude
+Branch: feat/local-capture-source
+Base SHA: 8a55704611bb4ae666951db487013a818f44730c (verified via `git rev-parse origin/feat/initial-engine` before starting)
+Current HEAD: n/a — implementation not started yet, this entry records the task start
+PR: none yet — will open draft targeting feat/initial-engine, not main
+Status: active
+Files changed: none yet
+Tests: none yet
+CI: n/a
+Known blockers: none
+Next action: implement src/robin_content_engine/capture_scan.py (new), CLI capture-scan command, tests/test_capture_scan.py, small config.py additions (capture_source_dir, capture_stability_wait_seconds), .env.example documentation. No database.py or schema.sql changes — existing video_queue/enqueue_local()/list_jobs() fully cover this use case (see build_vs_adopt/duplicate_detection_strategy/schema_migration_needed fields on the task entry in ACTIVE_TASKS.yaml for the reasoning).
+Merge authorized: no
+Deploy authorized: no
+
+Scope reminder for this phase: discovery and registration only — never render, upload, move, rename, or delete original files; no highlight detection, Content Radar, autonomous production, scheduler, or background watcher (those are later phases); no database migration is pre-authorized.
