@@ -35,6 +35,9 @@ class Settings(BaseSettings):
     original_audio_volume: float = Field(default=0.15, ge=0.0, le=1.0)
     log_level: str = "INFO"
 
+    capture_source_dir: Path = Path(r"C:\Users\loyal\Videos\Captures")
+    capture_stability_wait_seconds: float = Field(default=2.0, ge=0.0, le=60.0)
+
     @field_validator("youtube_expected_channel_id", mode="before")
     @classmethod
     def normalize_optional_channel_id(cls, value: Any) -> Any:

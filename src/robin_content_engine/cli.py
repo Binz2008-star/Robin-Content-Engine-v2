@@ -7,6 +7,7 @@ import structlog
 import typer
 
 from . import __version__
+from .capture_scan import CaptureScanError, scan_captures
 from .channel_repository import ChannelRepository
 from .config import Settings
 from .database import JobRepository
@@ -161,6 +162,39 @@ def youtube_sync() -> None:
         typer.echo(f"Channel views: {channel.view_count}")
     if channel.subscriber_count is not None:
         typer.echo(f"Subscribers: {channel.subscriber_count}")
+
+
+@app.command("capture-scan")
+def capture_scan(
+    path: Annotated[
+        Path | None,
+        typer.Option("--path", help="Override the configured local capture directory."),
+    ] = None,
+) -> None:
+    """Discover local gameplay recordings and register new ones as pending
+    queue candidates. Never renders, uploads, moves, renames, or deletes
+    the original files."""
+    settings = Settings()  # type: ignore[call-arg]
+    directory = path or settings.capture_source_dir
+
+    repository = JobRepository(settings.database_url, settings.max_job_attempts)
+    try:
+        with repository.running():
+            result = scan_captures(
+                directory,
+                repository,
+                stability_wait_seconds=settings.capture_stability_wait_seconds,
+            )
+    except CaptureScanError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+
+    typer.echo("Capture scan completed.")
+    typer.echo(f"Directory: {result.directory}")
+    typer.echo(f"Videos discovered: {result.videos_discovered}")
+    typer.echo(f"New captures registered: {result.new_registered}")
+    typer.echo(f"Already known: {result.already_known}")
+    typer.echo(f"Skipped unstable: {result.skipped_unstable}")
+    typer.echo(f"Skipped unsupported: {result.skipped_unsupported}")
 
 
 @app.command()
