@@ -25,8 +25,8 @@ class FakeSettings:
         self.deepseek_api_key = "fake-key"
         self.deepseek_base_url = "https://example.test"
         self.deepseek_model = "fake-model"
-        self.youtube_client_secret_file = Path("client_secret.json")
-        self.youtube_token_file = Path("token.json")
+        self.youtube_client_secret_file = Path("/tmp/robin-test-client-secret.json")
+        self.youtube_token_file = Path("/tmp/robin-test-token.json")
         self.youtube_privacy_status = "private"
         self.youtube_category_id = "20"
         self.work_dir = Path("/tmp/robin-work")

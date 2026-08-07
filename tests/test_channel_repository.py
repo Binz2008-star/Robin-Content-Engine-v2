@@ -11,6 +11,8 @@ SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
+from psycopg import OperationalError  # noqa: E402
+
 from robin_content_engine.channel_repository import ChannelRepository  # noqa: E402
 from robin_content_engine.youtube_sync import (  # noqa: E402
     YouTubeChannelSnapshot,
@@ -106,3 +108,100 @@ def test_save_snapshot_upserts_channel_reconciles_current_videos_and_upserts_eac
     assert video_params[0] == "v0"
     assert video_params[1] == "UC123"
     assert video_params[11] == '["fortnite", "gaming"]'
+
+
+def test_save_snapshot_retries_on_transient_operational_error() -> None:
+    repository = ChannelRepository("postgresql://fake")
+    fake_pool = FakePool()
+    repository.pool = fake_pool  # type: ignore[assignment]
+
+    call_count = [0]
+
+    original_execute = fake_pool.conn.execute
+
+    def flaky_execute(sql: str, params: Any = None) -> None:
+        call_count[0] += 1
+        if call_count[0] == 1:
+            raise OperationalError("server closed the connection unexpectedly")
+        return original_execute(sql, params)
+
+    fake_pool.conn.execute = flaky_execute  # type: ignore[method-assign]
+
+    stored = repository.save_snapshot(_snapshot())
+
+    assert stored == 2
+    assert call_count[0] == 5  # First call fails, second succeeds (4 SQL statements)
+
+
+def test_save_snapshot_propagates_error_after_retry_limit_exhausted() -> None:
+    repository = ChannelRepository("postgresql://fake")
+    fake_pool = FakePool()
+    repository.pool = fake_pool  # type: ignore[assignment]
+
+    def always_failing_execute(sql: str, params: Any = None) -> None:
+        raise OperationalError("server closed the connection unexpectedly")
+
+    fake_pool.conn.execute = always_failing_execute  # type: ignore[method-assign]
+
+    try:
+        repository.save_snapshot(_snapshot())
+        raise AssertionError("Should have raised OperationalError")
+    except OperationalError as e:
+        assert "server closed the connection unexpectedly" in str(e)
+
+
+def test_save_snapshot_preserves_transaction_boundary_on_retry() -> None:
+    repository = ChannelRepository("postgresql://fake")
+    fake_pool = FakePool()
+    repository.pool = fake_pool  # type: ignore[assignment]
+
+    call_count = [0]
+    transaction_count = [0]
+
+    original_execute = fake_pool.conn.execute
+
+    def flaky_execute(sql: str, params: Any = None) -> None:
+        call_count[0] += 1
+        if call_count[0] == 1:
+            raise OperationalError("server closed the connection unexpectedly")
+        return original_execute(sql, params)
+
+    fake_pool.conn.execute = flaky_execute  # type: ignore[method-assign]
+
+    original_transaction = fake_pool.conn.transaction
+
+    def counting_transaction():
+        transaction_count[0] += 1
+        return original_transaction()
+
+    fake_pool.conn.transaction = counting_transaction  # type: ignore[method-assign]
+
+    stored = repository.save_snapshot(_snapshot())
+
+    assert stored == 2
+    # Transaction should be entered twice (first attempt fails, second succeeds)
+    assert transaction_count[0] == 2
+
+
+def test_save_snapshot_idempotent_upsert_semantics_preserved() -> None:
+    repository = ChannelRepository("postgresql://fake")
+    fake_pool = FakePool()
+    repository.pool = fake_pool  # type: ignore[assignment]
+
+    # First save
+    first_stored = repository.save_snapshot(_snapshot())
+    assert first_stored == 2
+
+    # Clear executed to track second save
+    fake_pool.conn.executed.clear()
+
+    # Second save (idempotent upsert)
+    second_stored = repository.save_snapshot(_snapshot())
+    assert second_stored == 2
+
+    # Should still execute the same SQL with ON CONFLICT
+    assert len(fake_pool.conn.executed) == 4
+    channel_sql, _ = fake_pool.conn.executed[0]
+    assert "ON CONFLICT (channel_id) DO UPDATE" in channel_sql
+    video_sql, _ = fake_pool.conn.executed[2]
+    assert "ON CONFLICT (video_id) DO UPDATE" in video_sql
