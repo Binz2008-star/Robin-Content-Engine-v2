@@ -488,6 +488,49 @@ tasks:
       task's closure - do not start Phase 7 implementation without its
       own explicit authorization and its own task registration.
 
+  - id: RCE-20260808-HARVEST7A
+    title: Phase 7A — Open-Source Harvest Deep Dive (research/architecture only)
+    status: active
+    owner: claude
+    branch: none — research only, no branch, no implementation code
+    base_branch: feat/initial-engine
+    base_sha: c80b1ce54ddbdedf615cb88942fdd7e68c77b613
+    pr: none
+    merge_allowed: false
+    deploy_allowed: false
+    scope: >-
+      Source-level license/architecture audit of AutoShorts, OpenShorts,
+      PySceneDetect, MoneyPrinterTurbo, ShortGPT, plus an ASR benchmark
+      protocol design (faster-whisper / whisper.cpp / WhisperX) for the
+      operator's AMD RX 6800 XT Windows machine, and a proposed Robin
+      Phase 7B module architecture + GPU-neutral highlight scoring design
+      + smallest-useful-first-implementation recommendation. Deliverable
+      is a report for CTO review - no code, no dependency install, no
+      pyproject.toml change, no feature branch, no production DB access.
+    allowed_paths:
+      - AI_WORKSPACE/ACTIVE_TASKS.yaml
+      - AI_WORKSPACE/HANDOFF.md
+    forbidden_paths:
+      - src/**
+      - tests/**
+      - pyproject.toml
+      - schema.sql
+      - main
+      - any production database write
+    stop_conditions:
+      - do not create implementation code or a feature branch
+      - do not install dependencies or modify pyproject.toml
+      - do not modify production DB
+      - do not render, upload, deploy, or start autonomous production
+      - do not mark Phase 7 implementation active - this task authorizes
+        research/architecture output only
+    next_action: >-
+      Produce the Phase 7A audit deliverable (architecture decision
+      matrix + module architecture + scoring design + first-implementation
+      recommendation) for operator/CTO review. Mark this task complete
+      once delivered. Any Phase 7B implementation is a separate task
+      requiring its own explicit authorization and registration.
+
 # Other branches observed on origin at the time this registry was created
 # that are NOT yet registered as tasks (owner/scope unknown to this agent —
 # not fabricated here). Whoever owns them should add a task entry above
