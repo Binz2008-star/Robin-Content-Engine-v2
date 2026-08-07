@@ -469,3 +469,34 @@ PR #10 merged into `feat/initial-engine` only. `main` untouched. No deploy. RCE-
 
 Merge authorized: no
 Deploy authorized: no
+
+## RCE-20260808-HARVEST7A — 2026-08-08 (research delivered, complete)
+
+Task ID: RCE-20260808-HARVEST7A
+Agent: claude
+Branch: none (research/architecture only — no branch, no implementation code, no dependency install, no production DB access)
+Base: feat/initial-engine @ c80b1ce54ddbdedf615cb88942fdd7e68c77b613
+Status: complete
+Merge authorized: n/a (no code produced)
+Deploy authorized: n/a
+
+### What was done
+
+Four parallel read-only research passes (WebFetch against public GitHub/PyPI/docs URLs only — this session's GitHub App access is scoped to this repository only, so mcp__github__ tools were not used against third-party repos):
+1. Source-level audit of `divyaprakash0426/autoshorts` — segmentation, audio/motion scoring, semantic classification (confirmed: no kill-feed/HUD detection exists, contrary to what the name implies — it's LLM-based category classification), score fusion, ranking, window selection, overlap handling (confirmed gap — none exists), vertical reframe, CUDA/CuPy/Decord assumptions (CuPy confirmed imported but never called — dead dependency). License: MIT, exact copyright verified.
+2. Source-level audit of `mutonby/openshorts` — precise MIT-vs-proprietary license boundary mapped (`cloud/` is billing/entitlement only, zero analysis/render logic; every other file is MIT). Full pipeline audited: dual-engine scene detection, dual-backend transcription with quality-gated fallback, candidate window extraction (backed by cited retention data), two-pass Gemini moment analysis, two-generation vertical reframe (tracking-based v1, render-native v2), FFmpeg composition, karaoke subtitles, concurrency/cleanup patterns. yt-dlp usage confirmed cleanly isolated to one function + one probe script + one CLI branch.
+3. PySceneDetect adoption check (BSD-3-Clause confirmed, v0.7.1, pure CPU/numpy/OpenCV, no GPU dependency at all — `AdaptiveDetector` recommended over `ContentDetector` for fast-motion gameplay) + MoneyPrinterTurbo relevant-component audit (MIT confirmed, but bundled fonts/songs are NOT MIT and must be excluded) + ShortGPT (yt-dlp dependency re-confirmed, rejected as a dependency; its resumable step-pipeline pattern noted as a future idea only).
+4. ASR benchmark protocol design for the operator's Windows + AMD RX 6800 XT machine — faster-whisper (CPU int8, recommended to adopt), whisper.cpp (Vulkan/AMD path exists but unverified — recommended as the other real benchmark candidate), WhisperX (rejected for now — no AMD/Vulkan/DirectML path documented anywhere in its official docs).
+
+### Deliverable
+
+A full architecture decision matrix (per-project tables covering exact file/function, license, dependencies, hardware assumption, and one of ADOPT/COPY-ADAPT/REIMPLEMENT-IDEA/INSPIRE/REJECT per component), a proposed Phase 7B module architecture (`scene_detector.py`, `highlight_features.py`, `highlight_scoring.py`, `clip_selector.py`, `transcription.py`; `vertical_reframe.py` explicitly deferred to a later phase since nothing renders yet), a GPU-neutral highlight-scoring design separating deterministic signals (this phase) from AI semantic signals (future) from learned analytics signals (explicitly out of scope), and a "smallest useful first implementation" recommendation (ID 8 Fortnite capture → ranked candidate timestamps + scores only, no render/upload/DB write) with proposed dependencies, files, tests, acceptance criteria, and a smoke plan. Full text was delivered directly in chat, not written to a repo file.
+
+### Explicitly not done / not authorized by this task
+
+- No code was written, no feature branch was created, no dependency was installed, no `pyproject.toml` change was made.
+- No production database was accessed or modified.
+- Phase 7B (actual implementation) was NOT marked active and is NOT authorized by this closure — it requires its own separate explicit authorization and its own task registration.
+
+Merge authorized: n/a
+Deploy authorized: n/a

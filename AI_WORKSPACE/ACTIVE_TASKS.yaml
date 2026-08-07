@@ -490,7 +490,7 @@ tasks:
 
   - id: RCE-20260808-HARVEST7A
     title: Phase 7A — Open-Source Harvest Deep Dive (research/architecture only)
-    status: active
+    status: complete
     owner: claude
     branch: none — research only, no branch, no implementation code
     base_branch: feat/initial-engine
@@ -524,12 +524,30 @@ tasks:
       - do not render, upload, deploy, or start autonomous production
       - do not mark Phase 7 implementation active - this task authorizes
         research/architecture output only
+    result: >-
+      Delivered in chat 2026-08-08: source-level decision matrices for
+      AutoShorts (MIT), OpenShorts (MIT core / cloud/ proprietary-billing
+      boundary precisely mapped, yt-dlp confirmed cleanly isolated to one
+      function), PySceneDetect (BSD-3-Clause, adopt AdaptiveDetector),
+      MoneyPrinterTurbo (MIT, bundled fonts/songs NOT MIT - excluded),
+      ShortGPT (MIT but yt-dlp dependency confirmed, rejected outright),
+      and an ASR benchmark protocol recommending faster-whisper (adopt)
+      + whisper.cpp (benchmark candidate) over WhisperX (rejected, no
+      AMD/Vulkan path documented) for the operator's RX 6800 XT. Proposed
+      Phase 7B module architecture (scene_detector.py,
+      highlight_features.py, highlight_scoring.py, clip_selector.py,
+      transcription.py; vertical_reframe.py deferred to Phase 7C), a
+      GPU-neutral highlight-score design with explicitly-flagged
+      placeholder weights, and a smallest-useful first-implementation
+      recommendation (timestamps+scores only, no render/upload/DB write).
+      No code was written, no branch created, no dependency installed, no
+      production DB accessed - all four research passes used WebFetch
+      against public GitHub URLs only.
     next_action: >-
-      Produce the Phase 7A audit deliverable (architecture decision
-      matrix + module architecture + scoring design + first-implementation
-      recommendation) for operator/CTO review. Mark this task complete
-      once delivered. Any Phase 7B implementation is a separate task
-      requiring its own explicit authorization and registration.
+      None for this task - it is a completed research deliverable, now
+      pending operator/CTO review. Any Phase 7B implementation is a
+      separate task requiring its own explicit authorization and
+      registration; this closure does not authorize it.
 
 # Other branches observed on origin at the time this registry was created
 # that are NOT yet registered as tasks (owner/scope unknown to this agent —
