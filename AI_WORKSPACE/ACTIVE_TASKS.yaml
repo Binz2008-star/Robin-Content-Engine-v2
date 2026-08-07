@@ -14,12 +14,16 @@ tasks:
 
   - id: RCE-20260807-API
     title: FastAPI Control API
-    status: active
+    status: complete
     owner: github-copilot
     branch: feat/control-api
     base_branch: feat/initial-engine
     base_sha: 779c4d62af6abe349136e9fb2991b20ef719011e
-    current_sha: ae516e933e1af655dcf880e7fb826caee6897f42
+    final_sha: 3c2998367e3b8d9b18399cc052b3eccd834dfcab
+    pr: 6
+    merged: true
+    merged_into: feat/initial-engine
+    result_sha_on_feat_initial_engine: 4d85d62ea4951a2eaf057e9f51f1a3b3f96dc647
     allowed_paths:
       - src/robin_content_engine/**
       - tests/**
@@ -34,11 +38,10 @@ tasks:
       - metadata.json
     merge_allowed: false
     deploy_allowed: false
-    stop_conditions:
-      - base SHA mismatch
-      - unrelated working-tree changes
-      - forbidden path required
-      - CI failure not understood
+    note: >-
+      PR #6 verified merged (merged=true, merged_by=Binz2008-star) into
+      feat/initial-engine. No longer an active implementation task. Not
+      merged to main. No deploy performed.
 
   - id: RCE-20260807-STUDIO
     title: Studio API Readiness
@@ -64,6 +67,8 @@ tasks:
     branch: chore/agent-control-plane
     base_branch: main
     base_sha: 5387af1f14888964b463b1fcaed8751d40ecbde6
+    pr: 5
+    pr_state: open (draft)
     allowed_paths:
       - AGENTS.md
       - CLAUDE.md
@@ -81,6 +86,110 @@ tasks:
       - package-lock.json
     merge_allowed: false
     deploy_allowed: false
+    note: >-
+      Verified via GitHub: PR #5 open, draft, mergeable_state=clean, no
+      review comments. This reconciliation pass is itself a unit of work
+      on this task.
+
+  - id: RCE-20260807-OAUTH
+    title: Phase 4A — YouTube OAuth + Channel Connection
+    status: complete
+    owner: claude
+    branch: feat/youtube-oauth
+    base_branch: feat/initial-engine
+    base_sha: 4d85d62ea4951a2eaf057e9f51f1a3b3f96dc647
+    final_sha: e7d51cf7ab32c901472598fe5d1c0baa39db72d2
+    pr: 7
+    merged: true
+    merged_into: feat/initial-engine
+    result_sha_on_feat_initial_engine: 741d2c8edf435da4c42bce7448710169307631cc
+    allowed_paths:
+      - src/robin_content_engine/youtube_auth.py
+      - src/robin_content_engine/uploader.py
+      - src/robin_content_engine/cli.py
+      - tests/test_youtube_auth.py
+      - tests/test_uploader.py
+    forbidden_paths:
+      - studio/**
+      - schema.sql
+      - AI_WORKSPACE/**
+      - AGENTS.md
+      - CLAUDE.md
+    merge_allowed: false
+    deploy_allowed: false
+    note: >-
+      PR #7 verified merged (merged=true, merged_by=Binz2008-star) into
+      feat/initial-engine. Real local OAuth smoke completed by the
+      operator on their own machine (authenticated channel confirmed:
+      UCIcvbGsmSwMDXxjWXq4QG8A, @roben.1). No credentials were ever
+      read, printed, or committed by any agent. Not merged to main.
+      No deploy performed. No video uploaded.
+
+  - id: RCE-20260807-CHANNELSYNC
+    title: Phase 4B — YouTube Channel Sync (read-only snapshots)
+    status: blocked
+    owner: claude
+    branch: feat/youtube-channel-sync
+    base_branch: feat/initial-engine
+    base_sha: 741d2c8edf435da4c42bce7448710169307631cc
+    current_sha: ca307129dc7dd9830c931e8c42628cff57d1c8fc
+    pr: 8
+    pr_state: open (draft)
+    allowed_paths:
+      - .env.example
+      - schema.sql
+      - src/robin_content_engine/channel_repository.py
+      - src/robin_content_engine/cli.py
+      - src/robin_content_engine/config.py
+      - src/robin_content_engine/youtube_sync.py
+      - tests/test_channel_repository.py
+      - tests/test_youtube_sync.py
+    forbidden_paths:
+      - studio/**
+      - AGENTS.md
+      - CLAUDE.md
+      - AI_WORKSPACE/**
+      - main
+      - client_secret.json
+      - client_secret*.json
+      - token.json
+      - .env
+    merge_allowed: false
+    deploy_allowed: false
+    ci: >-
+      Verified via GitHub: 1 check run ("test") completed/success on head
+      ca307129dc7dd9830c931e8c42628cff57d1c8fc. The more granular counts
+      (pytest 73 passed, ruff clean, 1 non-blocking deprecation warning)
+      are self-reported in the PR body/task brief and were not
+      independently re-executed by this agent this pass.
+    stop_conditions:
+      - do not apply the Neon production migration without explicit
+        human authorization
+      - do not merge to main
+      - do not deploy
+      - never read, print, commit, log, or expose .env, token.json,
+        client_secret*.json, or any access/refresh token or API key
+      - do not change OAuth scopes unless explicitly required
+    blocker:
+      description: >-
+        Neon production migration not yet applied. Verified and tested
+        on a temporary Neon branch only; production schema has NOT been
+        touched. These migration/branch identifiers are self-reported in
+        the task brief and were NOT independently re-verified by this
+        agent this pass (the Neon MCP connector is connected at the org
+        level but not enabled in this chat session).
+      migration_id: cf430adc-bc83-4e21-aa4e-162a501682a7
+      temporary_neon_branch: mcp-migration-2026-08-07T19-31-58
+      temporary_neon_branch_id: br-young-brook-axnnlev0
+      production_neon_branch_id: br-lingering-poetry-axoi0r6y
+      gate: explicit human authorization required before applying to production
+    next_action: >-
+      Wait for explicit human authorization to apply the verified
+      migration to the production Neon branch. After authorization:
+      apply migration, verify production schema, run real authenticated
+      `robin-engine youtube-sync` smoke, re-run tests + ruff, review
+      diff, update this registry and append to HANDOFF.md. Keep PR #8
+      draft until all gates pass. Do not merge to main; do not deploy.
 
 # Other branches observed on origin at the time this registry was created
 # that are NOT yet registered as tasks (owner/scope unknown to this agent —
