@@ -351,11 +351,22 @@ tasks:
 
   - id: RCE-20260808-RIGHTS
     title: Phase 6 — Rights Verification / Approval Flow
-    status: active
+    status: review
     owner: claude
     branch: feat/rights-approval-flow
     base_branch: feat/initial-engine
     base_sha: a0feaedcf6e47f1aeca0ccc76dbba37d6bc704e1
+    current_sha: 6686b42a9296f9047e3306aa60c2f5d1d8679202
+    pr: 10
+    pr_state: open (draft)
+    ci: >-
+      In progress at time of writing (check run "test" on GitHub) on
+      current_sha, reported once per this task's explicit no-polling
+      instruction - no self check-in scheduled. Independently run by this
+      agent before pushing: pytest 124 passed/1 warning (96 baseline + 7
+      repository SQL tests + 21 CLI regression tests), ruff all checks
+      passed, focused mypy on database.py/cli.py - no issues found, git
+      diff --check clean.
     allowed_paths:
       - src/robin_content_engine/database.py
       - src/robin_content_engine/cli.py
@@ -388,15 +399,21 @@ tasks:
       approval surface can reuse the same JobRepository domain methods
       later, but that is out of scope here.
     build_vs_adopt: >-
-      To be recorded once verified against the actual current codebase
-      (see HANDOFF entry for this task).
+      No new dependency. Reuses the existing FastAPI/Pydantic
+      architecture, Typer CLI, and JobRepository as the domain boundary -
+      a small domain/CLI workflow does not justify a workflow framework,
+      agent framework, or event bus.
     schema_migration_needed: >-
-      To be determined after inspecting the current model - default
-      assumption is No (reuse rights_confirmed/rights_note/status/
-      source_path/source_title). If audit fields are found to be
-      genuinely required, this agent will STOP and report the proposed
-      migration before touching Neon, per instruction - none is
-      pre-authorized this phase.
+      No. video_queue already supports this via existing status/
+      rights_confirmed/rights_note/source_path/source_title fields.
+      claim_next()/claim_job() already only match status='pending' AND
+      rights_confirmed=TRUE, so approval alone (leaving status at
+      'pending') is sufficient for a row to become eligible under the
+      existing queue rules - nothing new needed to "enable" it.
+      quarantine_job()'s existing 'quarantined' status value fits
+      rejection exactly, so no new status was needed either. No audit
+      columns (verified_at/verified_by) were required - the append-only
+      rights_note already carries the verification/rejection provenance.
     stop_conditions:
       - do not merge to main
       - do not deploy
@@ -415,11 +432,13 @@ tasks:
       - never read, print, commit, log, or expose .env, token.json,
         client_secret*.json, or any access/refresh token or API key
     next_action: >-
-      Implement approve/reject/list/show rights-review CLI commands atop
-      JobRepository (small domain/repository boundary, no new framework),
-      validate (pytest/ruff/focused mypy), open a draft PR targeting
-      feat/initial-engine (not main), report exact evidence once - no
-      recurring check-ins.
+      Wait for PR #10 GitHub CI to finish on current_sha (in progress at
+      time of writing; not polled further per this task's explicit
+      no-background-polling instruction). Once green and reviewed:
+      real operator smoke against production rows 6/7/8 (approve the
+      Fortnite row, reject the two ChatGPT Classic rows) ONLY after
+      explicit authorization - not performed yet. PR #10 stays draft
+      until then. Do not merge to main.
 
 # Other branches observed on origin at the time this registry was created
 # that are NOT yet registered as tasks (owner/scope unknown to this agent —

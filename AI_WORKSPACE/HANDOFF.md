@@ -310,3 +310,61 @@ No HTTP mutation added. `api.py` is in `forbidden_paths` for this task. Local op
 
 Merge authorized: no
 Deploy authorized: no
+
+## RCE-20260808-RIGHTS — 2026-08-08 (implementation complete, draft PR open)
+
+Task ID: RCE-20260808-RIGHTS
+Agent: claude
+Branch: feat/rights-approval-flow
+Base SHA: a0feaedcf6e47f1aeca0ccc76dbba37d6bc704e1
+Current HEAD: 6686b42a9296f9047e3306aa60c2f5d1d8679202
+PR: #10 (draft, targeting feat/initial-engine, not main)
+Status: review — CI in progress at time of writing
+Files changed: src/robin_content_engine/database.py, src/robin_content_engine/cli.py, tests/test_database.py, tests/test_rights_approval.py (new) — 4 files
+Tests: 124 passed/1 warning (96 baseline + 7 repository SQL tests + 21 CLI regression tests), independently run before pushing
+Ruff: all checks passed
+Mypy (focused: database.py, cli.py): no issues found
+Diff check: clean
+CI: in progress on 6686b42a9296f9047e3306aa60c2f5d1d8679202 at time of writing — reported once, no self check-in scheduled per this task's explicit no-background-polling instruction
+Known blockers: none for the implementation. Real operator smoke against production rows 6/7/8 still needs explicit authorization.
+Next action: wait for CI (checked by the operator when they bring the result back); after review, real operator smoke per the plan below, only after explicit authorization.
+Merge authorized: no
+Deploy authorized: no
+
+### BUILD vs ADOPT
+
+No new dependency. Reuses the existing FastAPI/Pydantic architecture, Typer CLI, and `JobRepository` as the domain boundary — a small domain/CLI workflow does not justify a workflow/agent framework or event bus.
+
+### Approval transition rules
+
+`approve_rights(job_id, note)`: atomic conditional `UPDATE ... WHERE id=%s AND status='pending' AND rights_confirmed=FALSE` (same pattern as the existing `retry_job()`/`quarantine_job()` — not read-then-write). Sets `rights_confirmed=TRUE`, appends to `rights_note` (never overwrites — discovery provenance preserved), leaves `status` at `'pending'`. Returns `None` (safe conflict, no exception, no partial mutation) for any other starting state: already confirmed, in-progress, terminal, or a race where state changed underneath the operator between read and write.
+
+### Rejection/quarantine transition rules
+
+`reject_rights(job_id, reason)`: same atomic pattern and preconditions. Sets `status='quarantined'` (the existing status value — no schema change), `last_error='Rights rejected by operator.'`, appends the reason to `rights_note`. `rights_confirmed` stays `FALSE`. Row and source file are never deleted. Quarantined rows are excluded from `claim_next()`/`claim_job()` by their existing `WHERE status='pending'` clauses.
+
+### Schema migration
+
+No. `video_queue` already had everything needed. No `verified_at`/`verified_by` audit columns were introduced — the append-only `rights_note` carries the verification/rejection history instead, which was judged sufficient for this phase's narrow scope.
+
+### Content-rights boundary (documented in CLI help text)
+
+`rights_confirmed=TRUE` means the operator approves the source's *provenance* to proceed through Robin's rights gate. It does not mean every frame/audio element is copyright-clear, monetization is guaranteed, or YouTube's reused-content policy is satisfied — later quality/rights QA must still catch third-party-content issues before publishing.
+
+### Known limitation (not solved this phase, out of narrow scope)
+
+A row that gets auto-quarantined by the *existing* `quarantine_unconfirmed()` safety net (if the pipeline is ever run before review — `status='quarantined'`, `rights_confirmed=FALSE`) has no path back through `rights-approve`/`rights-reject` (both require `status='pending'`) or `retry_job()` (requires `rights_confirmed=TRUE` already). This is a real gap but was judged out of this phase's narrow scope (the intended flow is capture-scan → pending+unconfirmed → operator review, before any pipeline run) and is noted here rather than silently expanding scope to fix it.
+
+### Proposed real operator smoke plan for IDs 6/7/8 (NOT executed — requires explicit authorization)
+
+Production rows were not touched during implementation (read-only). Proposed plan once authorized:
+1. `robin-engine rights-list` — confirm all 3 rows appear (Fortnite + 2× ChatGPT Classic), `rights_confirmed=false`, `status=pending`.
+2. `robin-engine rights-show <Fortnite ID>` — confirm fields, especially the discovery `rights_note`.
+3. `robin-engine rights-approve <Fortnite ID> --note "Confirmed personally recorded gameplay, no third-party content."` — confirm output shows `rights_confirmed=True`, `status=pending`.
+4. `robin-engine rights-reject <ChatGPT Classic ID 1> --note "Not gameplay footage - excluded from this pipeline."` and the same for the second ChatGPT Classic row — confirm `status=quarantined`, `rights_confirmed` stays `false`.
+5. `robin-engine rights-list` again — confirm the Fortnite row no longer appears (now confirmed) and neither ChatGPT Classic row appears (now quarantined).
+6. Confirm no render/upload occurred (no `run-once` invoked, no YouTube activity).
+7. Confirm the source files themselves are untouched.
+
+Merge authorized: no
+Deploy authorized: no
