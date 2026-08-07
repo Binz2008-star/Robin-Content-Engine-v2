@@ -6,7 +6,7 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
-from google.auth.exceptions import RefreshError
+from google.auth.exceptions import GoogleAuthError
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow  # type: ignore[import-untyped]
@@ -112,9 +112,12 @@ class YouTubeAuth:
         return Credentials.from_authorized_user_info(info)  # type: ignore[no-untyped-call,no-any-return]
 
     def _try_refresh(self, credentials: Credentials) -> Credentials | None:
+        """Attempt a token refresh. Covers both invalid-grant refresh failures
+        (RefreshError) and network/transport failures (TransportError,
+        TimeoutError, ...) since both share GoogleAuthError as their base."""
         try:
             credentials.refresh(Request())  # type: ignore[no-untyped-call]
-        except RefreshError:
+        except GoogleAuthError:
             return None
         self._persist(credentials)
         return credentials
@@ -145,7 +148,7 @@ class YouTubeAuth:
         youtube = build("youtube", "v3", credentials=credentials, cache_discovery=False)
         try:
             response = youtube.channels().list(part="snippet", mine=True).execute()
-        except HttpError as exc:
+        except (HttpError, GoogleAuthError) as exc:
             raise YouTubeAuthError(f"YouTube channel lookup failed: {exc}") from exc
         items = response.get("items") or []
         if not items:

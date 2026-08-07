@@ -11,7 +11,7 @@ if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
 import pytest  # noqa: E402
-from google.auth.exceptions import RefreshError  # noqa: E402
+from google.auth.exceptions import RefreshError, TransportError  # noqa: E402
 from google.oauth2.credentials import Credentials  # noqa: E402
 from typer.testing import CliRunner  # noqa: E402
 
@@ -198,6 +198,44 @@ def test_status_refresh_failure_is_safe_auth_failure(
         auth.load_credentials()
 
 
+def test_status_transport_failure_during_refresh_is_refresh_failed_no_browser(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Regression: a network/transport error during refresh (e.g. DNS failure,
+    # connection reset) is a GoogleAuthError subclass distinct from
+    # RefreshError. state() must treat it the same way: refresh_failed, never
+    # an unhandled exception, and it must never fall back to opening a browser.
+    monkeypatch.setattr(ya, "InstalledAppFlow", ExplodingFlow)
+    token = tmp_path / "token.json"
+    _write_token(token, expiry=PAST_EXPIRY, refresh_token=SECRET_SENTINEL)
+
+    def fake_refresh(self: Credentials, request: Any) -> None:
+        raise TransportError("connection reset by peer")
+
+    monkeypatch.setattr(Credentials, "refresh", fake_refresh)
+
+    auth = YouTubeAuth(tmp_path / "client_secret.json", token)
+    assert auth.state() == AuthState.REFRESH_FAILED
+
+
+def test_load_credentials_transport_failure_raises_safe_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    token = tmp_path / "token.json"
+    _write_token(token, expiry=PAST_EXPIRY, refresh_token=SECRET_SENTINEL)
+
+    def fake_refresh(self: Credentials, request: Any) -> None:
+        raise TransportError("connection reset by peer")
+
+    monkeypatch.setattr(Credentials, "refresh", fake_refresh)
+
+    auth = YouTubeAuth(tmp_path / "client_secret.json", token)
+    with pytest.raises(YouTubeAuthError, match="credential refresh failed") as exc_info:
+        auth.load_credentials()
+
+    assert SECRET_SENTINEL not in str(exc_info.value)
+
+
 def test_status_requires_both_scopes(tmp_path: Path) -> None:
     client_secret = tmp_path / "client_secret.json"
     client_secret.write_text("{}", encoding="utf-8")
@@ -318,6 +356,28 @@ def test_fetch_channel_identity_no_channel_raises_clear_error(
 
     auth = YouTubeAuth(tmp_path / "client_secret.json", tmp_path / "token.json")
     with pytest.raises(YouTubeAuthError, match="No YouTube channel"):
+        auth.fetch_channel_identity(FakeCredentials({}))  # type: ignore[arg-type]
+
+
+def test_fetch_channel_identity_normalizes_transport_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    class RaisingExecutable:
+        def execute(self) -> dict[str, Any]:
+            raise TransportError("connection reset by peer")
+
+    class RaisingChannelsResource:
+        def list(self, **kwargs: Any) -> RaisingExecutable:
+            return RaisingExecutable()
+
+    class RaisingYouTubeClient:
+        def channels(self) -> RaisingChannelsResource:
+            return RaisingChannelsResource()
+
+    monkeypatch.setattr(ya, "build", lambda *a, **kw: RaisingYouTubeClient())
+
+    auth = YouTubeAuth(tmp_path / "client_secret.json", tmp_path / "token.json")
+    with pytest.raises(YouTubeAuthError, match="channel lookup failed"):
         auth.fetch_channel_identity(FakeCredentials({}))  # type: ignore[arg-type]
 
 
@@ -460,3 +520,36 @@ def test_cli_youtube_status_refresh_failed_tells_operator_to_reauth(
 
     assert result.exit_code == 0
     assert "robin-engine youtube-auth" in result.output
+
+
+def test_cli_youtube_status_transport_refresh_failure_is_clean(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # End-to-end through the REAL YouTubeAuth (not the fakes above): a
+    # network/transport failure during refresh must surface as a clean,
+    # no-traceback CLI result telling the operator to re-auth - never a
+    # crash, and never a leaked secret.
+    token = tmp_path / "token.json"
+    _write_token(token, expiry=PAST_EXPIRY, refresh_token=SECRET_SENTINEL)
+    client_secret = tmp_path / "client_secret.json"
+
+    class RealSettings:
+        def __init__(self) -> None:
+            self.youtube_client_secret_file = client_secret
+            self.youtube_token_file = token
+
+    def fake_refresh(self: Credentials, request: Any) -> None:
+        raise TransportError("connection reset by peer")
+
+    monkeypatch.setattr(cli_module, "Settings", RealSettings)
+    monkeypatch.setattr(ya, "InstalledAppFlow", ExplodingFlow)
+    monkeypatch.setattr(Credentials, "refresh", fake_refresh)
+
+    runner = CliRunner()
+    result = runner.invoke(cli_app, ["youtube-status"])
+
+    assert result.exit_code == 0
+    assert result.exception is None
+    assert AuthState.REFRESH_FAILED.value in result.output
+    assert "robin-engine youtube-auth" in result.output
+    assert SECRET_SENTINEL not in result.output
