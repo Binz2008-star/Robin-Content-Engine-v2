@@ -7,10 +7,12 @@ import structlog
 import typer
 
 from . import __version__
+from .channel_repository import ChannelRepository
 from .config import Settings
 from .database import JobRepository
 from .pipeline import ContentEngine
 from .youtube_auth import AuthState, YouTubeAuth, YouTubeAuthError
+from .youtube_sync import YouTubeChannelSync, YouTubeSyncError
 
 app = typer.Typer(no_args_is_help=True, help="Robin Content Engine")
 
@@ -129,6 +131,36 @@ def youtube_status() -> None:
     typer.echo(f"Channel ID: {channel.channel_id}")
     if channel.custom_url:
         typer.echo(f"Custom URL: {channel.custom_url}")
+
+
+@app.command("youtube-sync")
+def youtube_sync() -> None:
+    """Read the authenticated channel inventory and save a Neon snapshot."""
+    settings = Settings()  # type: ignore[call-arg]
+    auth = YouTubeAuth(settings.youtube_client_secret_file, settings.youtube_token_file)
+    service = YouTubeChannelSync(
+        auth,
+        expected_channel_id=settings.youtube_expected_channel_id,
+    )
+    try:
+        snapshot = service.fetch_snapshot()
+    except (YouTubeAuthError, YouTubeSyncError) as exc:
+        raise typer.BadParameter(str(exc)) from exc
+
+    repository = ChannelRepository(settings.database_url)
+    with repository.running():
+        stored_count = repository.save_snapshot(snapshot)
+
+    channel = snapshot.channel
+    typer.echo("YouTube channel sync successful.")
+    typer.echo(f"Channel: {channel.title}")
+    typer.echo(f"Channel ID: {channel.channel_id}")
+    typer.echo(f"Uploads discovered: {snapshot.discovered_video_count}")
+    typer.echo(f"Videos stored: {stored_count}")
+    if channel.view_count is not None:
+        typer.echo(f"Channel views: {channel.view_count}")
+    if channel.subscriber_count is not None:
+        typer.echo(f"Subscribers: {channel.subscriber_count}")
 
 
 @app.command()
