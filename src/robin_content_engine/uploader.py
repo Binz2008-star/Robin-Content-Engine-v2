@@ -3,20 +3,20 @@ import random
 import time
 from pathlib import Path
 
-import httplib2
-from google.auth.exceptions import RefreshError
-from google.auth.transport.requests import Request
-from google.oauth2.credentials import Credentials
-from google_auth_oauthlib.flow import InstalledAppFlow
-from googleapiclient.discovery import build
-from googleapiclient.errors import HttpError
-from googleapiclient.http import MediaFileUpload
+import httplib2  # type: ignore[import-untyped]
+from googleapiclient.discovery import build  # type: ignore[import-untyped]
+from googleapiclient.errors import HttpError  # type: ignore[import-untyped]
+from googleapiclient.http import MediaFileUpload  # type: ignore[import-untyped]
 
 from .models import GeneratedContent, UploadResult
+from .youtube_auth import YouTubeAuth, YouTubeAuthError
 
-YOUTUBE_UPLOAD_SCOPE = "https://www.googleapis.com/auth/youtube.upload"
 RETRIABLE_STATUS_CODES = {500, 502, 503, 504}
 RETRIABLE_EXCEPTIONS = (httplib2.HttpLib2Error, OSError, TimeoutError)
+
+
+class UploadNotAuthenticatedError(RuntimeError):
+    """Raised when an unattended upload is attempted without valid YouTube credentials."""
 
 
 class YouTubeUploader:
@@ -31,42 +31,24 @@ class YouTubeUploader:
         self.token_file = token_file
         self.privacy_status = privacy_status
         self.category_id = category_id
-
-    def _credentials(self) -> Credentials:
-        credentials: Credentials | None = None
-        if self.token_file.exists():
-            credentials = Credentials.from_authorized_user_file(
-                str(self.token_file), [YOUTUBE_UPLOAD_SCOPE]
-            )
-
-        if credentials and credentials.expired and credentials.refresh_token:
-            try:
-                credentials.refresh(Request())
-            except RefreshError:
-                credentials = None
-
-        if not credentials or not credentials.valid:
-            if not self.client_secret_file.is_file():
-                raise FileNotFoundError(
-                    f"YouTube OAuth client secret not found: {self.client_secret_file}"
-                )
-            flow = InstalledAppFlow.from_client_secrets_file(
-                str(self.client_secret_file), [YOUTUBE_UPLOAD_SCOPE]
-            )
-            credentials = flow.run_local_server(port=0)
-
-        self.token_file.parent.mkdir(parents=True, exist_ok=True)
-        self.token_file.write_text(credentials.to_json(), encoding="utf-8")
-        return credentials
+        self._auth = YouTubeAuth(client_secret_file, token_file)
 
     def upload(self, video_path: Path, content: GeneratedContent) -> UploadResult:
         if not video_path.is_file():
             raise FileNotFoundError(f"Rendered video not found: {video_path}")
 
+        try:
+            credentials = self._auth.load_credentials()
+        except YouTubeAuthError as exc:
+            raise UploadNotAuthenticatedError(
+                "YouTube is not authenticated for unattended upload. "
+                "Run: robin-engine youtube-auth"
+            ) from exc
+
         youtube = build(
             "youtube",
             "v3",
-            credentials=self._credentials(),
+            credentials=credentials,
             cache_discovery=False,
         )
         request = youtube.videos().insert(

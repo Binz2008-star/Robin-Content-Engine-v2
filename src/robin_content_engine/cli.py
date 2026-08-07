@@ -10,6 +10,7 @@ from . import __version__
 from .config import Settings
 from .database import JobRepository
 from .pipeline import ContentEngine
+from .youtube_auth import AuthState, YouTubeAuth, YouTubeAuthError
 
 app = typer.Typer(no_args_is_help=True, help="Robin Content Engine")
 
@@ -88,6 +89,46 @@ def run_once(
         typer.echo("No pending jobs.")
     else:
         typer.echo(f"Processed job {job_id}.")
+
+
+@app.command("youtube-auth")
+def youtube_auth() -> None:
+    """Run interactive YouTube OAuth and verify the authenticated channel."""
+    settings = Settings()  # type: ignore[call-arg]
+    auth = YouTubeAuth(settings.youtube_client_secret_file, settings.youtube_token_file)
+    try:
+        channel = auth.authenticate_and_verify()
+    except YouTubeAuthError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    typer.echo("YouTube authentication successful.")
+    typer.echo(f"Channel: {channel.title}")
+    typer.echo(f"Channel ID: {channel.channel_id}")
+    if channel.custom_url:
+        typer.echo(f"Custom URL: {channel.custom_url}")
+
+
+@app.command("youtube-status")
+def youtube_status() -> None:
+    """Check YouTube auth state without ever opening a browser."""
+    settings = Settings()  # type: ignore[call-arg]
+    auth = YouTubeAuth(settings.youtube_client_secret_file, settings.youtube_token_file)
+    state = auth.state()
+    if state != AuthState.AUTHENTICATED:
+        typer.echo(f"YouTube auth state: {state.value}")
+        typer.echo("Run: robin-engine youtube-auth")
+        return
+    try:
+        channel = auth.verify_current_channel()
+    except YouTubeAuthError as exc:
+        typer.echo(f"YouTube auth state: {AuthState.REFRESH_FAILED.value}")
+        typer.echo(str(exc))
+        typer.echo("Run: robin-engine youtube-auth")
+        return
+    typer.echo("YouTube auth state: authenticated")
+    typer.echo(f"Channel: {channel.title}")
+    typer.echo(f"Channel ID: {channel.channel_id}")
+    if channel.custom_url:
+        typer.echo(f"Custom URL: {channel.custom_url}")
 
 
 @app.command()
