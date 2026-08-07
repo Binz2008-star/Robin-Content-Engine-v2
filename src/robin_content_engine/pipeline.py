@@ -61,6 +61,20 @@ class ContentEngine:
                 log.exception("job_failed", job_id=job.id, error=str(exc))
                 raise
 
+    async def run_job(self, job_id: int, *, upload: bool = False) -> int | None:
+        self.settings.ensure_runtime_dirs()
+        with self.repository.running():
+            job_row = self.repository.get_job(job_id)
+            if job_row is None:
+                return None
+            job = VideoJob.model_validate(job_row)
+            try:
+                return await self._process(job, upload=upload)
+            except Exception as exc:
+                self.repository.mark_failed(job.id, exc)
+                log.exception("job_failed", job_id=job.id, error=str(exc))
+                raise
+
     async def _process(self, job: VideoJob, *, upload: bool) -> int:
         if not job.rights_confirmed:
             raise PermissionError("Publishing rights are not confirmed")
