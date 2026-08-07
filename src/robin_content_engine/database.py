@@ -261,6 +261,91 @@ class JobRepository:
             )
         return bool(result.rowcount)
 
+    def list_pending_rights_review(self) -> list[RowDict]:
+        """Sources still awaiting explicit operator rights verification."""
+        with self.pool.connection() as conn:
+            result = conn.execute(
+                """
+                SELECT id, source_path, source_url, source_title, rights_confirmed,
+                       rights_note, status, generated_title, generated_description,
+                       generated_tags, generated_script, output_path, youtube_id,
+                       attempts, last_error, claimed_at, completed_at, created_at,
+                       updated_at
+                FROM video_queue
+                WHERE status = 'pending' AND rights_confirmed = FALSE
+                ORDER BY created_at, id
+                """
+            )
+            rows = result.fetchall()
+        return _rows_to_dicts(rows, result.description)
+
+    def approve_rights(self, job_id: int, verification_note: str) -> RowDict | None:
+        """Explicitly confirm publishing rights for one reviewable source.
+
+        Only mutates a job that is pending with rights still unconfirmed
+        (an atomic conditional UPDATE, not read-then-write) - already-
+        confirmed, in-progress, or terminal jobs are left untouched and
+        this returns None as a safe conflict signal. Never claims,
+        renders, or uploads; status stays 'pending' so the existing queue
+        rules pick it up normally. The rights_note is appended to, never
+        overwritten, so discovery provenance is preserved.
+        """
+        cleaned_note = verification_note.strip()
+        if not cleaned_note:
+            raise ValueError("verification_note must not be empty")
+        with self.pool.connection() as conn:
+            result = conn.execute(
+                """
+                UPDATE video_queue
+                SET rights_confirmed = TRUE,
+                    rights_note = COALESCE(rights_note, '') || %s
+                WHERE id = %s
+                  AND status = 'pending'
+                  AND rights_confirmed = FALSE
+                RETURNING id, source_path, source_url, source_title, rights_confirmed,
+                          rights_note, status, generated_title, generated_description,
+                          generated_tags, generated_script, output_path, youtube_id,
+                          attempts, last_error, claimed_at, completed_at, created_at,
+                          updated_at
+                """,
+                (f"\n\nOperator verification: {cleaned_note}", job_id),
+            )
+            row = result.fetchone()
+        return _row_to_dict(row, result.description)
+
+    def reject_rights(self, job_id: int, reason: str) -> RowDict | None:
+        """Reject one reviewable source. rights_confirmed stays FALSE; the
+        job is quarantined (existing status value, no schema change) so it
+        is excluded from claim_next()/claim_job(). The source row and file
+        are never deleted - only jobs pending with unconfirmed rights can
+        be rejected via this atomic conditional UPDATE (not read-then-
+        write); already-confirmed, in-progress, or terminal jobs return
+        None as a safe conflict signal.
+        """
+        cleaned_reason = reason.strip()
+        if not cleaned_reason:
+            raise ValueError("reason must not be empty")
+        with self.pool.connection() as conn:
+            result = conn.execute(
+                """
+                UPDATE video_queue
+                SET status = 'quarantined',
+                    last_error = 'Rights rejected by operator.',
+                    rights_note = COALESCE(rights_note, '') || %s
+                WHERE id = %s
+                  AND status = 'pending'
+                  AND rights_confirmed = FALSE
+                RETURNING id, source_path, source_url, source_title, rights_confirmed,
+                          rights_note, status, generated_title, generated_description,
+                          generated_tags, generated_script, output_path, youtube_id,
+                          attempts, last_error, claimed_at, completed_at, created_at,
+                          updated_at
+                """,
+                (f"\n\nOperator rejection: {cleaned_reason}", job_id),
+            )
+            row = result.fetchone()
+        return _row_to_dict(row, result.description)
+
     def mark_rendered(
         self,
         job_id: int,
