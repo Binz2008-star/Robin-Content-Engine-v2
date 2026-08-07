@@ -13,6 +13,7 @@ if str(SRC) not in sys.path:
 import pytest  # noqa: E402
 from google.auth.exceptions import RefreshError, TransportError  # noqa: E402
 from google.oauth2.credentials import Credentials  # noqa: E402
+from googleapiclient.errors import HttpError  # type: ignore[import-untyped]  # noqa: E402
 from typer.testing import CliRunner  # noqa: E402
 
 from robin_content_engine import cli as cli_module  # noqa: E402
@@ -359,26 +360,83 @@ def test_fetch_channel_identity_no_channel_raises_clear_error(
         auth.fetch_channel_identity(FakeCredentials({}))  # type: ignore[arg-type]
 
 
-def test_fetch_channel_identity_normalizes_transport_failure(
+SAFE_CHANNEL_LOOKUP_MESSAGE = "YouTube channel lookup failed due to an API or transport error."
+RAW_TRANSPORT_DETAIL = "raw-transport-detail-must-not-leak-to-operator"
+
+
+class RaisingExecutable:
+    def __init__(self, exc: Exception) -> None:
+        self._exc = exc
+
+    def execute(self) -> dict[str, Any]:
+        raise self._exc
+
+
+class RaisingChannelsResource:
+    def __init__(self, exc: Exception) -> None:
+        self._exc = exc
+
+    def list(self, **kwargs: Any) -> RaisingExecutable:
+        return RaisingExecutable(self._exc)
+
+
+class RaisingYouTubeClient:
+    def __init__(self, exc: Exception) -> None:
+        self._exc = exc
+
+    def channels(self) -> RaisingChannelsResource:
+        return RaisingChannelsResource(self._exc)
+
+
+def test_fetch_channel_identity_execute_transport_failure_is_safe(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    class RaisingExecutable:
-        def execute(self) -> dict[str, Any]:
-            raise TransportError("connection reset by peer")
-
-    class RaisingChannelsResource:
-        def list(self, **kwargs: Any) -> RaisingExecutable:
-            return RaisingExecutable()
-
-    class RaisingYouTubeClient:
-        def channels(self) -> RaisingChannelsResource:
-            return RaisingChannelsResource()
-
-    monkeypatch.setattr(ya, "build", lambda *a, **kw: RaisingYouTubeClient())
+    monkeypatch.setattr(
+        ya, "build", lambda *a, **kw: RaisingYouTubeClient(TransportError(RAW_TRANSPORT_DETAIL))
+    )
 
     auth = YouTubeAuth(tmp_path / "client_secret.json", tmp_path / "token.json")
-    with pytest.raises(YouTubeAuthError, match="channel lookup failed"):
+    with pytest.raises(YouTubeAuthError) as exc_info:
         auth.fetch_channel_identity(FakeCredentials({}))  # type: ignore[arg-type]
+
+    assert str(exc_info.value) == SAFE_CHANNEL_LOOKUP_MESSAGE
+    assert RAW_TRANSPORT_DETAIL not in str(exc_info.value)
+    assert exc_info.value.__cause__ is not None  # `raise ... from exc` preserved internally
+
+
+def test_fetch_channel_identity_execute_http_error_is_safe(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    http_error = HttpError(
+        resp=type("Resp", (), {"status": 500, "reason": "Internal Server Error"})(),
+        content=b"raw body detail",
+    )
+    monkeypatch.setattr(ya, "build", lambda *a, **kw: RaisingYouTubeClient(http_error))
+
+    auth = YouTubeAuth(tmp_path / "client_secret.json", tmp_path / "token.json")
+    with pytest.raises(YouTubeAuthError) as exc_info:
+        auth.fetch_channel_identity(FakeCredentials({}))  # type: ignore[arg-type]
+
+    assert str(exc_info.value) == SAFE_CHANNEL_LOOKUP_MESSAGE
+    assert b"raw body detail" not in str(exc_info.value).encode()
+
+
+def test_fetch_channel_identity_build_transport_failure_is_safe(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Regression: build() itself (API discovery) used to run outside the try
+    # block, so a transport failure there would escape as a raw exception.
+    def raising_build(*args: Any, **kwargs: Any) -> Any:
+        raise TransportError(RAW_TRANSPORT_DETAIL)
+
+    monkeypatch.setattr(ya, "build", raising_build)
+
+    auth = YouTubeAuth(tmp_path / "client_secret.json", tmp_path / "token.json")
+    with pytest.raises(YouTubeAuthError) as exc_info:
+        auth.fetch_channel_identity(FakeCredentials({}))  # type: ignore[arg-type]
+
+    assert str(exc_info.value) == SAFE_CHANNEL_LOOKUP_MESSAGE
+    assert RAW_TRANSPORT_DETAIL not in str(exc_info.value)
 
 
 # ---------------------------------------------------------------------------
@@ -464,6 +522,19 @@ class FakeAuthRefreshFailed:
 
     def verify_current_channel(self) -> ChannelIdentity:
         raise AssertionError("verify_current_channel should not run when state != AUTHENTICATED")
+
+
+class FakeAuthChannelVerificationFails:
+    """Auth succeeds, but the channel-lookup call itself fails (API/transport error)."""
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        pass
+
+    def state(self) -> AuthState:
+        return AuthState.AUTHENTICATED
+
+    def verify_current_channel(self) -> ChannelIdentity:
+        raise YouTubeAuthError(SAFE_CHANNEL_LOOKUP_MESSAGE)
 
 
 def test_cli_youtube_auth_prints_only_safe_identity(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -552,4 +623,21 @@ def test_cli_youtube_status_transport_refresh_failure_is_clean(
     assert result.exception is None
     assert AuthState.REFRESH_FAILED.value in result.output
     assert "robin-engine youtube-auth" in result.output
+    assert SECRET_SENTINEL not in result.output
+
+
+def test_cli_youtube_status_channel_verification_failure_is_clean(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(cli_module, "Settings", FakeSettings)
+    monkeypatch.setattr(cli_module, "YouTubeAuth", FakeAuthChannelVerificationFails)
+
+    runner = CliRunner()
+    result = runner.invoke(cli_app, ["youtube-status"])
+
+    assert result.exit_code == 0
+    assert result.exception is None
+    assert SAFE_CHANNEL_LOOKUP_MESSAGE in result.output
+    assert "robin-engine youtube-auth" in result.output
+    assert RAW_TRANSPORT_DETAIL not in result.output
     assert SECRET_SENTINEL not in result.output

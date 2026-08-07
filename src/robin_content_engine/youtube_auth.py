@@ -145,11 +145,13 @@ class YouTubeAuth:
 
     def fetch_channel_identity(self, credentials: Credentials) -> ChannelIdentity:
         """Non-interactive authenticated-channel lookup via channels().list(mine=True)."""
-        youtube = build("youtube", "v3", credentials=credentials, cache_discovery=False)
         try:
+            youtube = build("youtube", "v3", credentials=credentials, cache_discovery=False)
             response = youtube.channels().list(part="snippet", mine=True).execute()
         except (HttpError, GoogleAuthError) as exc:
-            raise YouTubeAuthError(f"YouTube channel lookup failed: {exc}") from exc
+            raise YouTubeAuthError(
+                "YouTube channel lookup failed due to an API or transport error."
+            ) from exc
         items = response.get("items") or []
         if not items:
             raise YouTubeAuthError("No YouTube channel found for these credentials.")
