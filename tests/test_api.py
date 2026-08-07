@@ -43,6 +43,14 @@ class FakeRepository:
         self.jobs: dict[int, dict[str, Any]] = {}
         self.next_id = 1
         self.ping_ok = True
+        self.open_calls = 0
+        self.close_calls = 0
+
+    def open(self) -> None:
+        self.open_calls += 1
+
+    def close(self) -> None:
+        self.close_calls += 1
 
     def ping(self) -> bool:
         return self.ping_ok
@@ -132,15 +140,22 @@ class FakeRepository:
             return False
         job["status"] = "pending"
         job["last_error"] = None
+        job["claimed_at"] = None
+        job["completed_at"] = None
         return True
 
     def quarantine_job(self, job_id: int) -> bool:
         job = self.jobs.get(job_id)
         if not job:
             return False
-        if job["status"] in {"uploaded"}:
+        if job["status"] == "uploaded":
+            return False
+        if job["status"] == "quarantined":
+            return False
+        if job["status"] not in {"pending", "processing", "rendered", "failed"}:
             return False
         job["status"] = "quarantined"
+        job["last_error"] = "Quarantined by operator."
         return True
 
 
@@ -192,7 +207,12 @@ def client() -> TestClient:
 def test_health_success(client: TestClient) -> None:
     response = client.get("/api/health")
     assert response.status_code == 200
-    assert response.json()["status"] == "ok"
+    assert response.json() == {
+        "status": "ok",
+        "database": "connected",
+        "version": "0.1.0",
+        "demo_mode": False,
+    }
 
 
 def test_health_db_failure() -> None:
@@ -202,6 +222,14 @@ def test_health_db_failure() -> None:
     client = TestClient(app)
     response = client.get("/api/health")
     assert response.status_code == 503
+
+
+def test_lifespan_opens_and_closes_repository_when_available() -> None:
+    repository = FakeRepository()
+    app = create_app(repository=repository, settings=FakeSettings())
+    with TestClient(app):
+        assert repository.open_calls == 1
+    assert repository.close_calls == 1
 
 
 def test_jobs_response_and_counts(client: TestClient) -> None:
@@ -229,7 +257,7 @@ def test_jobs_response_and_counts(client: TestClient) -> None:
     assert payload["counts"]["processing"] == 1
     assert payload["counts"]["uploaded"] == 1
     assert payload["counts"]["total"] == 2
-    assert payload["jobs"][0]["id"] == 1
+    assert payload["jobs"][0]["id"] == 2
     assert set(payload["jobs"][0].keys()) == {
         "id",
         "source_path",
@@ -450,12 +478,16 @@ def test_system_hides_secrets() -> None:
     response = client.get("/api/system")
     payload = response.json()
     assert response.status_code == 200
-    assert payload["app"]["version"] == "0.1.0"
-    assert payload["database"]["state"] == "ok"
-    assert "DATABASE_URL" not in str(payload)
-    assert "deepseek" not in str(payload).lower()
-    assert payload["youtube"]["authenticated"] is False
-    assert payload["demo_mode"] is False
+    assert payload == {
+        "app_name": "Robin Content Engine v2",
+        "version": "0.1.0",
+        "python_version": sys.version.split()[0],
+        "ffmpeg_available": False,
+        "deepseek_configured": True,
+        "youtube_authenticated": False,
+        "database": "connected",
+        "demo_mode": False,
+    }
 
 
 def test_private_youtube_invariant() -> None:

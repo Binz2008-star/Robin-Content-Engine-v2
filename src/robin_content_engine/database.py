@@ -2,12 +2,27 @@ import json
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
-from psycopg.rows import dict_row
+from typing_extensions import TypeAlias
+
 from psycopg_pool import ConnectionPool
 
 from .models import GeneratedContent, VideoJob
+
+RowDict: TypeAlias = dict[str, Any]
+
+
+def _row_to_dict(row: tuple[Any, ...] | None, description: Any) -> RowDict | None:
+    if row is None:
+        return None
+    columns = [column[0] for column in description or []]
+    return cast(RowDict, dict(zip(columns, row)))
+
+
+def _rows_to_dicts(rows: list[tuple[Any, ...]], description: Any) -> list[RowDict]:
+    columns = [column[0] for column in description or []]
+    return [cast(RowDict, dict(zip(columns, row))) for row in rows]
 
 
 class JobRepository:
@@ -17,7 +32,6 @@ class JobRepository:
             conninfo=database_url,
             min_size=1,
             max_size=5,
-            kwargs={"row_factory": dict_row},
             open=False,
         )
 
@@ -40,9 +54,9 @@ class JobRepository:
             conn.execute("SELECT 1")
         return True
 
-    def list_jobs(self) -> list[dict[str, Any]]:
+    def list_jobs(self) -> list[RowDict]:
         with self.pool.connection() as conn:
-            rows = conn.execute(
+            result = conn.execute(
                 """
                 SELECT id, source_path, source_url, source_title, rights_confirmed,
                        rights_note, status, generated_title, generated_description,
@@ -50,14 +64,15 @@ class JobRepository:
                        attempts, last_error, claimed_at, completed_at, created_at,
                        updated_at
                 FROM video_queue
-                ORDER BY id
+                ORDER BY created_at DESC, id DESC
                 """
-            ).fetchall()
-        return [dict(row) for row in rows]
+            )
+            rows = result.fetchall()
+        return _rows_to_dicts(rows, result.description)
 
-    def get_job(self, job_id: int) -> dict[str, Any] | None:
+    def get_job(self, job_id: int) -> RowDict | None:
         with self.pool.connection() as conn:
-            row = conn.execute(
+            result = conn.execute(
                 """
                 SELECT id, source_path, source_url, source_title, rights_confirmed,
                        rights_note, status, generated_title, generated_description,
@@ -68,8 +83,9 @@ class JobRepository:
                 WHERE id = %s
                 """,
                 (job_id,),
-            ).fetchone()
-        return dict(row) if row else None
+            )
+            row = result.fetchone()
+        return _row_to_dict(row, result.description)
 
     def status_counts(self) -> dict[str, int]:
         with self.pool.connection() as conn:
@@ -89,10 +105,12 @@ class JobRepository:
             "quarantined": 0,
             "total": 0,
         }
-        for row in rows:
-            status = row["status"]
-            counts[status] = int(row["count"])
-            counts["total"] += int(row["count"])
+        row_dicts = _rows_to_dicts(rows, None)
+        for row in row_dicts:
+            status = str(row["status"])
+            count = int(row["count"])
+            counts[status] = count
+            counts["total"] += count
         return counts
 
     def enqueue_local(self, source_path: Path, source_title: str, rights_note: str) -> int:
@@ -113,7 +131,7 @@ class JobRepository:
             ).fetchone()
         if not row:
             raise RuntimeError("Queue insert returned no job ID")
-        return int(row["id"])
+        return int(row[0])
 
     def enqueue_api_job(
         self,
@@ -138,7 +156,7 @@ class JobRepository:
             ).fetchone()
         if not row:
             raise RuntimeError("Queue insert returned no job ID")
-        return int(row["id"])
+        return int(row[0])
 
     def quarantine_unconfirmed(self) -> int:
         with self.pool.connection() as conn:
@@ -154,7 +172,7 @@ class JobRepository:
 
     def claim_next(self) -> VideoJob | None:
         with self.pool.connection() as conn, conn.transaction():
-            row = conn.execute(
+            result = conn.execute(
                 """
                 WITH candidate AS (
                     SELECT id
@@ -177,12 +195,13 @@ class JobRepository:
                           q.rights_confirmed, q.rights_note, q.attempts
                 """,
                 (self.max_attempts,),
-            ).fetchone()
-        return VideoJob.model_validate(row) if row else None
+            )
+            row = result.fetchone()
+        return VideoJob.model_validate(_row_to_dict(row, result.description)) if row else None
 
-    def claim_job(self, job_id: int) -> dict[str, Any] | None:
+    def claim_job(self, job_id: int) -> RowDict | None:
         with self.pool.connection() as conn, conn.transaction():
-            row = conn.execute(
+            result = conn.execute(
                 """
                 WITH candidate AS (
                     SELECT id
@@ -207,8 +226,9 @@ class JobRepository:
                           q.claimed_at, q.completed_at, q.created_at, q.updated_at
                 """,
                 (job_id, self.max_attempts),
-            ).fetchone()
-        return dict(row) if row else None
+            )
+            row = result.fetchone()
+        return _row_to_dict(row, result.description)
 
     def retry_job(self, job_id: int) -> bool:
         with self.pool.connection() as conn:

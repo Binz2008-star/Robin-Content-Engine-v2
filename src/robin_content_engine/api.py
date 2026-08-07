@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-import os
 import shutil
 import sys
-from collections.abc import Callable
+from collections.abc import AsyncIterator, Callable
+from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Annotated, Any, Protocol
+from typing import Annotated, Any, Protocol, cast
 
 from fastapi import Depends, FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
@@ -126,11 +126,27 @@ def _job_payload(job: dict[str, Any]) -> dict[str, Any]:
 
 def create_app(
     *,
-    repository: SupportsPing & SupportsJobs | None = None,
+    repository: Any | None = None,
     settings: Settings | None = None,
-    engine_factory: Callable[[Settings, SupportsPing & SupportsJobs], SupportsEngine] | None = None,
+    engine_factory: Callable[[Settings, Any], SupportsEngine] | None = None,
 ) -> FastAPI:
-    app = FastAPI(title="Robin Content Engine API")
+    app_settings: Settings = settings if settings is not None else Settings()  # type: ignore[call-arg]
+    repo = repository or JobRepository(
+        app_settings.database_url,
+        app_settings.max_job_attempts,
+    )
+
+    @asynccontextmanager
+    async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+        if hasattr(repo, "open"):
+            getattr(repo, "open")()
+        try:
+            yield
+        finally:
+            if hasattr(repo, "close"):
+                getattr(repo, "close")()
+
+    app = FastAPI(title="Robin Content Engine API", lifespan=lifespan)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["http://127.0.0.1:3000", "http://localhost:3000"],
@@ -139,20 +155,14 @@ def create_app(
         allow_headers=["*"],
     )
 
-    repo = repository or JobRepository(
-        settings.database_url if settings else os.environ["DATABASE_URL"],
-        (settings.max_job_attempts if settings else 3),
-    )
     app.state.repository = repo
-
-    app_settings = settings or Settings()  # type: ignore[call-arg]
     app.state.settings = app_settings
 
-    def get_repository() -> SupportsPing & SupportsJobs:
+    def get_repository() -> Any:
         return app.state.repository
 
     def get_settings() -> Settings:
-        return app.state.settings
+        return cast(Settings, app.state.settings)
 
     def get_engine() -> SupportsEngine:
         if engine_factory is not None:
@@ -167,7 +177,12 @@ def create_app(
     def health() -> dict[str, Any]:
         try:
             if repo.ping():
-                return {"status": "ok"}
+                return {
+                    "status": "ok",
+                    "database": "connected",
+                    "version": __version__,
+                    "demo_mode": False,
+                }
         except Exception:
             pass
         raise HTTPException(
@@ -178,6 +193,13 @@ def create_app(
     @app.get("/api/jobs")
     def list_jobs() -> dict[str, Any]:
         jobs = [_job_payload(job) for job in repo.list_jobs()]
+        jobs.sort(
+            key=lambda job: (
+                job.get("created_at") or "",
+                job.get("id", 0),
+            ),
+            reverse=True,
+        )
         counts = repo.status_counts()
         return {"jobs": jobs, "counts": counts}
 
@@ -244,12 +266,25 @@ def create_app(
     @app.get("/api/system")
     def system() -> dict[str, Any]:
         ffmpeg_path = shutil.which("ffmpeg")
+        database_state = "connected" if repo.ping() else "unavailable"
+        deepseek_configured = bool(
+            getattr(app_settings, "deepseek_api_key", None)
+            and str(app_settings.deepseek_api_key).strip()
+        )
+        token_path = getattr(app_settings, "youtube_token_file", None)
+        youtube_authenticated = bool(
+            token_path is not None
+            and Path(token_path).expanduser().exists()
+            and Path(token_path).expanduser().stat().st_size > 0
+        )
         return {
-            "app": {"version": __version__},
-            "python": {"version": sys.version.split()[0]},
-            "database": {"state": "ok" if repo.ping() else "unavailable"},
-            "ffmpeg": {"available": bool(ffmpeg_path)},
-            "youtube": {"authenticated": False},
+            "app_name": "Robin Content Engine v2",
+            "version": __version__,
+            "python_version": sys.version.split()[0],
+            "ffmpeg_available": bool(ffmpeg_path),
+            "deepseek_configured": deepseek_configured,
+            "youtube_authenticated": youtube_authenticated,
+            "database": database_state,
             "demo_mode": False,
         }
 
