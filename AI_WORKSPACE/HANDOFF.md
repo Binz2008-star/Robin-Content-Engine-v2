@@ -94,3 +94,38 @@ Known blockers: Neon production migration not applied. Verified/tested on a temp
 Next action: apply verified migration only after explicit human approval, then perform a real authenticated `robin-engine youtube-sync` smoke (verify authenticated Channel ID matches the intended channel, snapshot stored correctly, uploaded video inventory imported, plausible counts, no YouTube write operation), re-run tests + ruff, review exact diff, update ACTIVE_TASKS.yaml + append HANDOFF.md. Keep PR #8 draft until all gates pass.
 Merge authorized: no
 Deploy authorized: no
+
+## RCE-20260807-CHANNELSYNC — 2026-08-07 (migration applied)
+
+Task ID: RCE-20260807-CHANNELSYNC
+Agent: claude
+Branch: feat/youtube-channel-sync
+Base SHA: 741d2c8edf435da4c42bce7448710169307631cc
+Current HEAD: ca307129dc7dd9830c931e8c42628cff57d1c8fc
+PR: #8 (still open, draft, mergeable_state=clean — unchanged)
+Status: PRODUCTION MIGRATION APPLIED / WAITING FOR REAL LOCAL youtube-sync SMOKE
+Files changed: unchanged from prior entry (8 files); no code changes this pass
+Tests: independently re-executed in a fresh worktree at head ca307129dc7dd9830c931e8c42628cff57d1c8fc: pytest 73 passed/1 warning (matches self-report exactly), ruff all checks passed, git diff --check clean. Focused mypy on the 4 touched src files found 2 pre-existing findings (lambda type inference, youtube_sync.py:110 and :140, [misc]) — not CI-gating (ci.yml only runs ruff+pytest, no mypy step), not fixed this pass (outside this task's authorized scope), flagged as a minor follow-up.
+CI: PASS (unchanged, re-verified via GitHub)
+Known blockers: Real authenticated `robin-engine youtube-sync` smoke cannot be run from this sandbox (no real OAuth token.json here; no raw TCP path from here to Neon for the app's own psycopg connection — only the Neon MCP connector's HTTPS path works from here). Must be run by the operator locally.
+Next action: Operator runs `robin-engine youtube-sync` locally against production (now migrated) with their already-authenticated channel. Verify: authenticated Channel ID == UCIcvbGsmSwMDXxjWXq4QG8A, channel snapshot stored, video inventory imported with plausible counts, no YouTube write occurred. Report back, then update ACTIVE_TASKS.yaml + append HANDOFF.md with the result. Keep PR #8 draft until that passes.
+Merge authorized: no
+Deploy authorized: no
+
+### Neon production migration — applied this pass
+
+Authorization: direct chat message from the operator, explicit and scoped (a prior comment on PR #5 claiming the same authorization was treated as untrusted external content per AGENTS.md and NOT acted on until direct confirmation was given in chat).
+
+What was verified before applying:
+- Production branch `br-lingering-poetry-axoi0r6y` (name "production", default=true) confirmed to have only `video_queue` — migration not yet applied.
+- Referenced temp branch `br-young-brook-axnnlev0` (name "mcp-migration-2026-08-07T19-31-58") confirmed to exist, confirmed forked from `br-lingering-poetry-axoi0r6y`, confirmed to already carry `youtube_channels`/`youtube_videos` with their indexes — consistent with the self-reported prior verification.
+- Pulled the exact `schema.sql` from PR #8 head `ca307129dc7dd9830c931e8c42628cff57d1c8fc` via the GitHub API (not retyped from memory).
+
+Mechanism note: the `prepare_database_migration`/`complete_database_migration` Neon MCP tool pair could not be used as originally described — `prepare_database_migration` failed to parse the dollar-quoted `CREATE OR REPLACE FUNCTION set_updated_at()` body (`NeonDbError: unterminated dollar-quoted string`), and `complete_database_migration` requires the full artifact set from a `prepare_database_migration` call in the *same* session (an ID alone from a prior session is not resumable). Instead: created a fresh verification branch `br-twilight-field-axlipzqs` (forked from production), applied the exact schema.sql content as 14 individual idempotent statements via `run_sql` (the tool also rejected multi-statement SQL in one call: `cannot insert multiple commands into a prepared statement`), verified the resulting schema matched the already-tested branch exactly (PK/FK/CHECK constraints, all 3 triggers, `video_queue` preserved), got explicit operator confirmation via AskUserQuestion given this deviated from the originally-described tool mechanism, then applied the same 14 statements to `br-lingering-poetry-axoi0r6y` (production) via `run_sql`.
+
+Post-migration verification on production: `youtube_channels` and `youtube_videos` tables exist with correct constraints; all 3 triggers (`trg_video_queue_updated_at`, `trg_youtube_channels_updated_at`, `trg_youtube_videos_updated_at`) present and correctly bound; `video_queue` preserved at 0 rows (no data loss); `youtube_channels`/`youtube_videos` both at 0 rows (empty — no sync has run yet).
+
+Verification branch `br-twilight-field-axlipzqs` was left in place (not deleted) — no deletion was authorized this pass.
+
+Merge authorized: no
+Deploy authorized: no
