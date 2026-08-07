@@ -1,0 +1,91 @@
+version: 1
+
+# Canonical, machine- and human-readable task registry.
+#
+# Every agent must find its task here before editing anything. See
+# /AGENTS.md for the full rule set. SHAs in this file are verified against
+# `git rev-parse` / `git merge-base` at the time the entry was written or
+# last updated — do not carry forward a SHA without re-verifying it.
+#
+# If your branch is not listed below, it is not yet registered: register it
+# (or ask a human to) before starting work on it.
+
+tasks:
+
+  - id: RCE-20260807-API
+    title: FastAPI Control API
+    status: active
+    owner: github-copilot
+    branch: feat/control-api
+    base_branch: feat/initial-engine
+    base_sha: 779c4d62af6abe349136e9fb2991b20ef719011e
+    current_sha: ae516e933e1af655dcf880e7fb826caee6897f42
+    allowed_paths:
+      - src/robin_content_engine/**
+      - tests/**
+      - pyproject.toml
+      - README.md
+      - .env.example
+    forbidden_paths:
+      - studio/**
+      - schema.sql
+      - package.json
+      - package-lock.json
+      - metadata.json
+    merge_allowed: false
+    deploy_allowed: false
+    stop_conditions:
+      - base SHA mismatch
+      - unrelated working-tree changes
+      - forbidden path required
+      - CI failure not understood
+
+  - id: RCE-20260807-STUDIO
+    title: Studio API Readiness
+    status: review
+    owner: google-studio
+    branch: feat/studio-api-readiness
+    current_sha: 938d4c23f2ea96d3444886ca89fe748d8175b7ea
+    allowed_paths:
+      - studio/**
+    forbidden_paths:
+      - src/robin_content_engine/**
+      - schema.sql
+      - pyproject.toml
+      - tests/**
+    merge_allowed: false
+    deploy_allowed: false
+    note: Frozen pending live FastAPI integration.
+
+  - id: RCE-20260807-CONTROL
+    title: Multi-Agent Repository Control Plane
+    status: active
+    owner: claude
+    branch: chore/agent-control-plane
+    base_branch: main
+    base_sha: 5387af1f14888964b463b1fcaed8751d40ecbde6
+    allowed_paths:
+      - AGENTS.md
+      - CLAUDE.md
+      - .github/copilot-instructions.md
+      - .github/pull_request_template.md
+      - .github/workflows/agent-scope-guard.yml
+      - AI_WORKSPACE/**
+    forbidden_paths:
+      - src/**
+      - studio/**
+      - tests/**
+      - schema.sql
+      - pyproject.toml
+      - package.json
+      - package-lock.json
+    merge_allowed: false
+    deploy_allowed: false
+
+# Other branches observed on origin at the time this registry was created
+# that are NOT yet registered as tasks (owner/scope unknown to this agent —
+# not fabricated here). Whoever owns them should add a task entry above
+# before resuming work:
+#
+#   - feat/studio-ui
+#   - fix/studio-copilot-review

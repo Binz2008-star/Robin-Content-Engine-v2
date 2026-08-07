@@ -1,0 +1,104 @@
+name: Agent Scope Guard
+
+# Read-only validation. This workflow never modifies branches, PRs, or any
+# repository content — it only inspects the PR's changed file list and
+# fails the check if a branch touches paths outside its declared task
+# family scope (see /AGENTS.md and /AI_WORKSPACE/ACTIVE_TASKS.yaml).
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, edited]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  scope-guard:
+    name: Check branch scope boundaries
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Determine changed files
+        id: changed
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          git diff --name-only "${BASE_SHA}" "${HEAD_SHA}" > changed_files.txt
+          echo "----- Changed files -----"
+          cat changed_files.txt
+          echo "--------------------------"
+
+      - name: Enforce branch scope boundaries
+        env:
+          BRANCH: ${{ github.head_ref }}
+        run: |
+          set -euo pipefail
+
+          echo "Source branch: ${BRANCH}"
+
+          # match <pattern> <changed_files_file> -> prints matching lines,
+          # exits 1 if nothing matched (mirrors grep semantics).
+          match() {
+            local pattern="$1"
+            grep -E "$pattern" changed_files.txt || true
+          }
+
+          violations=""
+
+          check_forbidden() {
+            local label="$1"
+            local pattern="$2"
+            local hits
+            hits="$(match "$pattern")"
+            if [ -n "$hits" ]; then
+              echo "::error::Scope violation for branch '${BRANCH}': files matching '${label}' were changed but are forbidden for this task family."
+              echo "Offending files:"
+              echo "$hits" | sed 's/^/  - /'
+              violations="yes"
+            fi
+          }
+
+          case "$BRANCH" in
+            feat/control-api*|fix/control-api*)
+              echo "Task family: control-api"
+              check_forbidden "studio/**"          '^studio/'
+              check_forbidden "schema.sql"          '^schema\.sql$'
+              check_forbidden "package.json"        '^package\.json$'
+              check_forbidden "package-lock.json"   '^package-lock\.json$'
+              check_forbidden "metadata.json"       '^metadata\.json$'
+              ;;
+            feat/studio-*|fix/studio-*)
+              echo "Task family: studio"
+              check_forbidden "src/robin_content_engine/**" '^src/robin_content_engine/'
+              check_forbidden "schema.sql"                   '^schema\.sql$'
+              check_forbidden "pyproject.toml"               '^pyproject\.toml$'
+              check_forbidden "tests/**"                     '^tests/'
+              ;;
+            chore/agent-control-plane)
+              echo "Task family: agent-control-plane"
+              check_forbidden "src/**"              '^src/'
+              check_forbidden "studio/**"            '^studio/'
+              check_forbidden "tests/**"             '^tests/'
+              check_forbidden "schema.sql"           '^schema\.sql$'
+              check_forbidden "pyproject.toml"       '^pyproject\.toml$'
+              check_forbidden "package.json"         '^package\.json$'
+              check_forbidden "package-lock.json"    '^package-lock\.json$'
+              ;;
+            *)
+              echo "No scope rules defined for branch family '${BRANCH}'. Skipping (registry-only check, not a hard requirement)."
+              ;;
+          esac
+
+          if [ -n "$violations" ]; then
+            echo "::error::One or more forbidden-path violations found. See /AGENTS.md and /AI_WORKSPACE/ACTIVE_TASKS.yaml for this task's allowed_paths/forbidden_paths."
+            exit 1
+          fi
+
+          echo "No scope violations detected for branch '${BRANCH}'."
