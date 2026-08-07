@@ -418,3 +418,54 @@ The "Known limitation (not solved this phase, out of narrow scope)" paragraph in
 
 Merge authorized: no
 Deploy authorized: no
+
+## RCE-20260808-RIGHTS — 2026-08-07/08 (closed: real production smoke + merge)
+
+Task ID: RCE-20260808-RIGHTS
+Agent: claude
+Branch: feat/rights-approval-flow
+Base SHA: a0feaedcf6e47f1aeca0ccc76dbba37d6bc704e1
+Final HEAD (PR head at merge time): c9054f6f02fbf341885d7b8a479e153d3b86a0b5
+PR: #10 — merged (squash) into feat/initial-engine at c80b1ce54ddbdedf615cb88942fdd7e68c77b613; main was not touched; no deploy occurred. Merged by Binz2008-star.
+Status: complete
+Merge authorized: no (this agent did not merge; the operator merged directly via GitHub, independently verified below — not something this agent needs merge authority for)
+Deploy authorized: no
+
+### Independent verification performed by this agent (not assumed from chat)
+
+- `git fetch origin feat/initial-engine feat/rights-approval-flow` showed `feat/initial-engine` advanced `a0feaed..c80b1ce`, with `c80b1ce` = `feat(rights): add local operator rights verification/approval flow`.
+- GitHub `pull_request_read` on PR #10 independently confirmed: `state=closed`, `merged=true`, `merged_by=Binz2008-star`, `head.sha=c9054f6...`, `base.ref=feat/initial-engine`, `merge_commit` matching `c80b1ce...`.
+- Exact-head CI on `c9054f6` (the corrected head, see the prior handoff entry) was independently checked via `get_check_runs` as `SUCCESS` before the operator merged.
+
+### Real production rights smoke — attempted and blocked in this agent's sandbox, then executed by the operator
+
+This agent first attempted the authorized real smoke directly (copying the same production `DATABASE_URL` already used earlier in this project into the `feat/rights-approval-flow` worktree, without ever printing it). `robin-engine rights-list` hung and timed out; a raw Python socket connect to the resolved Neon IPs on port 5432 timed out from both addresses (DNS resolution itself succeeded — this is a network-egress restriction in this agent's sandbox, not a DNS or credentials problem, consistent with the same limitation noted earlier in this project for direct Postgres access). The agent's `.env` copy was deleted immediately after confirming the failure; no further attempt was made and no manual SQL was substituted for the CLI decisions.
+
+The operator then ran the smoke themselves, from their own Windows machine (`X:\content engine\Robin-Content-Engine-v2`), on the exact verified branch/head `feat/rights-approval-flow @ c9054f6`, using the real `robin-engine` CLI only (`rights-list`, `rights-show`, `rights-approve`, `rights-reject` — no manual SQL for the rights decisions themselves, matching the task's explicit requirement). Operator-reported results, pasted verbatim into chat:
+
+- Precheck (`rights-show 6/7/8`) matched the expected starting state exactly: job 6 "ChatGPT Classic 2026-08-07 23-17-33" pending/unconfirmed; job 7 "ChatGPT Classic 2026-08-07 23-19-45" pending/unconfirmed; job 8 "Fortnite 2026-08-07 23-14-11" pending/unconfirmed.
+- `rights-approve 8 --note "Personally recorded gameplay capture confirmed by operator. ..."` → `Rights approved for job 8. Status: pending. Rights confirmed: True.`
+- `rights-reject 6 --note "Not gameplay footage; excluded from Robin gameplay production pipeline."` → `Rights rejected for job 6. Status: quarantined. Rights confirmed: False.`
+- `rights-reject 7` with the same note → same result shape for job 7.
+- Post-smoke `rights-show` for all three matched the corrected state model exactly: jobs 6 and 7 → `status=quarantined, rights_confirmed=false, last_error='Rights rejected by operator.'`, `rights_note` preserving original discovery provenance plus the appended `Operator rejection: ...` text; job 8 → `status=pending, rights_confirmed=true, last_error=null`, `rights_note` preserving discovery provenance plus the appended `Operator verification: ...` text.
+- Final `rights-list` → `No jobs awaiting rights review.`
+- No render, worker, upload, or YouTube-write command was reported run during the smoke.
+
+The operator additionally reported a separate, independent read-only query against the production Neon database (run outside this agent's session) confirming the same final `status`/`rights_confirmed`/`last_error` values for rows 6, 7, and 8.
+
+**This agent did not itself execute the production mutation or the post-state verification query** — both were performed by the operator (and, for the DB read, a separate tool/session outside this agent's control) due to this agent's sandbox having no outbound Postgres path to Neon. This entry records the operator's reported results as operator-executed and operator-reported; it is not first-hand verification by this agent, and is written that way deliberately rather than claimed as this agent's own action.
+
+### Overall Phase 6 result
+
+REAL PRODUCTION RIGHTS STATE SMOKE: PASS (operator-executed, operator-reported, cross-checked by the operator via an independent DB read — not independently re-verified by this agent).
+
+PR #10 merged into `feat/initial-engine` only. `main` untouched. No deploy. RCE-20260808-RIGHTS is now `complete` in `AI_WORKSPACE/ACTIVE_TASKS.yaml`.
+
+### Explicitly not authorized by this closure
+
+- Phase 7 (Open-Source Harvest Audit follow-up, or any Highlight Engine implementation) is a separate task and requires its own explicit authorization and its own `AI_WORKSPACE/ACTIVE_TASKS.yaml` registration before any branch or code work begins.
+- No merge to `main`.
+- No deploy.
+
+Merge authorized: no
+Deploy authorized: no

@@ -351,25 +351,29 @@ tasks:
 
   - id: RCE-20260808-RIGHTS
     title: Phase 6 — Rights Verification / Approval Flow
-    status: review
+    status: complete
     owner: claude
     branch: feat/rights-approval-flow
     base_branch: feat/initial-engine
     base_sha: a0feaedcf6e47f1aeca0ccc76dbba37d6bc704e1
-    current_sha: c9054f6f02fbf341885d7b8a479e153d3b86a0b5
+    final_sha: c9054f6f02fbf341885d7b8a479e153d3b86a0b5
     pr: 10
-    pr_state: open (draft)
+    merged: true
+    merge_method: squash
+    merge_commit_sha: c80b1ce54ddbdedf615cb88942fdd7e68c77b613
+    merged_into: feat/initial-engine
+    result_sha_on_feat_initial_engine: c80b1ce54ddbdedf615cb88942fdd7e68c77b613
+    merged_by: Binz2008-star
     ci: >-
-      Correction pushed after review found a real state-machine gap (see
-      correction_2026-08-08 note below). In progress at time of writing
-      (check run "test" on GitHub) on current_sha c9054f6, reported once
-      per this task's explicit no-polling instruction - no self check-in
-      scheduled. CI on the prior sha (6686b42) was independently verified
-      SUCCESS before this correction. Independently run by this agent
-      before pushing the correction: pytest 139 passed/1 warning (124
-      prior baseline + 15 new auto-quarantine regression tests), ruff all
-      checks passed, focused mypy on database.py/cli.py - no issues
-      found, git diff --check clean.
+      SUCCESS on final_sha c9054f6 - independently verified by this agent
+      via GitHub check-runs API before the operator merged. Independently
+      run by this agent before pushing the correction: pytest 139
+      passed/1 warning (124 prior baseline + 15 new auto-quarantine
+      regression tests), ruff all checks passed, focused mypy on
+      database.py/cli.py - no issues found, git diff --check clean. The
+      merge itself (c80b1ce into feat/initial-engine, main untouched, no
+      deploy) was independently verified by this agent via git fetch and
+      the GitHub pull_request_read API after the operator reported it.
     correction_2026-08-08: >-
       Auto-quarantined captures are now reviewable. run_once() calls
       quarantine_unconfirmed() before claim_next(), which moves any
@@ -453,17 +457,36 @@ tasks:
         task - report CI state once after opening the draft PR
       - never read, print, commit, log, or expose .env, token.json,
         client_secret*.json, or any access/refresh token or API key
+    production_smoke: >-
+      Executed by the operator directly (not by this agent - this
+      agent's sandbox has no raw TCP path to Neon, confirmed by a failed
+      socket connect during this task). Run from the operator's Windows
+      machine, exact branch/head feat/rights-approval-flow @ c9054f6, via
+      the real robin-engine CLI (rights-list, rights-show, rights-approve,
+      rights-reject - no manual SQL for the decisions). Operator-reported
+      results: job 8 (Fortnite) approved -> rights_confirmed=true,
+      status=pending, last_error=null; jobs 6 and 7 (ChatGPT Classic)
+      rejected -> rights_confirmed=false, status=quarantined,
+      last_error='Rights rejected by operator.'; all three rights_note
+      values preserved original discovery provenance plus the new
+      operator note; final `rights-list` returned "No jobs awaiting
+      rights review."; no render/upload/YouTube-write command was run.
+      Operator additionally reported an independent read-only Neon query
+      (run outside this agent, this agent has no Neon MCP tools connected
+      in this session) confirming the same final state for rows 6/7/8.
+      This agent did not itself execute or independently re-verify the
+      production mutation or the post-state query - recorded here as
+      operator-executed and operator-reported, consistent with this
+      task's actual capability boundary, not as first-hand verification
+      by this agent.
     next_action: >-
-      Wait for PR #10 GitHub CI to finish on current_sha c9054f6 (in
-      progress at time of writing; not polled further per this task's
-      explicit no-background-polling instruction). Once green and
-      reviewed: real operator smoke against production rows 6/7/8
-      (approve the Fortnite row, reject the two ChatGPT Classic rows)
-      ONLY after explicit authorization - not performed yet. PR #10
-      stays draft until then. Do not merge to main. Task status stays
-      "review", not "complete", until CI is confirmed green on this
-      corrected head and the operator smoke is either run or explicitly
-      deferred.
+      None outstanding for this task. PR #10 merged (squash) into
+      feat/initial-engine at c80b1ce, independently verified by this
+      agent via git fetch and the GitHub API. main was not touched, no
+      deploy occurred. Phase 7 (Open-Source Harvest Audit / any
+      implementation) is a separate task and is NOT authorized by this
+      task's closure - do not start Phase 7 implementation without its
+      own explicit authorization and its own task registration.
 
 # Other branches observed on origin at the time this registry was created
 # that are NOT yet registered as tasks (owner/scope unknown to this agent —
