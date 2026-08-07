@@ -549,6 +549,88 @@ tasks:
       separate task requiring its own explicit authorization and
       registration; this closure does not authorize it.
 
+  - id: RCE-20260808-HIGHLIGHT7B
+    title: Phase 7B — Deterministic Gameplay Highlight Intelligence MVP
+    status: active
+    owner: claude
+    branch: feat/highlight-intelligence-mvp
+    base_branch: feat/initial-engine
+    base_sha: c80b1ce54ddbdedf615cb88942fdd7e68c77b613
+    pr: pending
+    allowed_paths:
+      - pyproject.toml
+      - src/robin_content_engine/scene_detector.py
+      - src/robin_content_engine/highlight_features.py
+      - src/robin_content_engine/highlight_scoring.py
+      - src/robin_content_engine/clip_selector.py
+      - src/robin_content_engine/cli.py
+      - src/robin_content_engine/models.py
+      - tests/test_scene_detector.py
+      - tests/test_highlight_features.py
+      - tests/test_highlight_scoring.py
+      - tests/test_clip_selector.py
+      - tests/test_highlight_scan_cli.py
+    forbidden_paths:
+      - studio/**
+      - AGENTS.md
+      - CLAUDE.md
+      - AI_WORKSPACE/**
+      - main
+      - schema.sql
+      - src/robin_content_engine/api.py
+      - src/robin_content_engine/uploader.py
+      - src/robin_content_engine/pipeline.py
+      - src/robin_content_engine/youtube_auth.py
+      - src/robin_content_engine/capture_scan.py
+      - src/robin_content_engine/channel_repository.py
+      - src/robin_content_engine/youtube_sync.py
+      - client_secret.json
+      - client_secret*.json
+      - token.json
+      - .env
+    merge_allowed: false
+    deploy_allowed: false
+    build_vs_adopt: >-
+      Final decision per Phase 7A audit (RCE-20260808-HARVEST7A): ADOPT
+      PySceneDetect (AdaptiveDetector) as a direct dependency (BSD-3-
+      Clause, pure CPU/numpy/OpenCV, no GPU dependency). REIMPLEMENT
+      CLEANLY (idea only, not code) AutoShorts' audio-energy, motion-
+      activity, and sliding-window candidate search concepts, using
+      numpy/OpenCV only - no torch/torchaudio/decord/CuPy/CUDA/NVENC.
+      INSPIRE (architecture only) from OpenShorts' clip-selection
+      design. Explicitly excluded from this phase: transcription
+      (faster-whisper/whisper.cpp/WhisperX), vertical reframing, AI/LLM
+      semantic scoring, yt-dlp, OpenShorts cloud/.
+    schema_migration_needed: >-
+      No. Read-only against the existing video_queue table via
+      JobRepository.get_job() only. No new columns, no new tables, no
+      write path added.
+    stop_conditions:
+      - do not render, clip/export, caption, transcribe, do AI/LLM
+        semantic scoring, vertical-reframe, upload, or write to YouTube
+      - do not claim a job, increment attempts, or write any
+        generated_*/output_path/status field - DB interaction is
+        strictly read-only (JobRepository.get_job() only)
+      - do not add faster-whisper, whisper.cpp, or WhisperX in this phase
+      - do not add scipy unless numpy is proven insufficient
+      - do not add torch, torchaudio, decord, cupy, or any CUDA/NVENC
+        assumption
+      - do not modify pipeline.py, uploader.py, youtube_auth.py, api.py,
+        or schema.sql - stop and report if any of those seem necessary
+      - do not merge PR, do not deploy
+      - do not run the real Windows ID-8 smoke without separate
+        explicit authorization after CI review
+      - no background polling / self check-ins for this task's PR
+    next_action: >-
+      Implement the MVP per the operator's Phase 7B authorization: create
+      branch feat/highlight-intelligence-mvp from base_sha, add the three
+      minimal dependencies, implement scene_detector.py/
+      highlight_features.py/highlight_scoring.py/clip_selector.py, wire
+      the read-only `robin-engine highlight-scan <job_id>` CLI command,
+      write the required tests, validate (pytest/ruff/mypy/diff-check),
+      open a draft PR to feat/initial-engine, check exact-head CI once,
+      then report back for review before any real-machine smoke or merge.
+
 # Other branches observed on origin at the time this registry was created
 # that are NOT yet registered as tasks (owner/scope unknown to this agent —
 # not fabricated here). Whoever owns them should add a task entry above
