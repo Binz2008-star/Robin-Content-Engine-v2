@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sys
 from contextlib import contextmanager
 from pathlib import Path
@@ -416,6 +417,25 @@ def test_specific_job_claiming_and_double_claim_protection() -> None:
     assert repository.jobs[1]["status"] == "processing"
 
 
+def test_run_response_matches_studio_contract() -> None:
+    repository = FakeRepository()
+    repository.enqueue_api_job(
+        source_path="/tmp/source.mp4",
+        source_title="Demo",
+        rights_confirmed=True,
+        rights_note="owned",
+    )
+    app = create_app(repository=repository, settings=FakeSettings())
+    client = TestClient(app)
+    response = client.post("/api/jobs/1/run")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "success"
+    assert isinstance(payload["message"], str) and payload["message"]
+    assert payload["job"]["id"] == 1
+    assert payload["job"]["status"] == "processing"
+
+
 def test_render_only_never_uploads() -> None:
     repository = FakeRepository()
     repository.enqueue_api_job(
@@ -457,12 +477,18 @@ def test_retry_and_quarantine_actions() -> None:
     )
     repository.jobs[1]["status"] = "failed"
     repository.jobs[1]["attempts"] = 1
+    repository.jobs[1]["last_error"] = "boom"
+    repository.jobs[1]["claimed_at"] = "2024-01-01T00:01:00Z"
+    repository.jobs[1]["completed_at"] = "2024-01-01T00:02:00Z"
     app = create_app(repository=repository, settings=FakeSettings())
     client = TestClient(app)
 
     retry_response = client.post("/api/jobs/1/actions", json={"action": "retry"})
     assert retry_response.status_code == 200
     assert repository.jobs[1]["status"] == "pending"
+    assert repository.jobs[1]["last_error"] is None
+    assert repository.jobs[1]["claimed_at"] is None
+    assert repository.jobs[1]["completed_at"] is None
 
     quarantine_response = client.post(
         "/api/jobs/1/actions",
@@ -470,6 +496,38 @@ def test_retry_and_quarantine_actions() -> None:
     )
     assert quarantine_response.status_code == 200
     assert repository.jobs[1]["status"] == "quarantined"
+    assert repository.jobs[1]["last_error"] == "Quarantined by operator."
+
+    already_quarantined = client.post(
+        "/api/jobs/1/actions",
+        json={"action": "quarantine"},
+    )
+    assert already_quarantined.status_code == 409
+
+
+def test_quarantine_never_applies_to_uploaded_job() -> None:
+    repository = FakeRepository()
+    repository.enqueue_api_job(
+        source_path="/tmp/source.mp4",
+        source_title="Demo",
+        rights_confirmed=True,
+        rights_note="owned",
+    )
+    repository.jobs[1]["status"] = "uploaded"
+    app = create_app(repository=repository, settings=FakeSettings())
+    client = TestClient(app)
+    response = client.post("/api/jobs/1/actions", json={"action": "quarantine"})
+    assert response.status_code == 409
+    assert repository.jobs[1]["status"] == "uploaded"
+
+
+def test_action_on_missing_job_returns_404() -> None:
+    app = create_app(repository=FakeRepository(), settings=FakeSettings())
+    client = TestClient(app)
+    retry_response = client.post("/api/jobs/999/actions", json={"action": "retry"})
+    assert retry_response.status_code == 404
+    quarantine_response = client.post("/api/jobs/999/actions", json={"action": "quarantine"})
+    assert quarantine_response.status_code == 404
 
 
 def test_system_hides_secrets() -> None:
@@ -488,6 +546,59 @@ def test_system_hides_secrets() -> None:
         "database": "connected",
         "demo_mode": False,
     }
+
+
+def test_system_reports_database_unavailable_on_ping_failure() -> None:
+    repository = FakeRepository()
+    repository.ping_ok = False
+    app = create_app(repository=repository, settings=FakeSettings())
+    client = TestClient(app)
+    response = client.get("/api/system")
+    assert response.status_code == 200
+    assert response.json()["database"] == "unavailable"
+
+
+def test_youtube_authenticated_true_only_with_valid_token_fields(tmp_path: Path) -> None:
+    token_path = tmp_path / "token.json"
+    token_path.write_text(
+        json.dumps(
+            {
+                "refresh_token": "r",
+                "client_id": "c",
+                "client_secret": "s",
+                "token_uri": "https://oauth2.googleapis.com/token",
+            }
+        ),
+        encoding="utf-8",
+    )
+    settings = FakeSettings()
+    settings.youtube_token_file = token_path
+    app = create_app(repository=FakeRepository(), settings=settings)
+    client = TestClient(app)
+    response = client.get("/api/system")
+    assert response.json()["youtube_authenticated"] is True
+
+
+def test_youtube_authenticated_false_when_token_missing_required_fields(tmp_path: Path) -> None:
+    token_path = tmp_path / "token.json"
+    token_path.write_text(json.dumps({"token": "access-token-only"}), encoding="utf-8")
+    settings = FakeSettings()
+    settings.youtube_token_file = token_path
+    app = create_app(repository=FakeRepository(), settings=settings)
+    client = TestClient(app)
+    response = client.get("/api/system")
+    assert response.json()["youtube_authenticated"] is False
+
+
+def test_youtube_authenticated_false_when_token_is_not_json(tmp_path: Path) -> None:
+    token_path = tmp_path / "token.json"
+    token_path.write_text("not json", encoding="utf-8")
+    settings = FakeSettings()
+    settings.youtube_token_file = token_path
+    app = create_app(repository=FakeRepository(), settings=settings)
+    client = TestClient(app)
+    response = client.get("/api/system")
+    assert response.json()["youtube_authenticated"] is False
 
 
 def test_private_youtube_invariant() -> None:

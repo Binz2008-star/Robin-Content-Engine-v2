@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import shutil
 import sys
 from collections.abc import AsyncIterator, Callable
@@ -100,6 +101,23 @@ class JobRunRequest(BaseModel):
     render_only: bool = False
 
 
+def _youtube_token_is_valid(token_path: Path) -> bool:
+    """Conservative local check: file exists, is valid JSON, and carries the
+    fields google-auth's Credentials.from_authorized_user_info requires.
+    Never makes a network call and never exposes file contents."""
+    resolved = token_path.expanduser()
+    try:
+        if not resolved.is_file() or resolved.stat().st_size == 0:
+            return False
+        data = json.loads(resolved.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return False
+    if not isinstance(data, dict):
+        return False
+    required_fields = {"refresh_token", "client_id", "client_secret"}
+    return required_fields.issubset(data.keys())
+
+
 def _job_payload(job: dict[str, Any]) -> dict[str, Any]:
     return {
         "id": job["id"],
@@ -139,12 +157,12 @@ def create_app(
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
         if hasattr(repo, "open"):
-            getattr(repo, "open")()
+            repo.open()
         try:
             yield
         finally:
             if hasattr(repo, "close"):
-                getattr(repo, "close")()
+                repo.close()
 
     app = FastAPI(title="Robin Content Engine API", lifespan=lifespan)
     app.add_middleware(
@@ -243,11 +261,20 @@ def create_app(
         claimed = repo.claim_job(job_id)
         if claimed is None:
             raise HTTPException(status_code=409, detail="job could not be claimed")
-        await engine.run_job(job_id, upload=not (payload.render_only if payload else False))
-        return {"status": "ok", "job": _job_payload(repo.get_job(job_id) or claimed)}
+        render_only = payload.render_only if payload else False
+        await engine.run_job(job_id, upload=not render_only)
+        message = "Job queued for render only." if render_only else "Job started."
+        return {
+            "status": "success",
+            "message": message,
+            "job": _job_payload(repo.get_job(job_id) or claimed),
+        }
 
     @app.post("/api/jobs/{job_id}/actions")
     def job_action(job_id: int, payload: JobActionRequest) -> dict[str, Any]:
+        job = repo.get_job(job_id)
+        if job is None:
+            raise HTTPException(status_code=404, detail="job not found")
         if payload.action == "retry":
             ok = repo.retry_job(job_id)
             if not ok:
@@ -266,16 +293,17 @@ def create_app(
     @app.get("/api/system")
     def system() -> dict[str, Any]:
         ffmpeg_path = shutil.which("ffmpeg")
-        database_state = "connected" if repo.ping() else "unavailable"
+        try:
+            database_state = "connected" if repo.ping() else "unavailable"
+        except Exception:
+            database_state = "unavailable"
         deepseek_configured = bool(
             getattr(app_settings, "deepseek_api_key", None)
             and str(app_settings.deepseek_api_key).strip()
         )
         token_path = getattr(app_settings, "youtube_token_file", None)
-        youtube_authenticated = bool(
-            token_path is not None
-            and Path(token_path).expanduser().exists()
-            and Path(token_path).expanduser().stat().st_size > 0
+        youtube_authenticated = token_path is not None and _youtube_token_is_valid(
+            Path(token_path)
         )
         return {
             "app_name": "Robin Content Engine v2",

@@ -2,9 +2,7 @@ import json
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, cast
-
-from typing_extensions import TypeAlias
+from typing import Any, TypeAlias, cast
 
 from psycopg_pool import ConnectionPool
 
@@ -17,12 +15,12 @@ def _row_to_dict(row: tuple[Any, ...] | None, description: Any) -> RowDict | Non
     if row is None:
         return None
     columns = [column[0] for column in description or []]
-    return cast(RowDict, dict(zip(columns, row)))
+    return cast(RowDict, dict(zip(columns, row, strict=True)))
 
 
 def _rows_to_dicts(rows: list[tuple[Any, ...]], description: Any) -> list[RowDict]:
     columns = [column[0] for column in description or []]
-    return [cast(RowDict, dict(zip(columns, row))) for row in rows]
+    return [cast(RowDict, dict(zip(columns, row, strict=True))) for row in rows]
 
 
 class JobRepository:
@@ -89,13 +87,15 @@ class JobRepository:
 
     def status_counts(self) -> dict[str, int]:
         with self.pool.connection() as conn:
-            rows = conn.execute(
+            result = conn.execute(
                 """
                 SELECT status, COUNT(*) AS count
                 FROM video_queue
                 GROUP BY status
                 """
-            ).fetchall()
+            )
+            rows = result.fetchall()
+            description = result.description
         counts = {
             "pending": 0,
             "processing": 0,
@@ -105,7 +105,7 @@ class JobRepository:
             "quarantined": 0,
             "total": 0,
         }
-        row_dicts = _rows_to_dicts(rows, None)
+        row_dicts = _rows_to_dicts(rows, description)
         for row in row_dicts:
             status = str(row["status"])
             count = int(row["count"])
@@ -236,7 +236,9 @@ class JobRepository:
                 """
                 UPDATE video_queue
                 SET status = 'pending',
-                    last_error = NULL
+                    last_error = NULL,
+                    claimed_at = NULL,
+                    completed_at = NULL
                 WHERE id = %s
                   AND rights_confirmed = TRUE
                   AND status IN ('failed', 'quarantined')
@@ -250,9 +252,10 @@ class JobRepository:
             result = conn.execute(
                 """
                 UPDATE video_queue
-                SET status = 'quarantined'
+                SET status = 'quarantined',
+                    last_error = 'Quarantined by operator.'
                 WHERE id = %s
-                  AND status NOT IN ('uploaded')
+                  AND status IN ('pending', 'processing', 'rendered', 'failed')
                 """,
                 (job_id,),
             )
