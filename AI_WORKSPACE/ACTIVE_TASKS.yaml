@@ -226,15 +226,47 @@ tasks:
     branch: feat/local-capture-source
     base_branch: feat/initial-engine
     base_sha: 8a55704611bb4ae666951db487013a818f44730c
-    current_sha: 2a56d2d1f2004054344933aa040d581e7d7bb332
+    current_sha: ce23bd33e3d61f0e951ac1a8bf23f3640929fdae
     pr: 9
     pr_state: open (draft)
     ci: >-
-      Queued at time of writing (check run "test" on GitHub). Independently
-      run by this agent in the implementation worktree before opening the
-      PR: pytest 92 passed/1 warning (77 baseline + 15 new), ruff all
-      checks passed, focused mypy on capture_scan.py/cli.py/config.py -
-      no issues found, git diff --check clean.
+      In progress at time of writing (check run "test" on GitHub) on
+      current_sha. Independently run by this agent in the implementation
+      worktree before pushing: pytest 96 passed/1 warning (92 baseline +
+      4 new rights-safety regression tests), ruff all checks passed,
+      focused mypy on capture_scan.py/cli.py/config.py - no issues found,
+      git diff --check clean.
+    rights_safety_correction: >-
+      Real local smoke surfaced that capture_scan.py called
+      JobRepository.enqueue_local(), which hardcodes rights_confirmed=
+      TRUE - meaning every discovered file (including non-gameplay files
+      that happened to be in the capture folder) was auto-confirmed for
+      publishing rights just by existing there. Fixed by switching to the
+      existing, unmodified JobRepository.enqueue_api_job() (already took
+      rights_confirmed as an explicit parameter) and passing
+      rights_confirmed=False for every capture-scan discovery, with a
+      provenance rights_note stating rights require explicit
+      verification. No schema/database.py change. This correctly engages
+      the existing Rights Gate (quarantine_unconfirmed()) rather than
+      weakening it - unconfirmed rows are quarantined if a pipeline run
+      is ever attempted before explicit operator confirmation.
+    unresolved_items_from_correction_request:
+      - >-
+        Item 8 (inspect the 3 production rows from the real smoke): NOT
+        done. The Neon MCP connector is connected at the org level but
+        not enabled in this chat session, so this agent has no way to
+        query production Neon right now. Those 3 rows were NOT modified
+        or deleted. Needs either the connector enabled for this chat, or
+        the operator to run a direct read-only query themselves.
+      - >-
+        Item 9 (15 vs 16 unsupported-file count discrepancy): reviewed
+        the extension-filtering code - no bug found. desktop.ini (.ini)
+        would be counted as skipped_unsupported identically to any other
+        non-allowed extension; nothing in the scan loop special-cases or
+        skips hidden/system files. Most likely explanation is a
+        difference in how the operator described the count in natural
+        language, or desktop.ini not actually being present at scan
+        time, not a scanner defect. No speculative fix was made.
     allowed_paths:
       - src/robin_content_engine/capture_scan.py
       - src/robin_content_engine/config.py
@@ -297,14 +329,14 @@ tasks:
         those are later phases
       - do not call render/upload from capture-scan
     next_action: >-
-      Wait for PR #9 GitHub CI to finish (queued at time of writing), then
-      the operator runs `robin-engine capture-scan` locally against the
-      real capture directory. Verify: new owned gameplay videos are
-      discovered and registered on first scan, zero duplicates on a
-      second scan, no original file modified/moved/renamed/deleted, no
-      render/upload occurred. Report back, then this agent updates the
-      registry/HANDOFF and the operator decides on merging PR #9 into
-      feat/initial-engine (not main).
+      Wait for PR #9 GitHub CI to finish on current_sha (in progress at
+      time of writing). Separately: (1) enable the Neon connector for
+      this chat (or have the operator query directly) so the 3 existing
+      production rows from the first smoke can be inspected read-only
+      and a remediation proposed/authorized; (2) operator re-runs
+      `robin-engine capture-scan` against the real directory to confirm
+      the corrected rights_confirmed=False behavior on fresh discoveries.
+      PR #9 stays draft until both are resolved. Do not merge to main.
 
 # Other branches observed on origin at the time this registry was created
 # that are NOT yet registered as tasks (owner/scope unknown to this agent —

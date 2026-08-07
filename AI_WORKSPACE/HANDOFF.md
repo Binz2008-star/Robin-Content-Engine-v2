@@ -214,3 +214,40 @@ Deploy authorized: no
 9. Optional: inspect the new rows via `robin-engine enqueue-local`'s sibling read path (`GET /api/jobs` if the FastAPI service is running, or a direct read-only query) to confirm `status = 'pending'`, `rights_confirmed = true`, and a `rights_note` mentioning capture-scan provenance.
 
 Report back: discovered/registered/already-known counts from both runs, confirmation originals are untouched, confirmation no render/upload occurred.
+
+## RCE-20260807-CAPTURE — 2026-08-07 (rights-safety correction)
+
+Task ID: RCE-20260807-CAPTURE
+Agent: claude
+Branch: feat/local-capture-source
+Base SHA: 8a55704611bb4ae666951db487013a818f44730c
+Current HEAD: ce23bd33e3d61f0e951ac1a8bf23f3640929fdae
+PR: #9 (still draft, targeting feat/initial-engine)
+Status: review — CI in progress on this head at time of writing
+Files changed: src/robin_content_engine/capture_scan.py, tests/test_capture_scan.py
+Tests: 96 passed/1 warning (92 baseline + 4 new), ruff clean, focused mypy clean, diff clean — all independently run before pushing
+CI: in progress on ce23bd33e3d61f0e951ac1a8bf23f3640929fdae at time of writing
+Known blockers: two items from the correction request are unresolved — see below
+Next action: wait for CI; get the Neon connector enabled for this chat (or operator runs a direct read-only query) to inspect the 3 existing production rows; operator re-runs capture-scan to confirm the fix
+Merge authorized: no
+Deploy authorized: no
+
+**IMPORTANT — corrects the previous entry above.** The prior "Real local smoke instructions" entry's step 9 said to confirm `rights_confirmed = true` on new rows — that was describing the buggy pre-fix behavior. It is now `rights_confirmed = FALSE` by design; that old entry is left unedited per the append-only rule, but should not be followed as-is.
+
+### The bug (found by the real local smoke)
+
+The actual capture directory contained gameplay footage (`Fortnite 2026-08-07 23-14-11.mp4`) alongside clearly non-gameplay recordings (`ChatGPT Classic 2026-08-07 23-17-33.mp4`, `ChatGPT Classic 2026-08-07 23-19-45.mp4`). `capture_scan.py` called `JobRepository.enqueue_local()`, which hardcodes `rights_confirmed=TRUE` in its `INSERT` — so all three got auto-confirmed publishing rights just for existing in the configured directory, regardless of content. This violates the principle that discovery/provenance must never automatically equal verified publishing rights.
+
+### The fix
+
+Switched to `JobRepository.enqueue_api_job()` — already existed, unmodified, already took `rights_confirmed` as an explicit parameter — and pass `rights_confirmed=False` for every capture-scan discovery. Rights note changed to: "Discovered from configured local capture directory. Publishing rights require explicit verification before processing." No schema or `database.py` change — smallest possible fix, reused an existing method. This means every capture-scan row is now correctly subject to the existing `quarantine_unconfirmed()` Rights Gate if a pipeline run is ever attempted before explicit confirmation — the gate is engaged correctly, not weakened.
+
+### Item 8 — the 3 existing production rows: NOT YET INSPECTED
+
+The Neon MCP connector is connected at the org level but **not enabled for this chat session**, and this sandbox has no other path to production Neon (no real `.env` credentials here, and no raw TCP egress to Neon from this sandbox even if it did). These 3 rows (for the Fortnite and two ChatGPT Classic files) were **not modified or deleted** — left exactly as the real smoke created them.
+
+**Safest remediation proposal** (pending authorization, once the rows are actually inspected): if any of the 3 rows currently has `rights_confirmed = TRUE` (from the pre-fix code path) and `status = 'pending'`, the safe correction is a targeted `UPDATE video_queue SET rights_confirmed = FALSE, rights_note = '<corrected provenance note>' WHERE id IN (<the 3 specific job IDs>) AND status = 'pending'` — narrowly scoped to exactly those IDs, never a blanket update. This is a production data change and needs explicit authorization before it happens, exactly as requested — not performed in this pass.
+
+### Item 9 — 15 vs 16 unsupported-file count: no code bug found
+
+Reviewed the extension-filtering logic in `scan_captures()`: `entry.suffix.lower() not in ALLOWED_CAPTURE_EXTENSIONS` counts every non-video file as `skipped_unsupported` with no special-casing for hidden/system files — `desktop.ini` (suffix `.ini`) would be counted identically to a `.png`. `Path.iterdir()` does not filter hidden/system files on Windows (that's an Explorer/shell-level default, not an OS-level listing filter). No mechanism in the code would silently drop or miscount `desktop.ini`. Most likely explanation: a difference in how the operator described the count in natural language ("15 PNG files + desktop.ini" could mean 15 total including the ini, or 16 total — ambiguous), or `desktop.ini` not actually being present in the directory at the moment the scan ran. No speculative fix was made, per instruction not to invent one without a confirmed code problem.
