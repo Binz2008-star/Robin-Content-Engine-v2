@@ -129,3 +129,35 @@ Verification branch `br-twilight-field-axlipzqs` was left in place (not deleted)
 
 Merge authorized: no
 Deploy authorized: no
+
+## RCE-20260807-CHANNELSYNC — 2026-08-07 (Phase 4B CLOSED)
+
+Task ID: RCE-20260807-CHANNELSYNC
+Agent: claude
+Branch: feat/youtube-channel-sync
+Base SHA: 741d2c8edf435da4c42bce7448710169307631cc
+Final HEAD (pre-merge): 375fe01fe472399deedc6378a4e3068ef4f3a0c0 (verified via GitHub, matched operator's report exactly)
+PR: #8 — marked ready for review, then squash-merged
+Status: COMPLETE / CLOSED
+Files changed (final): .env.example, schema.sql, src/robin_content_engine/channel_repository.py, src/robin_content_engine/cli.py, src/robin_content_engine/config.py, src/robin_content_engine/youtube_sync.py, tests/test_api.py, tests/test_channel_repository.py, tests/test_youtube_sync.py (9 files, +1059/-4)
+Tests: independently re-executed in a fresh worktree at head 375fe01fe472399deedc6378a4e3068ef4f3a0c0: pytest 77 passed/1 warning (matches operator's report exactly — 73 plus 4 new retry-logic tests), ruff all checks passed, git diff --check clean, git status clean.
+CI: PASS (verified via GitHub check run "test", completed/success)
+Known blockers: none — closed
+Next action: Phase 4B closed. Wait for explicit human direction before starting any further phase. New baseline: feat/initial-engine @ 8a55704611bb4ae666951db487013a818f44730c.
+Merge authorized: yes — explicit direct chat authorization, scoped to feat/initial-engine only, never main
+Deploy authorized: no
+
+### What changed since the last entry (retry hardening)
+
+`ChannelRepository.save_snapshot()` was rewritten to wrap the whole atomic block (channel upsert + is_current reconciliation + per-video upserts, all inside one `conn.transaction()`) in a retry loop: up to 3 attempts, exponential backoff (0.5s, 1s), retrying only on `psycopg.OperationalError` (connection-level failures) — all other exceptions propagate immediately. Reviewed and confirmed safe: because each attempt re-runs the full transaction from a fresh connection and every statement is an idempotent upsert (`ON CONFLICT ... DO UPDATE`), a retry after a transient connection failure cannot produce duplicates or partial state. 4 new tests cover: retry-then-succeed, retry-limit-exhausted propagates the error, transaction boundary preserved across a retry, and idempotent upsert semantics preserved across repeated saves. Separately, `tests/test_api.py`'s `FakeSettings` now points `youtube_client_secret_file`/`youtube_token_file` at nonexistent absolute `/tmp` paths instead of relative `client_secret.json`/`token.json` — avoids tests accidentally picking up a real local credential file if one exists in the working directory (a real risk surfaced by the local OAuth/smoke testing on the operator's machine).
+
+### Real authenticated smoke (operator-reported, not independently re-run by this agent)
+
+`robin-engine youtube-sync` run locally against the now-migrated production Neon: 144 discovered / 144 stored; a second (idempotency) run also 144/144 with no duplicates; authenticated Channel ID `UCIcvbGsmSwMDXxjWXq4QG8A` (matches Phase 4A); a transient Neon `OperationalError` during the run was handled by the new retry logic and completed successfully; no YouTube write operations occurred; no deploy. This agent cannot independently verify this step — no real OAuth `token.json` and no raw TCP path to Neon exist in this sandbox for the app's own psycopg connection.
+
+### Merge
+
+Verified via GitHub before merging: PR #8 `draft: false`, `state: open`, `mergeable_state: clean`, base still `feat/initial-engine`, head still `375fe01fe472399deedc6378a4e3068ef4f3a0c0`. Squash-merged via `merge_pull_request` (method: squash). Merge commit: `8a55704611bb4ae666951db487013a818f44730c`. Verified post-merge: PR #8 `state: closed`, `merged: true`, `merged_by: Binz2008-star`; `feat/initial-engine` fetched and confirmed at `8a55704611bb4ae666951db487013a818f44730c`; `main` independently re-checked and confirmed unchanged at `5387af1f14888964b463b1fcaed8751d40ecbde6` (same SHA as the start of this entire engagement).
+
+Merge authorized: yes (feat/initial-engine only)
+Deploy authorized: no
