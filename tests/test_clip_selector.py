@@ -18,7 +18,10 @@ from robin_content_engine.clip_selector import (  # noqa: E402
     generate_candidate_windows,
     suppress_overlaps,
 )
-from robin_content_engine.highlight_features import TimeWindow  # noqa: E402
+from robin_content_engine.highlight_features import (  # noqa: E402
+    TimeWindow,
+    generate_time_windows,
+)
 from robin_content_engine.highlight_scoring import WindowScore  # noqa: E402
 
 
@@ -257,6 +260,84 @@ def test_three_distinct_peaks_yield_three_distinct_candidates() -> None:
     for i in range(len(selected)):
         for j in range(i + 1, len(selected)):
             assert _interval_iou(selected[i], selected[j]) <= config.overlap_iou_threshold
+
+
+# ---------------------------------------------------------------------------
+# Regression: non-integral source duration must not silently violate the
+# real-time min/max clip duration contract.
+#
+# generate_time_windows() truncates the final bin when the source duration
+# isn't an exact multiple of the grid width (e.g. a 26.555s source at a
+# 1.0s grid ends with a 0.555s final bin, not a full 1.0s one).
+# generate_candidate_windows() converted min/max_clip_seconds to a bin
+# COUNT using the first window's width as the nominal bin size, so a
+# candidate spanning the configured bin count could span LESS real time
+# than min_clip_seconds if it included that truncated final bin. This
+# reproduces the exact real-smoke boundary case (26.555s source,
+# min_clip_seconds=15.0, tail activity) that used to return a 14.555s
+# candidate starting at 12.0s and ending at 26.555s.
+# ---------------------------------------------------------------------------
+
+
+def test_non_integral_final_bin_does_not_produce_undersized_candidate() -> None:
+    windows = generate_time_windows(26.555, 1.0)
+    assert windows[-1] == TimeWindow(26.0, 26.555)  # exact real-smoke source duration
+
+    # Activity concentrated in the tail, including the truncated final bin -
+    # this is exactly the profile that previously produced the defective
+    # 12.0s-26.555s (14.555s) candidate.
+    window_scores = [
+        WindowScore(
+            window=w,
+            final_score=1.0 if i >= 12 else 0.0,
+            audio_score=1.0 if i >= 12 else 0.0,
+            motion_score=0.0,
+            scene_signal=0.0,
+            reason="moderate activity",
+        )
+        for i, w in enumerate(windows)
+    ]
+    config = WindowSelectorConfig()  # min_clip_seconds=15.0 default
+
+    candidates = generate_candidate_windows(window_scores, config)
+
+    assert candidates, "expected at least one valid candidate"
+    for c in candidates:
+        assert c.duration_seconds >= config.min_clip_seconds - 1e-6, c
+    # The specific defective candidate must never appear.
+    assert not any(
+        c.start_seconds == 12.0 and c.end_seconds == 26.555 for c in candidates
+    )
+    # The real fix: the true best 15s-real-duration window is found instead.
+    assert candidates[0].start_seconds == 11.0
+    assert candidates[0].end_seconds == 26.0
+    assert candidates[0].duration_seconds == pytest.approx(15.0)
+
+
+def test_all_candidates_respect_real_time_bounds_on_non_integral_duration() -> None:
+    windows = generate_time_windows(26.555, 1.0)
+    window_scores = [
+        WindowScore(
+            window=w,
+            final_score=float((i * 7) % 5),  # varied, deterministic, non-trivial profile
+            audio_score=float((i * 7) % 5),
+            motion_score=float((i * 3) % 4),
+            scene_signal=0.0,
+            reason="moderate activity",
+        )
+        for i, w in enumerate(windows)
+    ]
+    config = WindowSelectorConfig(
+        min_clip_seconds=15.0, max_clip_seconds=25.0, duration_step_seconds=5.0
+    )
+
+    candidates = generate_candidate_windows(window_scores, config)
+
+    assert candidates
+    lower = config.min_clip_seconds - 1e-6
+    upper = config.max_clip_seconds + 1e-6
+    for c in candidates:
+        assert lower <= c.duration_seconds <= upper
 
 
 def test_five_distinct_peaks_yield_five_distinct_candidates() -> None:

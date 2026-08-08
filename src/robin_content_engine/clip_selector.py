@@ -12,6 +12,12 @@ class ClipSelectionError(Exception):
     pass
 
 
+# Real-timestamp duration validation tolerance. Guards only against
+# negligible floating-point accumulation in TimeWindow boundaries, not
+# against genuine sub-second shortfalls like a truncated final bin.
+_DURATION_TOLERANCE_SECONDS = 1e-6
+
+
 @dataclass(frozen=True)
 class WindowSelectorConfig:
     """Configurable, not buried. Durations are in seconds; internally
@@ -75,6 +81,19 @@ def generate_candidate_windows(
     Each candidate's score is the MEAN per-bin score over its span, not the
     raw sum - this keeps candidates of different durations comparable (a
     longer window has a larger sum just from covering more bins).
+
+    min_clip_seconds/max_clip_seconds are converted to a bin COUNT once,
+    using the first window's width as the nominal bin size - but
+    generate_time_windows() truncates the final bin when the source
+    duration isn't an exact multiple of that width (e.g. a 26.555s source
+    at a 1.0s grid ends with a 0.555s final bin, not a full 1.0s one). A
+    candidate spanning the configured bin COUNT can therefore span LESS
+    real time than min_clip_seconds if it includes that truncated bin, or
+    more than max_clip_seconds in principle. Bin count decides which
+    durations to search; every candidate's REAL timestamp span
+    (end_seconds - start_seconds) is what actually gets validated against
+    min/max_clip_seconds before it's kept, so the configured real-time
+    contract can never be silently violated by a non-uniform final bin.
     """
     config = config or WindowSelectorConfig()
     if not window_scores:
@@ -110,13 +129,27 @@ def generate_candidate_windows(
 
         for start in range(score_means.shape[0]):
             end_bin = start + duration_bins
+            start_seconds = window_scores[start].window.start_seconds
+            end_seconds = window_scores[end_bin - 1].window.end_seconds
+            actual_duration = end_seconds - start_seconds
+
+            # Real-timestamp check, independent of the nominal bin count:
+            # a truncated final bin can make a candidate's real span fall
+            # short of (or, in principle, exceed) the configured bounds
+            # even though its bin COUNT matched. Never pad/extend past the
+            # source's real duration to force a fit - just drop it.
+            if actual_duration < config.min_clip_seconds - _DURATION_TOLERANCE_SECONDS:
+                continue
+            if actual_duration > config.max_clip_seconds + _DURATION_TOLERANCE_SECONDS:
+                continue
+
             audio_mean = float(audio_means[start])
             motion_mean = float(motion_means[start])
             scene_mean = float(scene_means[start])
             candidates.append(
                 HighlightCandidate(
-                    start_seconds=window_scores[start].window.start_seconds,
-                    end_seconds=window_scores[end_bin - 1].window.end_seconds,
+                    start_seconds=start_seconds,
+                    end_seconds=end_seconds,
                     score=float(score_means[start]),
                     audio_score=audio_mean,
                     motion_score=motion_mean,
