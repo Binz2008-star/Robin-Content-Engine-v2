@@ -740,3 +740,54 @@ Raw candidate counts on long sources increase substantially now that the pool is
 
 Merge authorized: no
 Deploy authorized: no
+
+## RCE-20260808-HIGHLIGHT-DIVERSITY — 2026-08-08 (closed: merged, then near-duplicate follow-up split into PR #13)
+
+Task ID: RCE-20260808-HIGHLIGHT-DIVERSITY
+Agent: claude
+Final HEAD (PR head at merge time): 6e671e905140da2f3076f57cac03b05b28e4ee14
+PR: #12 — merged (squash) into feat/initial-engine at d2fe7474667491c83f0ea393e6e43fd6b199f15e; main untouched; no deploy. Merged by this agent under explicit, precisely-scoped operator authorization ("نعمله Ready ثم squash merge إلى feat/initial-engine فقط. لا main ولا deploy") - independently verified afterward via git fetch and the GitHub API, matching exactly.
+Status: complete
+Merge authorized: yes, for this exact action only (feat/initial-engine, not main, no deploy)
+Deploy authorized: no
+
+### Operator-reported real job-19 qualitative results (post PR #12, pre PR #13)
+
+3/5 top candidates graded **A** (genuinely independent regions) - confirms base audio/motion scoring works, no ASR/Vision AI or weight retuning needed. 2/5 graded **B** but assessed as the same event: `389-404s` and `378-398s`. Independently confirmed by this agent: temporal IoU between these two is `9/26 ~= 0.346` - just under the existing `0.35` suppress_overlaps() threshold. Operator's engineering decision: this is a distinct containment/near-duplicate concept, not a threshold tune (0.35->0.34), and is tracked as its own new task/PR rather than folded into PR #12 - see RCE-20260808-HIGHLIGHT-CONTAINMENT / PR #13 below.
+
+Merge authorized: yes (as above, PR #12 only)
+Deploy authorized: no
+
+## RCE-20260808-HIGHLIGHT-CONTAINMENT — 2026-08-08 (implementation complete, draft PR #13 open)
+
+Task ID: RCE-20260808-HIGHLIGHT-CONTAINMENT
+Agent: claude
+Branch: fix/highlight-near-duplicate-containment
+Base SHA: d2fe7474667491c83f0ea393e6e43fd6b199f15e (feat/initial-engine, post PR #12 merge)
+Current HEAD: 79ad515836d4aae1288d5c6d6e36579d75fea7f6
+PR: #13 (draft, targeting feat/initial-engine, not main)
+Status: review — CI in progress at time of writing
+Files changed: src/robin_content_engine/clip_selector.py, tests/test_clip_selector.py — 2 files, exactly as scoped
+Tests: 204 passed/1 warning (199 prior + 5 new), independently run before pushing
+Ruff: all checks passed
+Mypy (focused: clip_selector.py): no issues found
+Diff check: clean
+CI: in progress on 79ad515836d4aae1288d5c6d6e36579d75fea7f6 at time of writing - checked once, 60-minute send_later safety-net check-in scheduled, silent unless action needed
+Known blockers: none. Job 19 must NOT be re-run until this PR is reviewed and CI is green, per explicit instruction.
+Merge authorized: no
+Deploy authorized: no
+
+### Fix
+
+`suppress_overlaps()` now rejects a candidate as a duplicate of an already-accepted one if EITHER its temporal IoU exceeds `overlap_iou_threshold` (unchanged, 0.35) OR its containment ratio (`intersection / min(duration_a, duration_b)`, via new `_containment_ratio()`) meets or exceeds a new `containment_threshold` (`WindowSelectorConfig` field, default 0.50). Verified against the exact real numbers: `389-404s` (15s) vs `378-398s` (20s) has IoU~=0.346 (under 0.35, so it would have passed the old check) but containment=9/15=0.60 (over 0.50, so it's now correctly rejected). `suppress_overlaps()` gained a `containment_threshold: float = 0.50` parameter with a default, so the existing CLI call site (which doesn't pass it) needed no change - cli.py stayed outside this task's allowed_paths.
+
+### Regression tests
+
+`test_exact_job19_duplicate_is_rejected` (the real case, now correctly rejected) and `test_genuinely_adjacent_low_overlap_candidates_both_kept` (a real-shaped adjacent-events case, IoU~=0.143/containment=0.25, correctly stays independent) are the two operator-required cases. Plus three supporting tests verifying the exact IoU/containment numbers, config exposure, and ratio symmetry/bounds.
+
+### Explicitly not done
+
+No scoring formula, audio/motion weight, or new signal-source change - per the operator's own review, 3/5 already graded A, so the base scoring doesn't need adjustment yet. No `pipeline.py`, `uploader.py`, `youtube_auth.py`, `api.py`, `schema.sql`, `scene_detector.py`, `highlight_features.py`, `highlight_scoring.py`, or `cli.py` changes. No production DB mutation. Job 19 not re-run - deferred until review + CI. PR #13 not merged, remains draft.
+
+Merge authorized: no
+Deploy authorized: no
