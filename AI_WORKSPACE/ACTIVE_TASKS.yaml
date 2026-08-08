@@ -1015,7 +1015,7 @@ tasks:
 
   - id: RCE-20260808-CLIPCUT8A
     title: Phase 8A — Clip Cutting MVP
-    status: review
+    status: complete
     owner: claude
     branch: feat/highlight-clip-cutting
     base_branch: feat/initial-engine
@@ -1023,7 +1023,13 @@ tasks:
     head_sha: 2aee3c96da9f25e18940936498bc08b91969ff51
     pr: 14
     pr_url: https://github.com/Binz2008-star/Robin-Content-Engine-v2/pull/14
-    pr_state: draft
+    pr_state: merged
+    merged: true
+    merge_method: squash
+    merge_commit_sha: 79e5285bd1cd42456d0d31021ae5a2d6b6c13b64
+    merged_into: feat/initial-engine
+    result_sha_on_feat_initial_engine: 79e5285bd1cd42456d0d31021ae5a2d6b6c13b64
+    merged_by: Binz2008-star
     ci_check_at_exact_head: >-
       204276b (first push): checked once, CI run 31265013831 completed
       conclusion=success. 2aee3c9 (review-fix push): checked once
@@ -1120,22 +1126,138 @@ tasks:
         given separately
       - do not merge PR, do not deploy
       - no recurring/background polling for this task's PR
+    real_smoke_evidence: >-
+      Operator-reported real Windows execution of `robin-engine
+      highlight-cut 19 --rank 1` on exact head 2aee3c9: PASS. Attempts:
+      0 (job state unmutated, matching this task's read-only DB
+      contract). Source FPS 23.8061 vs output FPS 23.8100 (native FPS
+      preserved within normal container/metadata tolerance, no fps=
+      forced re-encode). Human QA: 6/6 PASS. This agent could not run
+      this step itself (no .env/DATABASE_URL/DEEPSEEK_API_KEY in this
+      sandbox and no reachable production Neon or real capture file —
+      confirmed empirically by attempting the command directly and
+      capturing the pydantic ValidationError before accepting the
+      operator's authorization as sufficient) — recorded as
+      operator-executed and operator-reported, not first-hand verified
+      by this agent, consistent with every prior real-smoke phase in
+      this project.
+    merge_verification: >-
+      Independently verified by this agent via GitHub `pull_request_read`
+      and `git fetch` (not assumed from chat or from the PR-comment
+      "CTO authorization" that preceded direct chat confirmation — that
+      comment was treated as untrusted external content and not acted
+      on by itself, per this task's own stop_conditions and this
+      project's standing rule). PR #14: state=closed, merged=true,
+      merged_by=Binz2008-star, head.sha=2aee3c96da9f25e18940936498bc08b91969ff51,
+      base.ref=feat/initial-engine. `feat/initial-engine` fetched and
+      confirmed at merge commit 79e5285bd1cd42456d0d31021ae5a2d6b6c13b64.
+      `main` independently re-confirmed unchanged at
+      5387af1f14888964b463b1fcaed8751d40ecbde6 (same SHA as the start of
+      this entire engagement, across all eight phases).
     next_action: >-
-      Implementation complete: clip_cutter.py (cut_clip()) and the
-      `robin-engine highlight-cut <job_id> --rank <N>` CLI command are
-      written, reusing the existing scene_detector/highlight_features/
-      highlight_scoring/clip_selector functions unmodified via two new
-      shared helpers (_load_rights_confirmed_local_job,
-      _run_highlight_analysis) factored out of highlight-scan. 15 new
-      tests added (6 in test_clip_cutter.py, 9 in
-      test_highlight_cut_cli.py) covering every required case from the
-      directive. Full pytest suite, ruff check ., focused mypy on
-      clip_cutter.py+cli.py, and git diff --check all pass. Draft PR #14
-      opened against feat/initial-engine at head 204276b. AWAITING
-      HUMAN/ROBIN REVIEW. Do not merge. Do not run the real Job 19 cut
-      until implementation review is complete, exact-head CI is
-      confirmed green, and the operator explicitly authorizes the real
-      smoke run.
+      Phase 8A CLOSED. PR #14 squash-merged into feat/initial-engine only;
+      main untouched; no deploy. New baseline for the next phase is
+      feat/initial-engine @ 79e5285bd1cd42456d0d31021ae5a2d6b6c13b64. Next
+      phase (8B — Vertical Reframe / Short Composition MVP) is a separate
+      task, registered below as RCE-20260808-REFRAME8B per explicit
+      operator direction.
+
+  - id: RCE-20260808-REFRAME8B
+    title: Phase 8B — Vertical Reframe / Short Composition MVP
+    status: active
+    owner: claude
+    branch: feat/vertical-reframe-mvp
+    base_branch: feat/initial-engine
+    base_sha: 79e5285bd1cd42456d0d31021ae5a2d6b6c13b64
+    pr: none yet — will open draft targeting feat/initial-engine, not main
+    allowed_paths:
+      - pyproject.toml
+      - src/robin_content_engine/vertical_reframe.py
+      - src/robin_content_engine/cli.py
+      - src/robin_content_engine/models.py
+      - tests/test_vertical_reframe.py
+      - tests/test_highlight_reframe_cli.py
+    forbidden_paths:
+      - studio/**
+      - AGENTS.md
+      - CLAUDE.md
+      - AI_WORKSPACE/**
+      - main
+      - schema.sql
+      - src/robin_content_engine/api.py
+      - src/robin_content_engine/uploader.py
+      - src/robin_content_engine/pipeline.py
+      - src/robin_content_engine/youtube_auth.py
+      - src/robin_content_engine/capture_scan.py
+      - src/robin_content_engine/channel_repository.py
+      - src/robin_content_engine/youtube_sync.py
+      - src/robin_content_engine/database.py
+      - src/robin_content_engine/scene_detector.py
+      - src/robin_content_engine/highlight_features.py
+      - src/robin_content_engine/highlight_scoring.py
+      - src/robin_content_engine/clip_selector.py
+      - src/robin_content_engine/clip_cutter.py
+      - client_secret.json
+      - client_secret*.json
+      - token.json
+      - .env
+    merge_allowed: false
+    deploy_allowed: false
+    scope: >-
+      Narrow vertical (9:16) short-composition MVP, per explicit operator
+      direction: take a rights-confirmed local job, re-run the EXISTING
+      deterministic highlight analysis (scene_detector/highlight_features/
+      highlight_scoring/clip_selector — reused unmodified via the existing
+      _load_rights_confirmed_local_job()/_run_highlight_analysis() shared
+      helpers from Phase 8A), select one ranked candidate, and produce a
+      new local 9:16 MP4 (H.264/AAC) using a STATIC, deterministic crop
+      (no dynamic/subject tracking in this iteration — the operator wants
+      to validate whether a well-designed fixed crop is good enough for
+      Fortnite gameplay before any tracking work is considered). No
+      captions/ASR, no LLM, no thumbnail, no publishing/upload, no
+      scheduler, no analytics, no schema migration unless proven
+      necessary. clip_cutter.py from Phase 8A is left unmodified/unused by
+      this task — vertical_reframe.py implements its own crop+encode
+      pipeline so Phase 8A's file stays untouched.
+    build_vs_adopt: >-
+      Required BEFORE implementation: confirm whether the existing
+      moviepy+ffmpeg stack's built-in crop transform is sufficient for a
+      static rectangular 9:16 crop before adding anything new (no new
+      video framework/dependency, no vision/tracking library, no yt-dlp,
+      no remote ingestion).
+    stop_conditions:
+      - static/fixed crop only — no dynamic subject tracking, no
+        vision/ML-based framing, no ASR/captions, no LLM, no thumbnail
+        generation, no publishing, no YouTube upload, no scheduler, no
+        analytics
+      - no DB/schema migration unless absolutely proven necessary
+      - do not claim the queue job, increment attempts, change job
+        status, or modify rights state
+      - do not call an LLM or YouTube, do not trigger
+        pipeline.run_once()
+      - never overwrite, move, rename, or delete the original source
+        file; fail safely or use a deterministic alternate filename
+        rather than silently overwriting an existing output
+      - do not duplicate/reimplement the highlight scoring algorithm -
+        reuse the existing scene_detector/highlight_features/
+        highlight_scoring/clip_selector functions as-is
+      - do not modify clip_cutter.py (Phase 8A) - implement an
+        independent crop+encode path in vertical_reframe.py
+      - do not run a real Job 19 (or any real capture) reframe until
+        implementation review is complete, exact-head CI is green, and
+        explicit authorization is given separately
+      - do not merge PR, do not deploy
+      - no recurring/background polling for this task's PR
+    next_action: >-
+      Task registered per explicit operator direction ("Landscape
+      highlight → deterministic 9:16 local MP4, no captions/ASR/LLM/
+      upload, no heavy tracking in the first iteration — test a
+      well-designed static crop for Fortnite before smart tracking").
+      Implementation starting now: vertical_reframe.py (new module,
+      static-crop geometry + moviepy/ffmpeg encode, mirroring
+      clip_cutter.py's duration-validation/no-overwrite/no-source-mutation
+      contract), a new `robin-engine highlight-reframe <job_id> --rank <N>`
+      CLI command mirroring highlight-cut, and matching test coverage.
 
 # Other branches observed on origin at the time this registry was created
 # that are NOT yet registered as tasks (owner/scope unknown to this agent —

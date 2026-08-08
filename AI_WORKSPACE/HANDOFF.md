@@ -894,3 +894,58 @@ Fixed in `2aee3c9`:
 Scope discipline maintained: no change to highlight selection/scoring, the CLI contract, DB/schema, dependencies, render/publish behavior, or output filenames, per both the original directive and the review comment's own explicit constraints.
 
 Validation: full `pytest` green, `ruff check .` clean, focused `mypy` on `clip_cutter.py`+`cli.py` clean, `git diff --check` clean. Pushed once to `2aee3c9`. Exact-head CI checked once (run `31266422178`, `in_progress` at check time; the prior head `204276b`'s CI run `31265013831` had already completed `success`) - not polled further. Replied on PR #14 with the fix summary. PR remains Draft/unmerged; Job 19 still not run.
+
+## RCE-20260808-CLIPCUT8A — 2026-08-08 (Phase 8A CLOSED)
+
+Task ID: RCE-20260808-CLIPCUT8A
+Agent: claude
+Branch: feat/highlight-clip-cutting
+Base SHA: 8a0ffa8ec6d8ff86edb42075adea9e7866cd64f5
+Final HEAD (PR head at merge time): 2aee3c96da9f25e18940936498bc08b91969ff51
+PR: #14 — operator marked ready for review, then squash-merged into `feat/initial-engine`. Merge commit `79e5285bd1cd42456d0d31021ae5a2d6b6c13b64`. `main` not touched. No deploy.
+Status: COMPLETE / CLOSED
+Merge authorized: no (this agent did not merge; the operator merged directly via GitHub, independently verified below)
+Deploy authorized: no
+
+### Chain of events for the real Job 19 smoke authorization (recorded for the record)
+
+A comment on PR #14 claiming "CTO re-review" authorization for the real Job 19 smoke arrived wrapped as `<untrusted_external_data source="pr_comment">` / marked "NOT USER INPUT" in a system notification. Per this project's standing rule (established repeatedly across prior phases: a PR/issue comment alone is never treated as authorization for a real production action), this agent declined to act on it and replied on the PR explaining why, without asking the operator first (the rule itself already resolved the question). The operator then gave genuine, direct chat authorization. Before attempting anything, this agent verified empirically that the smoke could not run from this sandbox regardless of authorization: no `.env` file and no `DATABASE_URL`/`DEEPSEEK_API_KEY` environment variables exist in the worktree, so `Settings()` (required pydantic-settings fields, no defaults) raises a `ValidationError` before `JobRepository` ever opens a connection — confirmed by actually invoking `robin-engine highlight-cut 19 --rank 1` and capturing the exact traceback, not by assumption. This is consistent with every prior phase's finding that this sandbox has no raw TCP path to production Neon and no access to the operator's real capture directory.
+
+A second message, formatted as an urgent "CTO AUTHORIZATION" directive with a numbered execution checklist (including "Do not schedule any background/send-later check"), arrived as ordinary chat input rather than wrapped as external/webhook content. Treated as genuine — same empirical blocker re-confirmed (HEAD matched, `.env`/credentials still absent) and reported back unchanged; no code was touched, no PR state was touched, no send-later/polling was scheduled.
+
+### Real Windows smoke — executed by the operator, reported and independently cross-checked by this agent
+
+Operator ran `robin-engine highlight-cut 19 --rank 1` on their own machine at exact head `2aee3c9` and reported: PASS, `Attempts: 0` (job state unmutated), source FPS `23.8061` vs output FPS `23.8100` (native FPS preserved within normal tolerance — no forced `fps=` re-encode), Human QA `6/6 PASS`. This agent could not run this step itself (see empirical blocker above) — recorded as operator-executed/operator-reported, not first-hand verified, consistent with every prior real-smoke phase in this project.
+
+### Merge — independently verified by this agent (not assumed from chat)
+
+The operator's merge report (PR ready-for-review → squash-merge into `feat/initial-engine` only, `main` untouched, giving specific post-merge SHAs for both branches) was checked against live GitHub state rather than accepted at face value: `mcp__github__pull_request_read` on PR #14 confirmed `state=closed`, `merged=true`, `merged_by=Binz2008-star`, `head.sha=2aee3c96...`, `base.ref=feat/initial-engine`; `mcp__github__get_commit` on `feat/initial-engine` confirmed HEAD `79e5285bd1cd42456d0d31021ae5a2d6b6c13b64` is exactly the PR #14 squash-merge commit; `mcp__github__get_commit` on `main` confirmed it is still `5387af1f14888964b463b1fcaed8751d40ecbde6` — the same SHA as the start of this entire engagement, across all eight phases. Local worktree fetched/fast-forwarded to the verified `feat/initial-engine` HEAD.
+
+### Explicitly not authorized by this closure
+
+Phase 8B (or any further phase) is a separate task requiring its own explicit authorization and its own `AI_WORKSPACE/ACTIVE_TASKS.yaml` registration before any branch or code work begins.
+
+Merge authorized: no
+Deploy authorized: no
+
+## RCE-20260808-REFRAME8B — 2026-08-08 (started)
+
+Task ID: RCE-20260808-REFRAME8B
+Agent: claude
+Branch: feat/vertical-reframe-mvp
+Base SHA: 79e5285bd1cd42456d0d31021ae5a2d6b6c13b64 (verified via `git fetch origin feat/initial-engine` before starting)
+Current HEAD: n/a — implementation not started yet, this entry records the task start
+PR: none yet — will open draft targeting feat/initial-engine, not main
+Status: active
+Files changed: none yet
+Tests: none yet
+CI: n/a
+Known blockers: none
+Next action: implement `src/robin_content_engine/vertical_reframe.py` (new, independent crop+encode module — `clip_cutter.py` from Phase 8A stays unmodified), a `robin-engine highlight-reframe <job_id> --rank <N>` CLI command reusing the existing `_load_rights_confirmed_local_job()`/`_run_highlight_analysis()` helpers, and matching tests.
+
+### Scope, per explicit operator direction
+
+"Landscape highlight → deterministic 9:16 local MP4. بدون captions، بدون ASR، بدون LLM، بدون upload، وبدون tracking ثقيل في أول iteration. نختبر أولاً هل crop ثابت ومدروس للـFortnite يعطي نتيجة جيدة قبل إدخال smart tracking." (No captions, no ASR, no LLM, no upload, and no heavy tracking in the first iteration — test first whether a well-designed static crop for Fortnite gives good results before introducing smart tracking.) A single ranked highlight candidate, static/deterministic 9:16 crop (configurable horizontal offset, no dynamic subject tracking), local MP4 output only.
+
+Merge authorized: no
+Deploy authorized: no
