@@ -1020,16 +1020,33 @@ tasks:
     branch: feat/highlight-clip-cutting
     base_branch: feat/initial-engine
     base_sha: 8a0ffa8ec6d8ff86edb42075adea9e7866cd64f5
-    head_sha: 204276bc6d11426159ae504c331a423717cd1e0d
+    head_sha: 2aee3c96da9f25e18940936498bc08b91969ff51
     pr: 14
     pr_url: https://github.com/Binz2008-star/Robin-Content-Engine-v2/pull/14
     pr_state: draft
     ci_check_at_exact_head: >-
-      Checked once immediately after push (per no-recurring-polling rule):
-      check run "test" was in_progress at 2026-08-08T15:39:45Z on
-      204276bc6d11426159ae504c331a423717cd1e0d. Not polled to completion -
-      no further automated checks will run against this PR unless a new
-      HEAD is pushed or explicitly requested.
+      204276b (first push): checked once, CI run 31265013831 completed
+      conclusion=success. 2aee3c9 (review-fix push): checked once
+      immediately after push (per no-recurring-polling rule) - CI run
+      31266422178 was in_progress at last check, not polled to
+      completion. No further automated checks will run against this PR
+      unless a new HEAD is pushed or explicitly requested.
+    review_round_1: >-
+      CTO review comment on PR #14 (author=Binz2008-star, OWNER) flagged
+      that cut_clip() only checked output existed/non-empty, not that its
+      actual duration matched the requested interval at runtime - tests
+      checked duration only externally. Fixed in 2aee3c9:
+      cut_clip() now probes the produced file's real duration via a new
+      _probe_output_duration() helper and compares it against the
+      requested interval within the existing 0.5s tolerance; on mismatch
+      raises ClipCutError and deletes only the bad output it just created
+      (never the source), keeping the deterministic filename free for
+      retry. Added a mocked-probe regression test
+      (test_rejects_output_with_wrong_duration_and_cleans_up_failed_attempt)
+      and resolution/FPS preservation assertions to the success-path
+      test. No change to highlight selection/scoring, CLI contract,
+      DB/schema, dependencies, render/publish, or filenames. Replied on
+      PR #14 confirming the fix.
     build_vs_adopt_result: >-
       Confirmed sufficient: existing moviepy+ffmpeg dependency (same
       stack already used by video_editor.py's ShortsRenderer.render())

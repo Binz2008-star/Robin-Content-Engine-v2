@@ -881,3 +881,16 @@ Confirmed the existing `moviepy` + ffmpeg dependency (already used by `video_edi
 ### Explicitly not done in this phase (by design)
 
 No vertical crop/reframe, no captions/ASR/LLM, no thumbnail generation, no publishing/upload, no scheduler/analytics, no DB/schema migration, no merge to `feat/initial-engine` or `main`, no deploy, and the real Job 19 cut was **not** run - it requires separate explicit operator authorization after implementation review and confirmed-green exact-head CI, per the directive.
+
+### Review round 1 (2026-08-08, same day)
+
+CTO review comment on PR #14 (Binz2008-star, OWNER) flagged a real gap: `cut_clip()` validated only that the encoded output file existed and was non-empty, not that its actual duration matched the requested candidate interval - the Phase 8A output-requirements contract explicitly calls for that check, and the existing tests only verified duration externally (from outside `cut_clip()` itself), so a wrong-duration-but-non-empty output would still have been reported as success by the function.
+
+Fixed in `2aee3c9`:
+- Added `_probe_output_duration()` and a post-encode check comparing the produced file's real duration against `min(end_seconds, source.duration) - start_seconds`, within the existing `_DURATION_TOLERANCE_SECONDS` (0.5s - now documented as serving both the pre-existing overrun guard and this new check).
+- On mismatch: raises `ClipCutError` and deletes only the just-created bad output (`output_path.unlink()`) - never touches `source_path` - so the deterministic filename remains available for a retry rather than being permanently blocked by `"Output file already exists"`.
+- Added `test_rejects_output_with_wrong_duration_and_cleans_up_failed_attempt` (monkeypatches `_probe_output_duration` to return a wrong value, keeping the regression lightweight per the reviewer's own suggestion) and added resolution (`[96, 64]`) / FPS (`24.0`) preservation assertions to the existing success-path test, addressing the review's point that only duration had been asserted before.
+
+Scope discipline maintained: no change to highlight selection/scoring, the CLI contract, DB/schema, dependencies, render/publish behavior, or output filenames, per both the original directive and the review comment's own explicit constraints.
+
+Validation: full `pytest` green, `ruff check .` clean, focused `mypy` on `clip_cutter.py`+`cli.py` clean, `git diff --check` clean. Pushed once to `2aee3c9`. Exact-head CI checked once (run `31266422178`, `in_progress` at check time; the prior head `204276b`'s CI run `31265013831` had already completed `success`) - not polled further. Replied on PR #14 with the fix summary. PR remains Draft/unmerged; Job 19 still not run.
