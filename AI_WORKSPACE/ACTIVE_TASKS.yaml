@@ -904,6 +904,11 @@ tasks:
     allowed_paths:
       - src/robin_content_engine/clip_selector.py
       - tests/test_clip_selector.py
+      - src/robin_content_engine/cli.py  # amended 2026-08-08: operator
+        found + explicitly authorized a narrow one-line wiring fix only
+        (pass selector_config.containment_threshold through to
+        suppress_overlaps() in the highlight_scan command) - not general
+        cli.py editing
     forbidden_paths:
       - studio/**
       - AGENTS.md
@@ -919,7 +924,6 @@ tasks:
       - src/robin_content_engine/scene_detector.py
       - src/robin_content_engine/highlight_features.py
       - src/robin_content_engine/highlight_scoring.py
-      - src/robin_content_engine/cli.py
       - client_secret.json
       - client_secret*.json
       - token.json
