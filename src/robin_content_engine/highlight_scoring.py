@@ -5,6 +5,8 @@ from dataclasses import dataclass
 
 from .highlight_features import TimeWindow, normalize_signal
 
+DEFAULT_REASON_HIGH_THRESHOLD = 0.66
+
 
 @dataclass(frozen=True)
 class ScoringConfig:
@@ -27,7 +29,7 @@ class ScoringConfig:
     motion_weight: float = 0.40
     scene_bonus_weight: float = 0.10
     scene_bonus_cap: float = 0.10
-    reason_high_threshold: float = 0.66
+    reason_high_threshold: float = DEFAULT_REASON_HIGH_THRESHOLD
 
 
 @dataclass(frozen=True)
@@ -40,13 +42,17 @@ class WindowScore:
     reason: str
 
 
-def _describe_reason(
+def describe_reason(
     audio_score: float,
     motion_score: float,
     scene_signal: float,
-    high_threshold: float,
+    high_threshold: float = DEFAULT_REASON_HIGH_THRESHOLD,
 ) -> str:
-    """Deterministic, signal-derived description - never an LLM call."""
+    """Deterministic, signal-derived description - never an LLM call.
+
+    Public: also used by clip_selector.py to describe a candidate window's
+    own aggregate signals, not just a single per-bin WindowScore.
+    """
     parts: list[str] = []
     if audio_score >= high_threshold:
         parts.append("high audio spike")
@@ -107,7 +113,7 @@ def score_windows(
                 audio_score=audio_score,
                 motion_score=motion_score,
                 scene_signal=scene_signal,
-                reason=_describe_reason(
+                reason=describe_reason(
                     audio_score, motion_score, scene_signal, config.reason_high_threshold
                 ),
             )

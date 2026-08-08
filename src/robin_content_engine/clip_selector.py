@@ -5,7 +5,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from .highlight_scoring import WindowScore
+from .highlight_scoring import WindowScore, describe_reason
 
 
 class ClipSelectionError(Exception):
@@ -53,20 +53,28 @@ def generate_candidate_windows(
     window_scores: Sequence[WindowScore],
     config: WindowSelectorConfig | None = None,
 ) -> list[HighlightCandidate]:
-    """Cumulative-sum sliding-window best-subwindow search (the AutoShorts
-    idea, reimplemented in plain NumPy - no torch, no GPU).
+    """Cumulative-sum sliding-window search (the AutoShorts idea, reimplemented
+    in plain NumPy - no torch, no GPU) over EVERY valid start position for
+    EVERY configured duration - not just the single best start per duration.
 
-    Tests every duration from min to max (stepped by duration_step_seconds),
-    and for each duration finds the single highest-scoring start position via
-    an O(n) cumsum trick. Candidates are NOT locked to scene boundaries - a
-    window can start/end mid-scene and include lead-in/lead-out context
-    around a peak, since it searches the raw per-bin score timeline rather
-    than one window per detected scene. Boundary clamping is automatic: the
-    search space only ever contains positions fully inside [0, n_bins).
+    A source video routinely contains several genuinely separate highlights;
+    keeping only np.argmax() per duration would cluster nearly all candidates
+    around whichever single event is strongest, silently discarding the
+    others before overlap suppression ever runs. Instead: build a candidate
+    for every valid (duration, start) pair, rank the FULL pool globally by
+    score, only then truncate to max_candidates_before_dedup, and only after
+    that hand off to suppress_overlaps(). This keeps multiple distinct events
+    in contention through the whole ranking step, not just the strongest one.
+
+    Candidates are NOT locked to scene boundaries - a window can start/end
+    mid-scene and include lead-in/lead-out context around a peak, since it
+    searches the raw per-bin score timeline rather than one window per
+    detected scene. Boundary clamping is automatic: the search space only
+    ever contains positions fully inside [0, n_bins).
 
     Each candidate's score is the MEAN per-bin score over its span, not the
-    raw sum - this keeps candidates of different durations comparable
-    (a longer window has a larger sum just from covering more bins).
+    raw sum - this keeps candidates of different durations comparable (a
+    longer window has a larger sum just from covering more bins).
     """
     config = config or WindowSelectorConfig()
     if not window_scores:
@@ -79,8 +87,10 @@ def generate_candidate_windows(
         raise ClipSelectionError("min_clip_seconds must be positive and <= max_clip_seconds")
 
     n = len(window_scores)
-    scores = np.array([w.final_score for w in window_scores], dtype=np.float64)
-    cumsum = np.concatenate(([0.0], np.cumsum(scores)))
+    final_cumsum = _prefix_sum([w.final_score for w in window_scores])
+    audio_cumsum = _prefix_sum([w.audio_score for w in window_scores])
+    motion_cumsum = _prefix_sum([w.motion_score for w in window_scores])
+    scene_cumsum = _prefix_sum([w.scene_signal for w in window_scores])
 
     min_bins = max(1, round(config.min_clip_seconds / bin_seconds))
     max_bins = min(max(min_bins, round(config.max_clip_seconds / bin_seconds)), n)
@@ -91,30 +101,43 @@ def generate_candidate_windows(
 
     candidates: list[HighlightCandidate] = []
     for duration_bins in range(min_bins, max_bins + 1, step_bins):
-        window_sums = cumsum[duration_bins:] - cumsum[:-duration_bins]
-        if window_sums.size == 0:
+        score_means = _sliding_means(final_cumsum, duration_bins)
+        if score_means.size == 0:
             continue
-        best_start = int(np.argmax(window_sums))
-        best_mean = float(window_sums[best_start]) / duration_bins
-        end_bin = best_start + duration_bins
+        audio_means = _sliding_means(audio_cumsum, duration_bins)
+        motion_means = _sliding_means(motion_cumsum, duration_bins)
+        scene_means = _sliding_means(scene_cumsum, duration_bins)
 
-        segment = window_scores[best_start:end_bin]
-        peak = max(segment, key=lambda w: w.final_score)
-
-        candidates.append(
-            HighlightCandidate(
-                start_seconds=window_scores[best_start].window.start_seconds,
-                end_seconds=window_scores[end_bin - 1].window.end_seconds,
-                score=best_mean,
-                audio_score=float(np.mean([w.audio_score for w in segment])),
-                motion_score=float(np.mean([w.motion_score for w in segment])),
-                scene_signal=float(np.mean([w.scene_signal for w in segment])),
-                reason=peak.reason,
+        for start in range(score_means.shape[0]):
+            end_bin = start + duration_bins
+            audio_mean = float(audio_means[start])
+            motion_mean = float(motion_means[start])
+            scene_mean = float(scene_means[start])
+            candidates.append(
+                HighlightCandidate(
+                    start_seconds=window_scores[start].window.start_seconds,
+                    end_seconds=window_scores[end_bin - 1].window.end_seconds,
+                    score=float(score_means[start]),
+                    audio_score=audio_mean,
+                    motion_score=motion_mean,
+                    scene_signal=scene_mean,
+                    reason=describe_reason(audio_mean, motion_mean, scene_mean),
+                )
             )
-        )
 
     candidates.sort(key=lambda c: (-c.score, c.start_seconds))
     return candidates[: config.max_candidates_before_dedup]
+
+
+def _prefix_sum(values: Sequence[float]) -> np.ndarray:
+    return np.concatenate(([0.0], np.cumsum(np.asarray(values, dtype=np.float64))))
+
+
+def _sliding_means(cumsum: np.ndarray, duration_bins: int) -> np.ndarray:
+    """Mean of every valid contiguous span of `duration_bins` bins, via a
+    single O(n) cumsum difference rather than an O(n * duration_bins) loop."""
+    sums = cumsum[duration_bins:] - cumsum[:-duration_bins]
+    return np.asarray(sums / duration_bins, dtype=np.float64)
 
 
 def suppress_overlaps(

@@ -22,6 +22,30 @@ from robin_content_engine.highlight_features import TimeWindow  # noqa: E402
 from robin_content_engine.highlight_scoring import WindowScore  # noqa: E402
 
 
+def _multi_peak_score_windows(n: int, peak_regions: list[tuple[int, int, float]]):
+    """Build an n-bin timeline with several separated elevated regions, each
+    `(start_bin, end_bin, value)` - a few consecutive bins per event, like a
+    real few-second gameplay spike, rather than a single isolated sample."""
+    scores = []
+    for i in range(n):
+        value = 0.0
+        for start, end, peak_value in peak_regions:
+            if start <= i < end:
+                value = peak_value
+                break
+        scores.append(
+            WindowScore(
+                window=TimeWindow(float(i), float(i + 1)),
+                final_score=value,
+                audio_score=value,
+                motion_score=0.0,
+                scene_signal=0.0,
+                reason="moderate activity",
+            )
+        )
+    return scores
+
+
 def _flat_score_windows(n: int, *, peak_index: int | None = None, peak_value: float = 1.0):
     scores = []
     for i in range(n):
@@ -182,3 +206,78 @@ def test_top_n_ordering_is_deterministic_end_to_end() -> None:
     assert first == second
     scores = [c.score for c in first]
     assert scores == sorted(scores, reverse=True)
+
+
+# ---------------------------------------------------------------------------
+# Regression: multiple distinct events must survive to the final top-N.
+#
+# generate_candidate_windows() used to keep only np.argmax() per duration,
+# so nearly every tested duration's single best start clustered around
+# whichever one event was strongest, and suppress_overlaps() then had only
+# that one region's near-duplicates to choose from - genuinely separate
+# highlights elsewhere in the source were silently discarded before overlap
+# suppression ever ran. These tests assert multiple separated events all
+# survive into the ranked, deduplicated output.
+# ---------------------------------------------------------------------------
+
+
+def _dominant_region(
+    candidate: HighlightCandidate, peak_regions: list[tuple[int, int, float]]
+) -> int | None:
+    """Which peak region a candidate overlaps most, or None if it overlaps none.
+    Region width is kept close to the tested clip duration (see tests below),
+    so a single real event cannot itself be split into two non-overlapping,
+    equally-"valid" candidates - only genuinely separate events can."""
+    best_index, best_overlap = None, 0.0
+    for index, (start, end, _value) in enumerate(peak_regions):
+        overlap = max(0.0, min(candidate.end_seconds, end) - max(candidate.start_seconds, start))
+        if overlap > best_overlap:
+            best_index, best_overlap = index, overlap
+    return best_index
+
+
+def test_three_distinct_peaks_yield_three_distinct_candidates() -> None:
+    # 250 one-second bins; three widely separated 18-second-wide events.
+    # Region width (18) is deliberately close to the single tested clip
+    # duration (15) so two non-overlapping 15s windows cannot both fit
+    # inside one region - only three truly separate events can produce
+    # three low-mutual-IoU candidates.
+    peak_regions = [(20, 38, 9.0), (100, 118, 8.5), (180, 198, 8.0)]
+    window_scores = _multi_peak_score_windows(250, peak_regions)
+    config = WindowSelectorConfig(min_clip_seconds=15, max_clip_seconds=15, duration_step_seconds=5)
+
+    ranked = generate_candidate_windows(window_scores, config)
+    selected = suppress_overlaps(ranked, iou_threshold=config.overlap_iou_threshold, top_n=3)
+
+    assert len(selected) == 3
+
+    matched_regions = {_dominant_region(c, peak_regions) for c in selected}
+    assert matched_regions == {0, 1, 2}
+
+    for i in range(len(selected)):
+        for j in range(i + 1, len(selected)):
+            assert _interval_iou(selected[i], selected[j]) <= config.overlap_iou_threshold
+
+
+def test_five_distinct_peaks_yield_five_distinct_candidates() -> None:
+    peak_regions = [
+        (10, 28, 9.5),
+        (70, 88, 9.0),
+        (130, 148, 8.5),
+        (190, 208, 8.0),
+        (250, 268, 7.5),
+    ]
+    window_scores = _multi_peak_score_windows(290, peak_regions)
+    config = WindowSelectorConfig(min_clip_seconds=15, max_clip_seconds=15, duration_step_seconds=5)
+
+    ranked = generate_candidate_windows(window_scores, config)
+    selected = suppress_overlaps(ranked, iou_threshold=config.overlap_iou_threshold, top_n=5)
+
+    assert len(selected) == 5
+
+    matched_regions = {_dominant_region(c, peak_regions) for c in selected}
+    assert matched_regions == {0, 1, 2, 3, 4}
+
+    for i in range(len(selected)):
+        for j in range(i + 1, len(selected)):
+            assert _interval_iou(selected[i], selected[j]) <= config.overlap_iou_threshold
