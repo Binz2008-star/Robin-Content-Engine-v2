@@ -14,6 +14,7 @@ from robin_content_engine.clip_selector import (  # noqa: E402
     ClipSelectionError,
     HighlightCandidate,
     WindowSelectorConfig,
+    _containment_ratio,
     _interval_iou,
     generate_candidate_windows,
     suppress_overlaps,
@@ -446,3 +447,96 @@ def test_five_distinct_peaks_yield_five_distinct_candidates() -> None:
     for i in range(len(selected)):
         for j in range(i + 1, len(selected)):
             assert _interval_iou(selected[i], selected[j]) <= config.overlap_iou_threshold
+
+
+# ---------------------------------------------------------------------------
+# Regression: near-duplicate containment-ratio criterion.
+#
+# suppress_overlaps() previously rejected duplicates using temporal IoU
+# alone. A real job-19 case slipped through: 389-404s (15s) and 378-398s
+# (20s) have IoU ~= 0.346 - just under the 0.35 threshold - purely because
+# IoU's denominator (the union) grows with the longer candidate. But 9 of
+# the shorter clip's 15 seconds (60%) are duplicated inside the longer one.
+# suppress_overlaps() now also rejects a candidate if
+# intersection / min(duration_a, duration_b) >= containment_threshold
+# (default 0.50), independent of IoU.
+# ---------------------------------------------------------------------------
+
+
+def _containment_test_candidate(start: float, end: float, score: float = 1.0) -> HighlightCandidate:
+    return HighlightCandidate(start, end, score, score, score, 0.0, "moderate activity")
+
+
+def test_containment_ratio_matches_real_job19_case() -> None:
+    a = _containment_test_candidate(389.0, 404.0)  # 15s
+    b = _containment_test_candidate(378.0, 398.0)  # 20s
+
+    assert _interval_iou(a, b) == pytest.approx(9.0 / 26.0)  # ~0.346, under 0.35
+    assert _containment_ratio(a, b) == pytest.approx(0.60)  # 9 / 15
+
+
+def test_exact_job19_duplicate_is_rejected() -> None:
+    # Higher-scored candidate first, as suppress_overlaps expects pre-sorted input.
+    higher = _containment_test_candidate(389.0, 404.0, score=1.0)
+    lower = _containment_test_candidate(378.0, 398.0, score=0.9)
+
+    selected = suppress_overlaps([higher, lower], iou_threshold=0.35, top_n=5)
+
+    assert len(selected) == 1
+    assert selected[0] is higher
+
+
+def test_genuinely_adjacent_low_overlap_candidates_both_kept() -> None:
+    # Two real, separate events with only a small, incidental overlap -
+    # must NOT be treated as duplicates by either criterion.
+    first = _containment_test_candidate(100.0, 120.0, score=1.0)  # 20s
+    second = _containment_test_candidate(115.0, 135.0, score=0.9)  # 20s, overlap=[115,120)=5s
+
+    assert _interval_iou(first, second) == pytest.approx(5.0 / 35.0)  # ~0.143
+    assert _containment_ratio(first, second) == pytest.approx(5.0 / 20.0)  # 0.25
+
+    selected = suppress_overlaps([first, second], iou_threshold=0.35, top_n=5)
+
+    assert len(selected) == 2
+    assert {c.start_seconds for c in selected} == {100.0, 115.0}
+
+
+def test_containment_threshold_is_configurable_and_not_hidden() -> None:
+    # Must use a pair where IoU alone would NOT reject it (otherwise raising
+    # containment_threshold can't actually be observed to change anything -
+    # a prior version of this test made exactly that mistake, using a pair
+    # with IoU=0.60 that IoU rejected regardless of containment_threshold).
+    # The real job-19 case is exactly such a pair: IoU ~= 0.346, under the
+    # 0.35 IoU threshold, so only the containment criterion is in play.
+    config = WindowSelectorConfig()
+    assert config.containment_threshold == pytest.approx(0.50)
+
+    higher = _containment_test_candidate(389.0, 404.0, score=1.0)  # 15s
+    lower = _containment_test_candidate(378.0, 398.0, score=0.9)  # 20s
+
+    assert _interval_iou(higher, lower) < 0.35  # IoU alone would keep both
+    assert _containment_ratio(higher, lower) == pytest.approx(0.60)
+
+    # Default threshold (0.50): 0.60 >= 0.50 -> rejected as a duplicate.
+    default_selected = suppress_overlaps([higher, lower], iou_threshold=0.35, top_n=5)
+    assert len(default_selected) == 1
+
+    # Raised threshold (0.70): 0.60 < 0.70 -> containment no longer
+    # triggers, and IoU (~=0.346) still doesn't either, so both are kept.
+    # This is the actual proof that containment_threshold changes behavior.
+    permissive_selected = suppress_overlaps(
+        [higher, lower], iou_threshold=0.35, top_n=5, containment_threshold=0.70
+    )
+    assert len(permissive_selected) == 2
+
+
+def test_containment_ratio_symmetric_and_bounded() -> None:
+    a = _containment_test_candidate(0.0, 10.0)
+    b = _containment_test_candidate(2.0, 8.0)  # fully inside a
+
+    ratio_ab = _containment_ratio(a, b)
+    ratio_ba = _containment_ratio(b, a)
+
+    assert ratio_ab == pytest.approx(1.0)  # all of b (the shorter) is inside a
+    assert ratio_ba == pytest.approx(1.0)  # symmetric: same intersection / same shorter duration
+    assert 0.0 <= ratio_ab <= 1.0
