@@ -606,3 +606,54 @@ A CTO review found that `generate_candidate_windows()` kept only `np.argmax(wind
 
 Merge authorized: no
 Deploy authorized: no
+
+## RCE-20260808-HIGHLIGHT7B — 2026-08-08 (post-smoke duration-boundary correction, PR #11)
+
+Task ID: RCE-20260808-HIGHLIGHT7B
+Agent: claude
+Branch: feat/highlight-intelligence-mvp
+Prior HEAD (CI independently confirmed SUCCESS before this correction): 07407aaaef75412cec5f2ea38803d42133b592c7
+Current HEAD: f56ae1b1e65b38cd4d52ceff977cbb14013c6a27
+PR: #11 (still draft, targeting feat/initial-engine, not main)
+Status: review — CI in progress on f56ae1b at time of writing
+Files changed: src/robin_content_engine/clip_selector.py, tests/test_clip_selector.py — same allowed_paths as before, no other paths touched
+Tests: 198 passed/1 warning (196 prior + 2 new non-integral-duration regression tests), independently run before pushing
+Ruff: all checks passed
+Mypy (focused: scene_detector.py, highlight_features.py, highlight_scoring.py, clip_selector.py, cli.py, models.py): no issues found
+Diff check: clean
+CI: in progress on f56ae1b1e65b38cd4d52ceff977cbb14013c6a27 at time of writing — checked once, no further self-check-in scheduled per this correction's explicit instruction to stop hourly/background polling
+Known blockers: none. Real Windows ID-8 re-smoke and any merge still need separate explicit authorization.
+Merge authorized: no
+Deploy authorized: no
+
+### Real Windows smoke result (operator-executed, first run against 07407aa)
+
+- Source duration: 26.555s. Elapsed analysis time: ~19.84s. Requested `--top 5`, returned 2 candidates.
+- Candidate #1: `start_seconds=12.0, end_seconds=26.555, duration_seconds=14.555` - violates `WindowSelectorConfig.min_clip_seconds=15.0`. This is the defect fixed here.
+
+### What triggered this correction
+
+`generate_time_windows()` (`highlight_features.py`) truncates the final bin when the source duration isn't an exact multiple of the 1.0s grid - a 26.555s source produces 26 full 1.0s bins plus one 0.555s final bin, not 27 full bins. `generate_candidate_windows()` (`clip_selector.py`) converted `min_clip_seconds`/`max_clip_seconds` into a bin COUNT using only the *first* window's width as the nominal bin size (`bin_seconds = window_scores[0].window.end_seconds - window_scores[0].window.start_seconds`), implicitly assuming every bin has that same width. A candidate spanning the configured bin count (e.g. 15 bins) could therefore span less real time than `min_clip_seconds` whenever it included the truncated final bin. Verified independently before making any change: reproduced the operator's exact numbers (`start=12.0, end=26.555, duration=14.555`) using the real `generate_time_windows(26.555, 1.0)` output with tail-concentrated activity, via the actual production functions (not a reimplementation).
+
+### Fix
+
+Bin count still decides which durations to search (unchanged). But now, for every candidate, `actual_duration = end_seconds - start_seconds` (the real timestamp span) is computed and validated against `min_clip_seconds`/`max_clip_seconds` (with a `1e-6` second float tolerance for negligible accumulation only, not for genuine shortfalls) before the candidate is kept - any candidate whose real span falls outside the configured bounds is dropped, never padded or extended past the source's actual duration to force a fit. The corrected multi-event candidate generation from `07407aa` (every valid start position considered, not just `np.argmax()` per duration) is unchanged.
+
+### Regression tests added
+
+`test_non_integral_final_bin_does_not_produce_undersized_candidate`: reproduces the exact real-smoke scenario (26.555s source via the real `generate_time_windows()`, tail activity including the truncated final bin) and asserts the defective 12.0s-26.555s candidate never appears, every returned candidate meets `min_clip_seconds`, and the true best 15.0s-real-duration window (11.0s-26.0s) is found instead. `test_all_candidates_respect_real_time_bounds_on_non_integral_duration`: a general sweep over a non-integral-duration timeline with a varied score profile, asserting every candidate's real duration stays within `[min_clip_seconds, max_clip_seconds]`. Both constructed with the real `generate_time_windows()` output, not synthetic exact-second bins (which is exactly why the original test suite didn't catch this).
+
+### Secondary smoke observation (recorded, not actioned yet)
+
+ID 8 is only 26.555s long. With a 15s minimum clip duration and temporal-IoU suppression, it cannot meaningfully test Robin's ability to return five distinct highlights - it remains useful for correctness/performance smoke (and was exactly how this defect surfaced), but qualitative "top 5 highlight intelligence" validation will need a longer (multi-minute) owned Fortnite capture later, under the same rights-safe local-capture boundary as ID 8. Not actioned in this correction - noted for whenever that validation is authorized.
+
+### Explicitly not done in this correction
+
+- No render, transcription, AI/LLM scoring, upload, or DB mutation - unaffected, unchanged scope.
+- No changes to `pipeline.py`, `uploader.py`, `youtube_auth.py`, `api.py`, or `schema.sql`.
+- No schema migration.
+- No real Windows re-smoke executed automatically - per explicit instruction, this is left for the operator.
+- PR #11 not merged, remains draft.
+
+Merge authorized: no
+Deploy authorized: no

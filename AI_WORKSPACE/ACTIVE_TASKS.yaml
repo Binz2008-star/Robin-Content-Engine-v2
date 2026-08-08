@@ -556,23 +556,39 @@ tasks:
     branch: feat/highlight-intelligence-mvp
     base_branch: feat/initial-engine
     base_sha: c80b1ce54ddbdedf615cb88942fdd7e68c77b613
-    current_sha: 07407aaaef75412cec5f2ea38803d42133b592c7
+    current_sha: f56ae1b1e65b38cd4d52ceff977cbb14013c6a27
     pr: 11
     pr_state: open (draft)
     ci: >-
-      SUCCESS on current_sha 07407aaaef75412cec5f2ea38803d42133b592c7
-      (check run "test" on GitHub), confirmed via a scheduled safety-net
-      check-in - no new commits, no review comments, no reviews,
-      mergeable_state=clean. This corrected the candidate-generation
-      defect where generate_candidate_windows() kept only np.argmax()
-      per duration, clustering nearly all candidates around one
-      strongest event (see correction_2026-08-08_candidate_generation
-      note below). Independently run by this agent before pushing the
-      correction: pytest 196 passed/1 warning (194 prior + 2 new
-      multi-peak regression tests), ruff all checks passed, focused mypy
-      on scene_detector.py/highlight_features.py/highlight_scoring.py/
+      In progress at time of writing (check run "test" on GitHub) on
+      current_sha f56ae1b1e65b38cd4d52ceff977cbb14013c6a27, checked once
+      per this task's explicit instruction to stop hourly/background
+      self-check polling after this correction - no further check-in
+      scheduled. CI on the prior sha (07407aa) was independently
+      confirmed SUCCESS before this correction. Independently run by
+      this agent before pushing the correction: pytest 198 passed/1
+      warning (196 prior + 2 new non-integral-duration regression tests),
+      ruff all checks passed, focused mypy on
+      scene_detector.py/highlight_features.py/highlight_scoring.py/
       clip_selector.py/cli.py/models.py - no issues found, git diff
       --check clean.
+    correction_2026-08-08_duration_boundary: >-
+      Real Windows smoke on ID 8 (26.555s source) exposed that
+      generate_time_windows() truncates the final bin when source
+      duration isn't an exact multiple of the 1.0s grid, and
+      generate_candidate_windows() converted min/max_clip_seconds to a
+      bin COUNT using only the first window's width - so a candidate
+      spanning the configured bin count could span less real time than
+      min_clip_seconds if it included that truncated final bin.
+      Reproduced exactly: start=12.0, end=26.555, duration=14.555s
+      against min_clip_seconds=15.0, matching the operator's smoke
+      report precisely. Fixed: every candidate's real timestamp span
+      (end_seconds - start_seconds) is now validated against
+      min/max_clip_seconds (small float tolerance) before being kept -
+      bin count still decides which durations to search, but real
+      timestamps decide validity. Never pads/extends past the source's
+      real duration. The corrected multi-event candidate generation from
+      07407aa is preserved unchanged.
     correction_2026-08-08_candidate_generation: >-
       generate_candidate_windows() previously kept only the single
       np.argmax()-best start position per tested duration, so distinct
@@ -656,13 +672,19 @@ tasks:
         explicit authorization after CI review
       - no background polling / self check-ins for this task's PR
     next_action: >-
-      Implementation complete, draft PR #11 open, CI in progress on
-      current_sha. Wait for CI to finish (60-minute safety-net check-in
-      scheduled, silent unless action needed). Once green and reviewed:
-      real Windows ID-8 smoke (`robin-engine highlight-scan 8 --top 5
-      --json`, read-only) ONLY after separate explicit authorization -
-      not performed yet. PR #11 stays draft until then. Do not merge to
-      main or to feat/initial-engine without explicit authorization.
+      Real Windows ID-8 smoke was executed by the operator (source
+      duration 26.555s, elapsed ~19.84s, requested top 5, returned 2
+      candidates pre-fix) and surfaced the duration-boundary defect fixed
+      in this correction. Wait for CI to finish on current_sha - checked
+      once, no further self-check-in scheduled per explicit instruction
+      to stop hourly polling after this correction. Once reviewed: ID 8
+      remains useful for correctness/performance smoke, but is too short
+      (26.555s) for a meaningful "top 5 distinct highlights" qualitative
+      test under the default 15s minimum + IoU suppression - a longer
+      (multi-minute) owned Fortnite capture will be needed for that,
+      under the same rights-safe local-capture boundary. No re-smoke
+      authorized yet. PR #11 stays draft. Do not merge to main or to
+      feat/initial-engine without explicit authorization.
 
 # Other branches observed on origin at the time this registry was created
 # that are NOT yet registered as tasks (owner/scope unknown to this agent —
