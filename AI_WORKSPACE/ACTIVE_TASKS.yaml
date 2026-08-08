@@ -693,6 +693,59 @@ tasks:
       on a longer capture) is a separate task requiring its own explicit
       authorization and registration.
 
+  - id: RCE-20260808-HIGHLIGHT7B-QV
+    title: Phase 7B-QV — Long Gameplay Qualitative Validation (operator-executed, no code)
+    status: active
+    owner: claude (governance/report only) + operator (execution)
+    branch: none — no code changes, no new branch, no PR
+    base_branch: feat/initial-engine
+    base_sha: 67064bdcacb20df1362c786be6f3046514f5cfa3
+    pr: none
+    merge_allowed: false
+    deploy_allowed: false
+    scope: >-
+      Qualitative validation of the already-merged deterministic
+      Highlight Intelligence (robin-engine highlight-scan) against a new
+      3-5+ minute owned Fortnite capture, entirely on the operator's real
+      Windows machine (this agent's sandbox has no camera/game, no
+      production DB access, no local capture directory - cannot execute
+      any step itself). Process: capture-scan to register the new file,
+      rights-show to inspect it, explicit rights-approve after operator
+      confirms personal-recording provenance, rights-show to confirm
+      rights_confirmed=true, then a single read-only highlight-scan
+      --top 5 --json run with wall-clock timing. Human grades each of
+      the 5 candidates A/B/C with a reason. No code change, no new
+      branch, no PR, no render, no upload, no YouTube write, no weight
+      tuning before human review. The only DB mutation permitted is the
+      existing explicit rights-approve path if the new capture needs it.
+    allowed_paths:
+      - AI_WORKSPACE/ACTIVE_TASKS.yaml
+      - AI_WORKSPACE/HANDOFF.md
+    forbidden_paths:
+      - src/**
+      - tests/**
+      - pyproject.toml
+      - schema.sql
+      - main
+      - any production database write outside rights-approve
+    stop_conditions:
+      - no code changes, no new branch, no PR
+      - no render, upload, YouTube write, or DB mutation beyond the
+        existing rights-approve workflow
+      - do not tune scoring weights/thresholds before human review of
+        this test's results
+      - do not start Phase 7C implementation after this test without
+        separate explicit authorization
+    next_action: >-
+      Waiting on the operator to execute the process on their real
+      Windows machine and report back: job ID, source duration, rights
+      confirmation, elapsed highlight-scan time, complete top-5 JSON,
+      and human A/B/C grade + reason per candidate. This agent will
+      independently verify what it can (e.g. governance consistency) and
+      record the operator-reported qualitative results as such - not as
+      first-hand verification by this agent, consistent with this
+      task's actual capability boundary.
+
 # Other branches observed on origin at the time this registry was created
 # that are NOT yet registered as tasks (owner/scope unknown to this agent —
 # not fabricated here). Whoever owns them should add a task entry above
