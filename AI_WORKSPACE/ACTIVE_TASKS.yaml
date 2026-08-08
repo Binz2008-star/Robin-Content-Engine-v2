@@ -560,15 +560,14 @@ tasks:
     pr: 11
     pr_state: open (draft)
     ci: >-
-      Correction pushed after CTO review found generate_candidate_windows()
-      kept only np.argmax() per duration, clustering nearly all candidates
-      around one strongest event (see correction_2026-08-08 note below). In
-      progress at time of writing (check run "test" queued on GitHub) on
-      current_sha 07407aa, reported once per this task's explicit
-      no-polling instruction - a 60-minute send_later safety-net check-in
-      is scheduled, silent unless action is needed. CI on the prior sha
-      (7e34c32) was independently confirmed SUCCESS before this
-      correction. Independently run by this agent before pushing the
+      SUCCESS on current_sha 07407aaaef75412cec5f2ea38803d42133b592c7
+      (check run "test" on GitHub), confirmed via a scheduled safety-net
+      check-in - no new commits, no review comments, no reviews,
+      mergeable_state=clean. This corrected the candidate-generation
+      defect where generate_candidate_windows() kept only np.argmax()
+      per duration, clustering nearly all candidates around one
+      strongest event (see correction_2026-08-08_candidate_generation
+      note below). Independently run by this agent before pushing the
       correction: pytest 196 passed/1 warning (194 prior + 2 new
       multi-peak regression tests), ruff all checks passed, focused mypy
       on scene_detector.py/highlight_features.py/highlight_scoring.py/
