@@ -736,28 +736,60 @@ tasks:
         this test's results
       - do not start Phase 7C implementation after this test without
         separate explicit authorization
+    operator_reported_results_job19: >-
+      Real Windows execution against job 19 (~409.055s owned Fortnite
+      capture). Operator-reported human grading of the top-5 candidates
+      (pre-diversity-fix run): 3/5 graded A (genuinely independent,
+      distinct regions), 2/5 graded B but assessed as essentially the
+      same event (389-404s and 378-398s, later independently confirmed
+      by this agent's own regression-test construction to have IoU
+      ~=0.346, just under the 0.35 suppression threshold). Operator's
+      engineering conclusion: the base audio/motion scoring correctly
+      identifies useful events (3/5 A is a genuine pass signal) - no
+      ASR/Vision AI and no score-weight retuning needed yet. The only
+      remaining defect is narrow: temporal dedup permits two near-
+      duplicate views of one event when IoU is just under threshold.
+      This agent has not independently verified this operator-reported
+      qualitative grading (no access to the real capture or Windows
+      environment) - recorded as operator-reported, not first-hand
+      verified.
     next_action: >-
-      Waiting on the operator to execute the process on their real
-      Windows machine and report back: job ID, source duration, rights
-      confirmation, elapsed highlight-scan time, complete top-5 JSON,
-      and human A/B/C grade + reason per candidate. This agent will
-      independently verify what it can (e.g. governance consistency) and
-      record the operator-reported qualitative results as such - not as
-      first-hand verification by this agent, consistent with this
-      task's actual capability boundary.
+      Not yet closed. Plan (operator-specified order): (1) COMPLETE -
+      merge PR #12 (pre-dedup-truncation fix) as an independent,
+      already-validated correction into feat/initial-engine - done,
+      d2fe747, see RCE-20260808-HIGHLIGHT-DIVERSITY. (2) IN PROGRESS -
+      new narrow PR #13 adding a containment-ratio near-duplicate
+      criterion (reject if IoU > 0.35 OR intersection/shorter_duration
+      >= 0.50) to suppress_overlaps(), with regression tests for both
+      the exact job-19 duplicate case and a genuinely-adjacent
+      low-overlap case that must NOT be rejected. (3) One final
+      operator-executed job-19 re-run once PR #13 is reviewed/merged.
+      (4) If 5 distinct, non-duplicate regions come back with
+      comparable quality, Phase 7B-QV closes as PASS. (5) Only then does
+      the next phase (operator's stated preference: Clip Cutting +
+      Vertical Reframe + Captions/ASR, to reach a first real Short for
+      review) get considered - separate task, separate authorization,
+      not started.
 
   - id: RCE-20260808-HIGHLIGHT-DIVERSITY
     title: Phase 7B correction — candidate-diversity pre-dedup truncation defect
-    status: review
+    status: complete
     owner: claude
     branch: fix/highlight-candidate-diversity
     base_branch: feat/initial-engine
     base_sha: 67064bdcacb20df1362c786be6f3046514f5cfa3
-    current_sha: 6e671e905140da2f3076f57cac03b05b28e4ee14
+    final_sha: 6e671e905140da2f3076f57cac03b05b28e4ee14
     pr: 12
-    pr_state: open (draft)
+    merged: true
+    merge_method: squash
+    merge_commit_sha: d2fe7474667491c83f0ea393e6e43fd6b199f15e
+    merged_into: feat/initial-engine
+    result_sha_on_feat_initial_engine: d2fe7474667491c83f0ea393e6e43fd6b199f15e
+    merged_by: claude (explicit operator authorization: "نعمله Ready ثم
+      squash merge إلى feat/initial-engine فقط. لا main ولا deploy" -
+      scoped exactly to feat/initial-engine, no main, no deploy)
     ci: >-
-      SUCCESS on current_sha 6e671e905140da2f3076f57cac03b05b28e4ee14
+      SUCCESS on final_sha 6e671e905140da2f3076f57cac03b05b28e4ee14
       (check run "test" on GitHub), confirmed via GitHub API -
       mergeable_state=clean. A 60-minute send_later safety-net check-in
       remains scheduled, silent unless action is needed. Independently
@@ -837,12 +869,87 @@ tasks:
       task registration, gated on human A/B/C review of job 19's
       post-fix results.
     next_action: >-
-      Implementation complete, draft PR #12 open. CI confirmed SUCCESS
-      on current_sha via GitHub API. Awaiting operator code review, then
-      explicit authorization to re-run job 19 (per stop_conditions - not
-      yet given) and separately to merge. PR #12 stays draft until then.
-      Do not merge to main or to feat/initial-engine without explicit
-      authorization.
+      None outstanding for this task. PR #12 merged (squash) into
+      feat/initial-engine at d2fe747, independently verified by this
+      agent via git fetch and the GitHub API. main was not touched, no
+      deploy occurred. This closes the pre-dedup-truncation defect as an
+      independent fix, per the operator's explicit decision. The
+      remaining near-duplicate/containment issue (389-404s vs 378-398s,
+      IoU~=0.346 just under threshold) is intentionally NOT part of this
+      task - it is being tracked as a new, separate, narrow task
+      (near-duplicate containment-ratio fix, PR #13) per the operator's
+      explicit ordering. Phase 7B-QV (qualitative validation) is not yet
+      closed - it remains open pending PR #13 and one final job-19
+      re-run.
+
+  - id: RCE-20260808-HIGHLIGHT-CONTAINMENT
+    title: Phase 7B-QV correction — near-duplicate containment-ratio dedup criterion
+    status: active
+    owner: claude
+    branch: fix/highlight-near-duplicate-containment
+    base_branch: feat/initial-engine
+    base_sha: d2fe7474667491c83f0ea393e6e43fd6b199f15e
+    pr: pending
+    allowed_paths:
+      - src/robin_content_engine/clip_selector.py
+      - tests/test_clip_selector.py
+    forbidden_paths:
+      - studio/**
+      - AGENTS.md
+      - CLAUDE.md
+      - AI_WORKSPACE/**
+      - main
+      - schema.sql
+      - src/robin_content_engine/api.py
+      - src/robin_content_engine/uploader.py
+      - src/robin_content_engine/pipeline.py
+      - src/robin_content_engine/youtube_auth.py
+      - src/robin_content_engine/capture_scan.py
+      - src/robin_content_engine/scene_detector.py
+      - src/robin_content_engine/highlight_features.py
+      - src/robin_content_engine/highlight_scoring.py
+      - src/robin_content_engine/cli.py
+      - client_secret.json
+      - client_secret*.json
+      - token.json
+      - .env
+    merge_allowed: false
+    deploy_allowed: false
+    build_vs_adopt: >-
+      No new dependency. Pure algorithm addition within the already-
+      merged clip_selector.py - a containment-ratio check alongside the
+      existing IoU check in suppress_overlaps()'s duplicate test.
+    scope: >-
+      Operator-specified fix for the exact real job-19 near-duplicate
+      symptom: reject candidate B as a duplicate of already-accepted
+      candidate A if EITHER interval_iou(A,B) > 0.35 OR
+      intersection(A,B)/min(duration_A,duration_B) >= 0.50. Not a
+      threshold tune (0.35->0.34) - a genuinely separate
+      containment/near-duplicate concept, verified against the real
+      case: 389-404s (15s) vs 378-398s (20s), intersection=9s,
+      9/15=0.60 >= 0.50 -> correctly rejected, even though IoU alone
+      (~=0.346) was just under the existing 0.35 threshold. Do not
+      change scoring, audio/motion weights, or add any new signal
+      source (explicitly not needed per operator's A/B/C review: 3/5
+      graded A already, base scoring works).
+    stop_conditions:
+      - do not change the scoring formula or audio/motion weights
+      - do not add ASR/vision/any new signal source
+      - do not simply lower overlap_iou_threshold as a substitute for
+        the containment-ratio criterion
+      - regression tests required for BOTH directions - the exact
+        job-19 duplicate case must be rejected, and a genuinely
+        adjacent low-overlap pair must NOT be rejected
+      - do not re-run job 19 until this PR is reviewed and CI is green
+      - do not merge PR, do not deploy
+    next_action: >-
+      Implement _containment_ratio()/_is_near_duplicate() in
+      clip_selector.py, wire into suppress_overlaps() alongside the
+      existing IoU check, add the two required regression tests,
+      validate (pytest/ruff/mypy/diff-check), open a new draft PR
+      targeting feat/initial-engine, check exact-head CI once, report
+      back. Real job-19 re-run remains an operator action, deferred
+      until this PR is reviewed.
 
 # Other branches observed on origin at the time this registry was created
 # that are NOT yet registered as tasks (owner/scope unknown to this agent —
