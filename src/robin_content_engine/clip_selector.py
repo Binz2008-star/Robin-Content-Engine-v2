@@ -21,13 +21,20 @@ _DURATION_TOLERANCE_SECONDS = 1e-6
 @dataclass(frozen=True)
 class WindowSelectorConfig:
     """Configurable, not buried. Durations are in seconds; internally
-    converted to a whole number of score-timeline bins."""
+    converted to a whole number of score-timeline bins.
+
+    There is deliberately no cap on the candidate pool before
+    suppress_overlaps() runs (see generate_candidate_windows() for why an
+    earlier max_candidates_before_dedup field was removed rather than
+    just raised) - suppress_overlaps() itself already stops as soon as
+    top_n distinct candidates are accepted, so it is the only place a
+    result-size bound belongs.
+    """
 
     min_clip_seconds: float = 15.0
     max_clip_seconds: float = 60.0
     duration_step_seconds: float = 5.0
     overlap_iou_threshold: float = 0.35
-    max_candidates_before_dedup: int = 50
 
 
 @dataclass(frozen=True)
@@ -67,10 +74,22 @@ def generate_candidate_windows(
     keeping only np.argmax() per duration would cluster nearly all candidates
     around whichever single event is strongest, silently discarding the
     others before overlap suppression ever runs. Instead: build a candidate
-    for every valid (duration, start) pair, rank the FULL pool globally by
-    score, only then truncate to max_candidates_before_dedup, and only after
-    that hand off to suppress_overlaps(). This keeps multiple distinct events
-    in contention through the whole ranking step, not just the strongest one.
+    for every valid (duration, start) pair and rank the FULL pool globally by
+    score - the complete ranked pool, not a truncated prefix of it, is what
+    gets handed to suppress_overlaps(). On a long source, the highest-scoring
+    ~50 raw candidates can easily all be overlapping variants of one single
+    dominant event (many durations x many start offsets all covering the
+    same active region); truncating the pool to a fixed size before dedup
+    would discard every genuinely distinct lower-scoring event before
+    suppress_overlaps() ever got a chance to consider them - which is
+    exactly what a prior version of this function did via a
+    max_candidates_before_dedup cap, confirmed against a real ~409s capture
+    that returned only 2 near-duplicate candidates instead of 5 distinct
+    ones. suppress_overlaps() already stops as soon as top_n distinct
+    candidates are accepted, so it - not this function - is the right place
+    for a result-size bound; ranking/dedup here is comparatively cheap next
+    to the scene/audio/motion feature extraction that produced window_scores
+    in the first place, so no pool-size cap is reintroduced.
 
     Candidates are NOT locked to scene boundaries - a window can start/end
     mid-scene and include lead-in/lead-out context around a peak, since it
@@ -159,7 +178,7 @@ def generate_candidate_windows(
             )
 
     candidates.sort(key=lambda c: (-c.score, c.start_seconds))
-    return candidates[: config.max_candidates_before_dedup]
+    return candidates
 
 
 def _prefix_sum(values: Sequence[float]) -> np.ndarray:
