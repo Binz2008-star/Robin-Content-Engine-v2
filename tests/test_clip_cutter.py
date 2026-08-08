@@ -13,6 +13,7 @@ import imageio_ffmpeg  # noqa: E402
 import pytest  # noqa: E402
 from moviepy import VideoFileClip  # noqa: E402
 
+from robin_content_engine import clip_cutter as clip_cutter_module  # noqa: E402
 from robin_content_engine.clip_cutter import ClipCutError, cut_clip  # noqa: E402
 
 
@@ -59,6 +60,25 @@ def test_cut_clip_produces_output_with_expected_duration(
 
     with VideoFileClip(str(output_path)) as produced:
         assert produced.duration == pytest.approx(4.0, abs=0.5)
+        assert list(produced.size) == [96, 64]
+        assert produced.fps == pytest.approx(24.0, abs=0.5)
+
+
+def test_rejects_output_with_wrong_duration_and_cleans_up_failed_attempt(
+    source_video: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Runtime regression for the duration-validation requirement: even if
+    encoding produces a non-empty file, cut_clip() must not report success
+    if that file's actual duration doesn't match the requested interval,
+    and must clean up the bad output (not the source) so a retry at the
+    same deterministic path isn't blocked by the failed attempt."""
+    monkeypatch.setattr(clip_cutter_module, "_probe_output_duration", lambda path: 999.0)
+    output_path = tmp_path / "out.mp4"
+
+    with pytest.raises(ClipCutError, match="duration"):
+        cut_clip(source_video, output_path, start_seconds=2.0, end_seconds=6.0)
+
+    assert not output_path.exists()
 
 
 def test_source_file_is_unchanged(source_video: Path, tmp_path: Path) -> None:

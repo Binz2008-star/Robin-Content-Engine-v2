@@ -5,13 +5,20 @@ from pathlib import Path
 
 from moviepy import VideoFileClip
 
-# Guards only against negligible floating-point accumulation when checking
-# a requested end against the source's real duration, not a real overrun.
+# Used both to guard against negligible floating-point accumulation when
+# checking a requested end against the source's real duration, and as the
+# explicit codec/container tolerance for validating the produced output's
+# actual duration against the requested interval.
 _DURATION_TOLERANCE_SECONDS = 0.5
 
 
 class ClipCutError(Exception):
     pass
+
+
+def _probe_output_duration(path: Path) -> float:
+    with VideoFileClip(str(path)) as probe:
+        return float(probe.duration)
 
 
 @dataclass(frozen=True)
@@ -38,6 +45,14 @@ def cut_clip(
     Never overwrites an existing output_path - fails instead, so a caller
     must choose a different (e.g. deterministically suffixed) path rather
     than silently clobbering a prior cut.
+
+    After encoding, the produced file's actual duration is probed and
+    checked against the requested interval within
+    _DURATION_TOLERANCE_SECONDS. A file that exists and is non-empty but
+    has the wrong duration is not a success: it is deleted (only the
+    output this attempt just created - the source is never touched) and
+    ClipCutError is raised, so the deterministic output filename remains
+    free for a retry.
     """
     if end_seconds <= start_seconds:
         raise ClipCutError("end_seconds must be greater than start_seconds")
@@ -76,6 +91,17 @@ def cut_clip(
 
         if not output_path.is_file() or output_path.stat().st_size == 0:
             raise ClipCutError(f"Clip cut completed without producing output: {output_path}")
+
+        expected_duration = min(end_seconds, source.duration) - start_seconds
+        produced_duration = _probe_output_duration(output_path)
+        if abs(produced_duration - expected_duration) > _DURATION_TOLERANCE_SECONDS:
+            output_path.unlink()
+            raise ClipCutError(
+                f"Produced clip duration {produced_duration:.3f}s does not match "
+                f"requested duration {expected_duration:.3f}s within tolerance "
+                f"{_DURATION_TOLERANCE_SECONDS}s for {output_path}"
+            )
+
         return CutResult(
             output_path=output_path, start_seconds=start_seconds, end_seconds=end_seconds
         )
