@@ -9,8 +9,10 @@ import typer
 from . import __version__
 from .capture_scan import CaptureScanError, scan_captures
 from .channel_repository import ChannelRepository
+from .clip_cutter import ClipCutError, cut_clip
 from .clip_selector import (
     ClipSelectionError,
+    HighlightCandidate,
     WindowSelectorConfig,
     generate_candidate_windows,
     suppress_overlaps,
@@ -27,7 +29,7 @@ from .highlight_features import (
 from .highlight_scoring import score_windows
 from .models import HighlightCandidateResult, HighlightScanResult
 from .pipeline import ContentEngine
-from .scene_detector import SceneDetectionError, detect_scenes
+from .scene_detector import SceneBoundary, SceneDetectionError, detect_scenes
 from .youtube_auth import AuthState, YouTubeAuth, YouTubeAuthError
 from .youtube_sync import YouTubeChannelSync, YouTubeSyncError
 
@@ -351,26 +353,10 @@ def rights_reject(
     typer.echo(f"Rights confirmed: {rejected['rights_confirmed']}")
 
 
-@app.command("highlight-scan")
-def highlight_scan(
-    job_id: Annotated[int, typer.Argument(help="Job ID to analyze.")],
-    top: Annotated[
-        int, typer.Option("--top", help="Number of ranked candidates to return.")
-    ] = 5,
-    as_json: Annotated[
-        bool, typer.Option("--json", help="Print machine-readable JSON instead of a table.")
-    ] = False,
-) -> None:
-    """Read-only deterministic highlight analysis for one job's local source
-    video: scene detection, audio/motion signal scoring, candidate window
-    search, and overlap suppression. Prints ranked timestamps, scores, and
-    a signal breakdown only.
-
-    Never claims the job, never increments attempts, never writes any
-    generated_*/output_path/status field, never renders, never uploads,
-    never calls an LLM. The only database interaction is a single read via
-    JobRepository.get_job().
-    """
+def _load_rights_confirmed_local_job(job_id: int) -> tuple[dict[str, Any], Path]:
+    """Shared read-only job lookup for highlight-scan/highlight-cut: a
+    single JobRepository.get_job() read, requiring confirmed rights and a
+    valid local source file. Never claims the job or mutates any state."""
     settings = Settings()  # type: ignore[call-arg]
     repository = JobRepository(settings.database_url, settings.max_job_attempts)
     with repository.running():
@@ -392,26 +378,80 @@ def highlight_scan(
     video_path = Path(source_path)
     if not video_path.is_file():
         raise typer.BadParameter(f"Source file does not exist: {video_path}")
+    return job, video_path
+
+
+def _run_highlight_analysis(
+    video_path: Path, top_n: int
+) -> tuple[list[SceneBoundary], list[HighlightCandidate]]:
+    """Shared read-only analysis pipeline used by both highlight-scan and
+    highlight-cut: scene detection, deterministic audio/motion/scene
+    signal scoring, and candidate ranking/dedup. Reuses the existing
+    scene_detector/highlight_features/highlight_scoring/clip_selector
+    functions unmodified - never claims a job, never mutates the DB,
+    never renders, never uploads.
+
+    suppress_overlaps() is deterministic given the same ranked candidate
+    pool: the first min(top_n_a, top_n_b) accepted candidates are
+    identical regardless of top_n, since top_n only controls when the
+    greedy scan stops early. Calling this with top_n=N and indexing
+    result[N-1] therefore always yields the exact same candidate that
+    highlight-scan would show at rank N.
+    """
+    scenes = detect_scenes(video_path)
+    duration_seconds = scenes[-1].end_seconds
+
+    windows = generate_time_windows(duration_seconds, _HIGHLIGHT_WINDOW_SECONDS)
+    raw_rms, raw_flux = extract_audio_activity(video_path, windows)
+    raw_motion = extract_motion_activity(video_path, windows)
+    raw_scene = compute_scene_density(scenes, windows)
+
+    window_scores = score_windows(windows, raw_rms, raw_flux, raw_motion, raw_scene)
+
+    selector_config = WindowSelectorConfig()
+    ranked_candidates = generate_candidate_windows(window_scores, selector_config)
+    selected = suppress_overlaps(
+        ranked_candidates,
+        iou_threshold=selector_config.overlap_iou_threshold,
+        containment_threshold=selector_config.containment_threshold,
+        top_n=top_n,
+    )
+    return scenes, selected
+
+
+def _highlight_cut_filename(
+    job_id: int, rank: int, start_seconds: float, end_seconds: float
+) -> str:
+    start_ms = round(start_seconds * 1000)
+    end_ms = round(end_seconds * 1000)
+    return f"job-{job_id}-highlight-{rank:02d}-{start_ms}-{end_ms}.mp4"
+
+
+@app.command("highlight-scan")
+def highlight_scan(
+    job_id: Annotated[int, typer.Argument(help="Job ID to analyze.")],
+    top: Annotated[
+        int, typer.Option("--top", help="Number of ranked candidates to return.")
+    ] = 5,
+    as_json: Annotated[
+        bool, typer.Option("--json", help="Print machine-readable JSON instead of a table.")
+    ] = False,
+) -> None:
+    """Read-only deterministic highlight analysis for one job's local source
+    video: scene detection, audio/motion signal scoring, candidate window
+    search, and overlap suppression. Prints ranked timestamps, scores, and
+    a signal breakdown only.
+
+    Never claims the job, never increments attempts, never writes any
+    generated_*/output_path/status field, never renders, never uploads,
+    never calls an LLM. The only database interaction is a single read via
+    JobRepository.get_job().
+    """
+    job, video_path = _load_rights_confirmed_local_job(job_id)
 
     try:
-        scenes = detect_scenes(video_path)
+        scenes, selected = _run_highlight_analysis(video_path, top)
         duration_seconds = scenes[-1].end_seconds
-
-        windows = generate_time_windows(duration_seconds, _HIGHLIGHT_WINDOW_SECONDS)
-        raw_rms, raw_flux = extract_audio_activity(video_path, windows)
-        raw_motion = extract_motion_activity(video_path, windows)
-        raw_scene = compute_scene_density(scenes, windows)
-
-        window_scores = score_windows(windows, raw_rms, raw_flux, raw_motion, raw_scene)
-
-        selector_config = WindowSelectorConfig()
-        ranked_candidates = generate_candidate_windows(window_scores, selector_config)
-        selected = suppress_overlaps(
-            ranked_candidates,
-            iou_threshold=selector_config.overlap_iou_threshold,
-            containment_threshold=selector_config.containment_threshold,
-            top_n=top,
-        )
     except (SceneDetectionError, FeatureExtractionError, ClipSelectionError) as exc:
         raise typer.BadParameter(str(exc)) from exc
 
@@ -458,6 +498,68 @@ def highlight_scan(
             f"motion={candidate.signals['motion']:.3f} "
             f"scene={candidate.signals['scene']:.3f}"
         )
+
+
+@app.command("highlight-cut")
+def highlight_cut(
+    job_id: Annotated[int, typer.Argument(help="Job ID to cut a clip from.")],
+    rank: Annotated[
+        int,
+        typer.Option(
+            "--rank", help="Which ranked highlight-scan candidate to cut (1 = top-ranked)."
+        ),
+    ] = 1,
+) -> None:
+    """Cut one ranked highlight candidate from a job's local source video
+    into a new local MP4 file. Reuses the same deterministic highlight
+    analysis as highlight-scan (same configs, same ranking) so --rank N
+    always matches highlight-scan's rank N exactly.
+
+    This never claims the job, never increments attempts, never changes
+    job status, never touches rights state, never calls an LLM or
+    YouTube, never uploads, and never runs the render/publish pipeline.
+    The only database interaction is a single read via
+    JobRepository.get_job(). The original source file is never modified,
+    moved, renamed, or deleted, and an existing output file is never
+    overwritten.
+    """
+    if rank < 1:
+        raise typer.BadParameter("--rank must be >= 1.")
+
+    job, video_path = _load_rights_confirmed_local_job(job_id)
+
+    try:
+        _scenes, selected = _run_highlight_analysis(video_path, rank)
+    except (SceneDetectionError, FeatureExtractionError, ClipSelectionError) as exc:
+        raise typer.BadParameter(str(exc)) from exc
+
+    if len(selected) < rank:
+        raise typer.BadParameter(
+            f"Job {job_id} only has {len(selected)} candidate(s) after overlap "
+            f"suppression; --rank {rank} is out of range."
+        )
+    candidate = selected[rank - 1]
+
+    settings = Settings()  # type: ignore[call-arg]
+    output_dir = settings.work_dir / "highlights"
+    filename = _highlight_cut_filename(
+        job_id, rank, candidate.start_seconds, candidate.end_seconds
+    )
+    output_path = output_dir / filename
+
+    try:
+        result = cut_clip(video_path, output_path, candidate.start_seconds, candidate.end_seconds)
+    except ClipCutError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+
+    typer.echo(f"Job {job_id}: {job['source_title']}")
+    typer.echo(f"Rank: {rank}")
+    typer.echo(f"Source path: {video_path}")
+    typer.echo(f"Start: {result.start_seconds:.1f}s")
+    typer.echo(f"End: {result.end_seconds:.1f}s")
+    typer.echo(f"Duration: {result.duration_seconds:.1f}s")
+    typer.echo(f"Score: {candidate.score:.3f}")
+    typer.echo(f"Output path: {result.output_path}")
 
 
 @app.command()
