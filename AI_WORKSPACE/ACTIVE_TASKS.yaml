@@ -746,6 +746,67 @@ tasks:
       first-hand verification by this agent, consistent with this
       task's actual capability boundary.
 
+  - id: RCE-20260808-HIGHLIGHT-DIVERSITY
+    title: Phase 7B correction — candidate-diversity pre-dedup truncation defect
+    status: active
+    owner: claude
+    branch: fix/highlight-candidate-diversity
+    base_branch: feat/initial-engine
+    base_sha: 67064bdcacb20df1362c786be6f3046514f5cfa3
+    pr: pending
+    allowed_paths:
+      - src/robin_content_engine/clip_selector.py
+      - tests/test_clip_selector.py
+    forbidden_paths:
+      - studio/**
+      - AGENTS.md
+      - CLAUDE.md
+      - AI_WORKSPACE/**
+      - main
+      - schema.sql
+      - src/robin_content_engine/api.py
+      - src/robin_content_engine/uploader.py
+      - src/robin_content_engine/pipeline.py
+      - src/robin_content_engine/youtube_auth.py
+      - src/robin_content_engine/capture_scan.py
+      - src/robin_content_engine/scene_detector.py
+      - src/robin_content_engine/highlight_features.py
+      - src/robin_content_engine/highlight_scoring.py
+      - src/robin_content_engine/cli.py
+      - client_secret.json
+      - client_secret*.json
+      - token.json
+      - .env
+    merge_allowed: false
+    deploy_allowed: false
+    build_vs_adopt: >-
+      No new dependency. Pure algorithm fix within the already-merged
+      clip_selector.py.
+    stop_conditions:
+      - do not truncate the globally-ranked candidate pool before
+        suppress_overlaps() runs
+      - do not merely raise max_candidates_before_dedup to a larger
+        number - that hides the defect on longer sources rather than
+        fixing it
+      - no transcription, AI semantic scoring, rendering, upload, or
+        score-weight tuning
+      - do not re-run job 19 until code review + exact-head CI are
+        complete
+      - do not merge PR, do not deploy
+    next_action: >-
+      Root cause independently verified in the merged feat/initial-engine
+      code: generate_candidate_windows() truncates the full ranked
+      candidate pool to max_candidates_before_dedup=50 BEFORE
+      suppress_overlaps() ever runs, so on long sources the top-50 slots
+      can be entirely consumed by overlapping variants of one dominant
+      event, discarding genuinely distinct lower-scoring events before
+      deduplication gets a chance to consider them. Fix: pass the
+      complete globally-ranked pool to suppress_overlaps() unchanged (no
+      pre-dedup cap), add a regression test proving 5 distinct events
+      survive on a long synthetic timeline where the old cap=50 behavior
+      would fail it, validate, open a new draft PR to feat/initial-engine,
+      check exact-head CI once, report back.
+
 # Other branches observed on origin at the time this registry was created
 # that are NOT yet registered as tasks (owner/scope unknown to this agent —
 # not fabricated here). Whoever owns them should add a task entry above
