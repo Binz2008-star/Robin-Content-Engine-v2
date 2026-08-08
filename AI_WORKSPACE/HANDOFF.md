@@ -688,3 +688,55 @@ The full Phase 7B deterministic highlight-intelligence MVP, including the post-i
 
 Merge authorized: no
 Deploy authorized: no
+
+## RCE-20260808-HIGHLIGHT-DIVERSITY — 2026-08-08 (candidate-diversity correction, PR #12)
+
+Task ID: RCE-20260808-HIGHLIGHT-DIVERSITY
+Agent: claude
+Branch: fix/highlight-candidate-diversity
+Base SHA: 67064bdcacb20df1362c786be6f3046514f5cfa3 (feat/initial-engine, post Phase 7B merge)
+Current HEAD: 6e671e905140da2f3076f57cac03b05b28e4ee14
+PR: #12 (new, draft, targeting feat/initial-engine, not main)
+Status: review — CI in progress at time of writing
+Files changed: src/robin_content_engine/clip_selector.py, tests/test_clip_selector.py — 2 files, exactly as expected
+Tests: 199 passed/1 warning (198 prior + 1 new regression test), independently run before pushing
+Ruff: all checks passed
+Mypy (focused: clip_selector.py): no issues found
+Diff check: clean
+CI: in progress on 6e671e905140da2f3076f57cac03b05b28e4ee14 at time of writing — checked once, 60-minute send_later safety-net check-in scheduled, silent unless action needed
+Known blockers: none. Job 19 must NOT be re-run until code review + exact-head CI are both complete, per explicit instruction.
+Merge authorized: no
+Deploy authorized: no
+
+### Real long-form validation result that triggered this (operator-executed, job 19)
+
+Source duration ~409.055s. Requested `--top 5`, returned only 2 candidates: `389–404s` and `378–398s` — both clustered in the final ~30 seconds of the source, with a mutual IoU of ~0.346 (just under the 0.35 suppression threshold), so `suppress_overlaps()` treated them as "distinct" even though they're really two overlapping views of the same event.
+
+### Root cause (independently verified in the merged code before any change)
+
+`generate_candidate_windows()` (`clip_selector.py`) built the full globally-ranked candidate pool correctly, but then did `return candidates[: config.max_candidates_before_dedup]` (default 50) - truncating the pool **before** `suppress_overlaps()` ever ran. On a long source, the highest-scoring ~50 raw candidates can all be overlapping/diluted variants of one dominant event (every tested duration × every start offset that still substantially covers the same active region), so genuinely distinct but lower-scoring events elsewhere in the video never made it into the pool `suppress_overlaps()` was ever shown - discarded before deduplication got a chance to consider them at all.
+
+### Fix
+
+Removed the pre-dedup cap and the now-dead `max_candidates_before_dedup` field from `WindowSelectorConfig` entirely, rather than raising it to a larger number (explicitly rejected per review guidance - that would only move the failure point to longer sources). The complete globally-ranked pool is now passed straight to `suppress_overlaps()`, which already stops as soon as `top_n` distinct candidates are accepted, so it is the only place a result-size bound belongs. No new bound was reintroduced - ranking/dedup is not the expensive part of this pipeline relative to scene/audio/motion feature extraction, so this is not a premature-optimization risk.
+
+### Regression test
+
+`test_pre_dedup_truncation_no_longer_discards_distinct_earlier_events` (`tests/test_clip_selector.py`): a ~409s synthetic timeline (matching job 19's real length) with one dominant late event and four widely-separated earlier events, using a dense `duration_step_seconds=1.0` so the dominant event alone generates well over 50 raw candidates. Event width is kept exactly at `min_clip_seconds` (15) so each event's own candidates cleanly collapse to a single survivor under IoU suppression - a wider plateau can itself produce two low-mutual-IoU variants of the *same* event (confirmed while designing this fixture: this is exactly the mechanism behind job 19's real 2-near-duplicate-candidate symptom), which is a separate, real characteristic of temporal IoU suppression and not what this correction addresses. The test explicitly proves the fixture reproduces the old defect by simulating the old cap-then-suppress behavior (`ranked[:50]` then `suppress_overlaps()`) on the *same* ranked pool and asserting it yields fewer than 5 candidates, before asserting the actual fix finds all 5 distinct events (one per region) with pairwise IoU within threshold.
+
+### Preserved unchanged
+
+Multi-start candidate generation (prior correction), real-timestamp duration validation (prior correction), the scoring formula, the IoU threshold, the CLI JSON contract, and read-only CLI behavior. No `pipeline.py`, `uploader.py`, `youtube_auth.py`, `api.py`, `schema.sql`, `scene_detector.py`, `highlight_features.py`, `highlight_scoring.py`, or `cli.py` changes.
+
+### Expected impact
+
+Raw candidate counts on long sources increase substantially now that the pool isn't artificially capped pre-dedup (e.g. 17,180 raw candidates for the ~409s test fixture vs. a hard 50 before) - but `suppress_overlaps()`'s existing early-exit-at-`top_n` means the final returned candidate count and the CLI JSON contract shape are unaffected.
+
+### Explicitly not done
+
+- No production DB mutation, no render, no upload, no transcription, no AI scoring, no score-weight tuning.
+- Job 19 was **not** re-run - explicitly deferred until code review + exact-head CI are both complete.
+- PR #12 not merged, remains draft.
+
+Merge authorized: no
+Deploy authorized: no

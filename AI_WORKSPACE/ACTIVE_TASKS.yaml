@@ -748,12 +748,23 @@ tasks:
 
   - id: RCE-20260808-HIGHLIGHT-DIVERSITY
     title: Phase 7B correction — candidate-diversity pre-dedup truncation defect
-    status: active
+    status: review
     owner: claude
     branch: fix/highlight-candidate-diversity
     base_branch: feat/initial-engine
     base_sha: 67064bdcacb20df1362c786be6f3046514f5cfa3
-    pr: pending
+    current_sha: 6e671e905140da2f3076f57cac03b05b28e4ee14
+    pr: 12
+    pr_state: open (draft)
+    ci: >-
+      In progress at time of writing (check run "test" queued on GitHub)
+      on current_sha 6e671e905140da2f3076f57cac03b05b28e4ee14, reported
+      once per this task's convention - a 60-minute send_later
+      safety-net check-in is scheduled, silent unless action is needed.
+      Independently run by this agent before pushing: pytest 199
+      passed/1 warning (198 prior + 1 new regression test), ruff all
+      checks passed, focused mypy on clip_selector.py - no issues found,
+      git diff --check clean.
     allowed_paths:
       - src/robin_content_engine/clip_selector.py
       - tests/test_clip_selector.py
@@ -794,18 +805,12 @@ tasks:
         complete
       - do not merge PR, do not deploy
     next_action: >-
-      Root cause independently verified in the merged feat/initial-engine
-      code: generate_candidate_windows() truncates the full ranked
-      candidate pool to max_candidates_before_dedup=50 BEFORE
-      suppress_overlaps() ever runs, so on long sources the top-50 slots
-      can be entirely consumed by overlapping variants of one dominant
-      event, discarding genuinely distinct lower-scoring events before
-      deduplication gets a chance to consider them. Fix: pass the
-      complete globally-ranked pool to suppress_overlaps() unchanged (no
-      pre-dedup cap), add a regression test proving 5 distinct events
-      survive on a long synthetic timeline where the old cap=50 behavior
-      would fail it, validate, open a new draft PR to feat/initial-engine,
-      check exact-head CI once, report back.
+      Implementation complete, draft PR #12 open, CI in progress on
+      current_sha. Wait for CI to finish (60-minute safety-net check-in
+      scheduled, silent unless action needed). Job 19 must NOT be
+      re-run until code review + exact-head CI are both complete, per
+      explicit instruction. PR #12 stays draft until then. Do not merge
+      to main or to feat/initial-engine without explicit authorization.
 
 # Other branches observed on origin at the time this registry was created
 # that are NOT yet registered as tasks (owner/scope unknown to this agent —
