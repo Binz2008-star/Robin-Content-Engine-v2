@@ -409,6 +409,7 @@ def highlight_scan(
         selected = suppress_overlaps(
             ranked_candidates,
             iou_threshold=selector_config.overlap_iou_threshold,
+            containment_threshold=selector_config.containment_threshold,
             top_n=top,
         )
     except (SceneDetectionError, FeatureExtractionError, ClipSelectionError) as exc:

@@ -502,22 +502,32 @@ def test_genuinely_adjacent_low_overlap_candidates_both_kept() -> None:
 
 
 def test_containment_threshold_is_configurable_and_not_hidden() -> None:
+    # Must use a pair where IoU alone would NOT reject it (otherwise raising
+    # containment_threshold can't actually be observed to change anything -
+    # a prior version of this test made exactly that mistake, using a pair
+    # with IoU=0.60 that IoU rejected regardless of containment_threshold).
+    # The real job-19 case is exactly such a pair: IoU ~= 0.346, under the
+    # 0.35 IoU threshold, so only the containment criterion is in play.
     config = WindowSelectorConfig()
     assert config.containment_threshold == pytest.approx(0.50)
 
-    a = _containment_test_candidate(0.0, 20.0, score=1.0)
-    b = _containment_test_candidate(5.0, 25.0, score=0.9)  # intersection=15, shorter=20 -> 0.75
+    higher = _containment_test_candidate(389.0, 404.0, score=1.0)  # 15s
+    lower = _containment_test_candidate(378.0, 398.0, score=0.9)  # 20s
 
-    # Default threshold (0.50): containment correctly rejects it.
-    assert len(suppress_overlaps([a, b], iou_threshold=0.35, top_n=5)) == 1
+    assert _interval_iou(higher, lower) < 0.35  # IoU alone would keep both
+    assert _containment_ratio(higher, lower) == pytest.approx(0.60)
 
-    # A permissive custom containment threshold no longer rejects via
-    # containment - but IoU independently still catches this pair
-    # (intersection=15, union=25, IoU=0.60 > 0.35).
-    permissive = suppress_overlaps(
-        [a, b], iou_threshold=0.35, top_n=5, containment_threshold=0.99
+    # Default threshold (0.50): 0.60 >= 0.50 -> rejected as a duplicate.
+    default_selected = suppress_overlaps([higher, lower], iou_threshold=0.35, top_n=5)
+    assert len(default_selected) == 1
+
+    # Raised threshold (0.70): 0.60 < 0.70 -> containment no longer
+    # triggers, and IoU (~=0.346) still doesn't either, so both are kept.
+    # This is the actual proof that containment_threshold changes behavior.
+    permissive_selected = suppress_overlaps(
+        [higher, lower], iou_threshold=0.35, top_n=5, containment_threshold=0.70
     )
-    assert len(permissive) == 1
+    assert len(permissive_selected) == 2
 
 
 def test_containment_ratio_symmetric_and_bounded() -> None:
