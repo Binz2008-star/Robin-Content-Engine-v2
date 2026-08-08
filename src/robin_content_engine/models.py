@@ -60,3 +60,20 @@ class RenderResult(BaseModel):
 class UploadResult(BaseModel):
     youtube_id: str = Field(min_length=6, max_length=32)
     privacy_status: str
+
+
+class HighlightCandidateResult(BaseModel):
+    rank: int
+    start_seconds: float
+    end_seconds: float
+    duration_seconds: float
+    score: float
+    signals: dict[str, float]
+    reason: str
+
+
+class HighlightScanResult(BaseModel):
+    job_id: int
+    source_title: str
+    duration_seconds: float
+    candidates: list[HighlightCandidateResult]

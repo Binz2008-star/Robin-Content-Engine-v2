@@ -9,13 +9,35 @@ import typer
 from . import __version__
 from .capture_scan import CaptureScanError, scan_captures
 from .channel_repository import ChannelRepository
+from .clip_selector import (
+    ClipSelectionError,
+    WindowSelectorConfig,
+    generate_candidate_windows,
+    suppress_overlaps,
+)
 from .config import Settings
 from .database import JobRepository
+from .highlight_features import (
+    FeatureExtractionError,
+    compute_scene_density,
+    extract_audio_activity,
+    extract_motion_activity,
+    generate_time_windows,
+)
+from .highlight_scoring import score_windows
+from .models import HighlightCandidateResult, HighlightScanResult
 from .pipeline import ContentEngine
+from .scene_detector import SceneDetectionError, detect_scenes
 from .youtube_auth import AuthState, YouTubeAuth, YouTubeAuthError
 from .youtube_sync import YouTubeChannelSync, YouTubeSyncError
 
 app = typer.Typer(no_args_is_help=True, help="Robin Content Engine")
+
+# Fixed analysis-grid granularity for highlight-scan. Not CLI-exposed in this
+# MVP to keep the command surface narrow; detector/window/scoring tunables
+# remain configurable at the module level via their respective Config
+# dataclasses for anyone calling these modules directly.
+_HIGHLIGHT_WINDOW_SECONDS = 1.0
 
 
 def configure_logging(level: str) -> None:
@@ -327,6 +349,114 @@ def rights_reject(
     typer.echo(f"Rights rejected for job {job_id}.")
     typer.echo(f"Status: {rejected['status']}")
     typer.echo(f"Rights confirmed: {rejected['rights_confirmed']}")
+
+
+@app.command("highlight-scan")
+def highlight_scan(
+    job_id: Annotated[int, typer.Argument(help="Job ID to analyze.")],
+    top: Annotated[
+        int, typer.Option("--top", help="Number of ranked candidates to return.")
+    ] = 5,
+    as_json: Annotated[
+        bool, typer.Option("--json", help="Print machine-readable JSON instead of a table.")
+    ] = False,
+) -> None:
+    """Read-only deterministic highlight analysis for one job's local source
+    video: scene detection, audio/motion signal scoring, candidate window
+    search, and overlap suppression. Prints ranked timestamps, scores, and
+    a signal breakdown only.
+
+    Never claims the job, never increments attempts, never writes any
+    generated_*/output_path/status field, never renders, never uploads,
+    never calls an LLM. The only database interaction is a single read via
+    JobRepository.get_job().
+    """
+    settings = Settings()  # type: ignore[call-arg]
+    repository = JobRepository(settings.database_url, settings.max_job_attempts)
+    with repository.running():
+        job = repository.get_job(job_id)
+
+    if job is None:
+        raise typer.BadParameter(f"Job {job_id} not found.")
+    if not job["rights_confirmed"]:
+        raise typer.BadParameter(
+            f"Job {job_id} does not have confirmed publishing rights "
+            "(rights_confirmed=False). Run rights-approve first."
+        )
+    source_path = job.get("source_path")
+    if not source_path:
+        raise typer.BadParameter(
+            f"Job {job_id} has no local source_path to analyze "
+            "(remote sources are not supported)."
+        )
+    video_path = Path(source_path)
+    if not video_path.is_file():
+        raise typer.BadParameter(f"Source file does not exist: {video_path}")
+
+    try:
+        scenes = detect_scenes(video_path)
+        duration_seconds = scenes[-1].end_seconds
+
+        windows = generate_time_windows(duration_seconds, _HIGHLIGHT_WINDOW_SECONDS)
+        raw_rms, raw_flux = extract_audio_activity(video_path, windows)
+        raw_motion = extract_motion_activity(video_path, windows)
+        raw_scene = compute_scene_density(scenes, windows)
+
+        window_scores = score_windows(windows, raw_rms, raw_flux, raw_motion, raw_scene)
+
+        selector_config = WindowSelectorConfig()
+        ranked_candidates = generate_candidate_windows(window_scores, selector_config)
+        selected = suppress_overlaps(
+            ranked_candidates,
+            iou_threshold=selector_config.overlap_iou_threshold,
+            top_n=top,
+        )
+    except (SceneDetectionError, FeatureExtractionError, ClipSelectionError) as exc:
+        raise typer.BadParameter(str(exc)) from exc
+
+    result = HighlightScanResult(
+        job_id=job_id,
+        source_title=job["source_title"],
+        duration_seconds=duration_seconds,
+        candidates=[
+            HighlightCandidateResult(
+                rank=index + 1,
+                start_seconds=candidate.start_seconds,
+                end_seconds=candidate.end_seconds,
+                duration_seconds=candidate.duration_seconds,
+                score=candidate.score,
+                signals={
+                    "audio": candidate.audio_score,
+                    "motion": candidate.motion_score,
+                    "scene": candidate.scene_signal,
+                },
+                reason=candidate.reason,
+            )
+            for index, candidate in enumerate(selected)
+        ],
+    )
+
+    if as_json:
+        typer.echo(result.model_dump_json(indent=2))
+        return
+
+    typer.echo(f"Job {result.job_id}: {result.source_title}")
+    typer.echo(f"Source duration: {result.duration_seconds:.1f}s")
+    typer.echo(f"Scenes detected: {len(scenes)}")
+    typer.echo(f"Candidates after overlap suppression: {len(result.candidates)}")
+    if not result.candidates:
+        typer.echo("No candidates found.")
+        return
+    for candidate in result.candidates:
+        typer.echo(
+            f"  #{candidate.rank} [{candidate.start_seconds:.1f}s - {candidate.end_seconds:.1f}s] "
+            f"({candidate.duration_seconds:.1f}s) score={candidate.score:.3f} - {candidate.reason}"
+        )
+        typer.echo(
+            f"      audio={candidate.signals['audio']:.3f} "
+            f"motion={candidate.signals['motion']:.3f} "
+            f"scene={candidate.signals['scene']:.3f}"
+        )
 
 
 @app.command()
