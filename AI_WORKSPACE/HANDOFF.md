@@ -564,3 +564,45 @@ Deliberately CPU-only by construction (no torch/CUDA anywhere in the new code) s
 
 Merge authorized: no
 Deploy authorized: no
+
+## RCE-20260808-HIGHLIGHT7B — 2026-08-08 (candidate-generation correction, PR #11)
+
+Task ID: RCE-20260808-HIGHLIGHT7B
+Agent: claude
+Branch: feat/highlight-intelligence-mvp
+Prior HEAD (CI independently confirmed SUCCESS before this correction): 7e34c3289974e3af7c8351ae091f2de30948c5ea
+Current HEAD: 07407aaaef75412cec5f2ea38803d42133b592c7
+PR: #11 (still draft, targeting feat/initial-engine, not main)
+Status: review — CI queued on 07407aa at time of writing
+Files changed: src/robin_content_engine/clip_selector.py, src/robin_content_engine/highlight_scoring.py, tests/test_clip_selector.py — same allowed_paths as the original implementation, no other paths touched
+Tests: 196 passed/1 warning (194 prior + 2 new multi-peak regression tests), independently run before pushing
+Ruff: all checks passed
+Mypy (focused: scene_detector.py, highlight_features.py, highlight_scoring.py, clip_selector.py, cli.py, models.py): no issues found
+Diff check: clean
+CI: queued on 07407aaaef75412cec5f2ea38803d42133b592c7 at time of writing — checked once after push, 60-minute send_later safety-net check-in scheduled, silent unless action needed
+Known blockers: none. Real Windows ID-8 smoke still needs separate explicit authorization and is unaffected in scope by this fix.
+Merge authorized: no
+Deploy authorized: no
+
+### What triggered this correction
+
+A CTO review found that `generate_candidate_windows()` kept only `np.argmax(window_sums)` - the single best start position - per tested clip duration. With durations 15s/20s/.../60s all searching the same score timeline, their individual best-start positions tend to cluster around whichever one event is strongest, so `suppress_overlaps()` downstream had only near-duplicates of that one event to choose from. Genuinely separate highlights elsewhere in the source were silently discarded before overlap suppression ever got a chance to consider them - directly undermining Phase 7B's actual purpose (find and rank *multiple* distinct gameplay moments). Verified independently before making any change: re-ran the pre-fix algorithm against a synthetic fixture with three widely-separated, clearly-scored events (single tested duration, to remove any ambiguity) and confirmed it produced exactly **one** raw candidate, not three.
+
+### Fix
+
+`generate_candidate_windows()` now computes, for every tested duration, the mean score at **every** valid start position (via `_sliding_means()`, a vectorized cumsum-difference divide - still O(n) per duration, not an O(n × duration) per-candidate loop), builds a `HighlightCandidate` for each one, and only after collecting the full pool across all durations does it globally sort by `(-score, start_seconds)` and truncate to `max_candidates_before_dedup`. `suppress_overlaps()` itself is unchanged. Per-candidate `reason` now comes from the candidate's own aggregate `(audio, motion, scene)` means via a newly-public `highlight_scoring.describe_reason()` (previously a private `_describe_reason()`, used only inside `score_windows()`) rather than borrowing a single peak bin's reason - a necessary side effect of considering every start rather than just one per duration, and arguably a more accurate description of the candidate as a whole.
+
+### Regression tests added
+
+`test_three_distinct_peaks_yield_three_distinct_candidates` and `test_five_distinct_peaks_yield_five_distinct_candidates` in `tests/test_clip_selector.py`: synthetic timelines with 3 and 5 widely-separated elevated regions (region width kept close to the single tested clip duration specifically so one real event cannot itself be split into two low-mutual-IoU candidates), asserting the final top-N selection covers every region exactly once with pairwise IoU below the configured threshold. Both were run against the pre-fix algorithm on the same fixtures and confirmed to fail (1 candidate produced, not 3) before this fix landed - they are genuine regression guards, not tests written to merely pass.
+
+### Explicitly not done in this correction
+
+- No render, transcription, AI/LLM scoring, upload, or DB mutation - unaffected, unchanged scope.
+- No changes to `pipeline.py`, `uploader.py`, `youtube_auth.py`, `api.py`, or `schema.sql`.
+- No schema migration.
+- No real Windows ID-8 smoke executed - still pending separate explicit authorization after this corrected head is reviewed.
+- PR #11 not merged, remains draft.
+
+Merge authorized: no
+Deploy authorized: no

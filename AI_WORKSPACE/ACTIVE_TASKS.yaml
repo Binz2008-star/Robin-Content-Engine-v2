@@ -556,19 +556,42 @@ tasks:
     branch: feat/highlight-intelligence-mvp
     base_branch: feat/initial-engine
     base_sha: c80b1ce54ddbdedf615cb88942fdd7e68c77b613
-    current_sha: 7e34c3289974e3af7c8351ae091f2de30948c5ea
+    current_sha: 07407aaaef75412cec5f2ea38803d42133b592c7
     pr: 11
     pr_state: open (draft)
     ci: >-
-      SUCCESS on current_sha 7e34c3289974e3af7c8351ae091f2de30948c5ea
-      (check run "test" on GitHub), confirmed via a scheduled 60-minute
-      safety-net check-in - no new commits, no review comments, no
-      reviews, mergeable_state=clean. Independently run by this agent
-      before pushing: pytest 194 passed/1 warning (139 baseline + 55 new
-      tests), ruff all checks passed, focused mypy on
-      scene_detector.py/highlight_features.py/highlight_scoring.py/
+      Correction pushed after CTO review found generate_candidate_windows()
+      kept only np.argmax() per duration, clustering nearly all candidates
+      around one strongest event (see correction_2026-08-08 note below). In
+      progress at time of writing (check run "test" queued on GitHub) on
+      current_sha 07407aa, reported once per this task's explicit
+      no-polling instruction - a 60-minute send_later safety-net check-in
+      is scheduled, silent unless action is needed. CI on the prior sha
+      (7e34c32) was independently confirmed SUCCESS before this
+      correction. Independently run by this agent before pushing the
+      correction: pytest 196 passed/1 warning (194 prior + 2 new
+      multi-peak regression tests), ruff all checks passed, focused mypy
+      on scene_detector.py/highlight_features.py/highlight_scoring.py/
       clip_selector.py/cli.py/models.py - no issues found, git diff
       --check clean.
+    correction_2026-08-08_candidate_generation: >-
+      generate_candidate_windows() previously kept only the single
+      np.argmax()-best start position per tested duration, so distinct
+      genuine highlights elsewhere in the source could be silently
+      discarded before suppress_overlaps() ever ran - confirmed by
+      re-running the old algorithm against a 3-peak synthetic fixture,
+      which produced exactly one raw candidate. Fixed: now builds a
+      candidate for every valid (duration, start) pair via vectorized
+      cumsum sliding means (still O(n) per duration), ranks the full pool
+      globally by score with a start-time tie-break, truncates to
+      max_candidates_before_dedup only after that global ranking, then
+      hands off to the unchanged suppress_overlaps(). Per-candidate
+      reason now describes the candidate's own aggregate signals via the
+      newly-public highlight_scoring.describe_reason(), since every start
+      is considered rather than one per duration. Two new regression
+      tests (three and five separated synthetic events) verify multiple
+      distinct events survive to the final top-N; both were confirmed to
+      fail against the old algorithm on the same fixture before this fix.
     allowed_paths:
       - pyproject.toml
       - src/robin_content_engine/scene_detector.py
