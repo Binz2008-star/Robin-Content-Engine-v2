@@ -757,13 +757,13 @@ tasks:
     pr: 12
     pr_state: open (draft)
     ci: >-
-      In progress at time of writing (check run "test" queued on GitHub)
-      on current_sha 6e671e905140da2f3076f57cac03b05b28e4ee14, reported
-      once per this task's convention - a 60-minute send_later
-      safety-net check-in is scheduled, silent unless action is needed.
-      Independently run by this agent before pushing: pytest 199
-      passed/1 warning (198 prior + 1 new regression test), ruff all
-      checks passed, focused mypy on clip_selector.py - no issues found,
+      SUCCESS on current_sha 6e671e905140da2f3076f57cac03b05b28e4ee14
+      (check run "test" on GitHub), confirmed via GitHub API -
+      mergeable_state=clean. A 60-minute send_later safety-net check-in
+      remains scheduled, silent unless action is needed. Independently
+      run by this agent before pushing: pytest 199 passed/1 warning (198
+      prior + 1 new regression test), ruff all checks passed, focused
+      mypy on clip_selector.py - no issues found,
       git diff --check clean.
     allowed_paths:
       - src/robin_content_engine/clip_selector.py
@@ -804,13 +804,45 @@ tasks:
       - do not re-run job 19 until code review + exact-head CI are
         complete
       - do not merge PR, do not deploy
+    external_validation_2026-08-08: >-
+      Operator performed a focused external research pass validating the
+      ranking->dedupe->Top-N approach this correction implements against
+      several external open-source projects (not adopted as dependencies
+      - reference/inspiration only): AI-Youtube-Shorts-Generator (MIT)
+      explicitly documents the same ranking->overlap-dedupe->Top-N order
+      Robin now uses, confirming Robin's prior order
+      (ranking->truncate-to-50->dedupe) was the anomaly, not the fix.
+      SentrySearch (Apache-2.0) offered a forward-looking idea:
+      similarity-based dedupe beyond pure temporal IoU. ActionFormer/
+      OpenTAD noted as NMS/temporal-action-detection reference material
+      only, not for adoption (would pull in a PyTorch/deep-learning
+      stack Robin explicitly avoids per the Phase 7A/7B BUILD vs ADOPT
+      decisions). DSNet/DR-DSN video-summarization literature surfaced
+      "diversity + representativeness" (vs. pure top-score) selection as
+      a candidate direction for a LATER phase. Vis-DSS (GPL) and
+      VideoHighlighter (AGPL-3.0) explicitly noted as ideas-only due to
+      copyleft licensing - not adoptable regardless of relevance.
+      Operator's own decision: implement nothing beyond the current
+      pre-dedup-truncation fix right now; if job 19's post-fix results
+      (once re-run) are temporally distinct but semantically repetitive
+      (e.g. all "ordinary gunfire/movement"), the next candidate
+      direction is an MMR-style (Maximal Marginal Relevance)
+      diversity-aware reranking layer using existing audio/motion/scene
+      signal profiles as the similarity basis (candidate_value - penalty
+      for similarity to already-selected candidates), not a new
+      framework or dependency. This is a roadmap note only - NOT
+      authorization to build anything beyond RCE-20260808-HIGHLIGHT-
+      DIVERSITY's current scope. Any MMR/diversity-reranking work or new
+      signal source requires its own separate explicit authorization and
+      task registration, gated on human A/B/C review of job 19's
+      post-fix results.
     next_action: >-
-      Implementation complete, draft PR #12 open, CI in progress on
-      current_sha. Wait for CI to finish (60-minute safety-net check-in
-      scheduled, silent unless action needed). Job 19 must NOT be
-      re-run until code review + exact-head CI are both complete, per
-      explicit instruction. PR #12 stays draft until then. Do not merge
-      to main or to feat/initial-engine without explicit authorization.
+      Implementation complete, draft PR #12 open. CI confirmed SUCCESS
+      on current_sha via GitHub API. Awaiting operator code review, then
+      explicit authorization to re-run job 19 (per stop_conditions - not
+      yet given) and separately to merge. PR #12 stays draft until then.
+      Do not merge to main or to feat/initial-engine without explicit
+      authorization.
 
 # Other branches observed on origin at the time this registry was created
 # that are NOT yet registered as tasks (owner/scope unknown to this agent —
