@@ -695,14 +695,39 @@ tasks:
 
   - id: RCE-20260808-HIGHLIGHT7B-QV
     title: Phase 7B-QV — Long Gameplay Qualitative Validation (operator-executed, no code)
-    status: active
+    status: complete
     owner: claude (governance/report only) + operator (execution)
-    branch: none — no code changes, no new branch, no PR
+    branch: none — no code changes, no new branch, no PR (this task's own
+      code corrections were tracked separately as RCE-20260808-
+      HIGHLIGHT-DIVERSITY / PR #12 and RCE-20260808-HIGHLIGHT-
+      CONTAINMENT / PR #13, both merged into feat/initial-engine)
     base_branch: feat/initial-engine
     base_sha: 67064bdcacb20df1362c786be6f3046514f5cfa3
-    pr: none
+    final_result_sha_on_feat_initial_engine: 8a0ffa8ec6d8ff86edb42075adea9e7866cd64f5
+    pr: none (see PR #12 and PR #13 for the code)
     merge_allowed: false
     deploy_allowed: false
+    final_closure: >-
+      PASS / CLOSED, per explicit operator decision. Chain: PR #12
+      (pre-dedup-truncation fix, merged d2fe747) -> operator job-19
+      smoke found a 60%-containment near-duplicate pair -> PR #13
+      (containment-ratio dedup criterion, merged 8a0ffa8, pre-merge
+      exact head 69a005307df30ff680a63b70b2a21e7d066798e3, exact-head CI
+      SUCCESS, independently verified by this agent) -> operator's
+      final authorized job-19 smoke (post PR #13) returned 5 useful
+      candidates -> operator visually confirmed the closest-in-time
+      remaining pair (389-404s and 381-396s) are two SEPARATE genuine
+      gameplay events within the same Fortnite match, not a
+      near-duplicate - this agent could not make that visual judgment
+      itself (no video access from this sandbox) and correctly deferred
+      to the operator's own review rather than guessing. Explicit
+      operator decision recorded verbatim: do NOT add event-level
+      minimum-separation/diversity logic, do NOT change IoU threshold
+      (0.35), do NOT change containment threshold (0.50), do NOT change
+      scoring/audio/motion weights. Phase 7B (deterministic gameplay
+      highlight intelligence) is now considered qualitatively validated
+      and closed. Next phase (8A - clip cutting) is a separate,
+      independently authorized task.
     scope: >-
       Qualitative validation of the already-merged deterministic
       Highlight Intelligence (robin-engine highlight-scan) against a new
@@ -754,22 +779,15 @@ tasks:
       environment) - recorded as operator-reported, not first-hand
       verified.
     next_action: >-
-      Not yet closed. Plan (operator-specified order): (1) COMPLETE -
-      merge PR #12 (pre-dedup-truncation fix) as an independent,
-      already-validated correction into feat/initial-engine - done,
-      d2fe747, see RCE-20260808-HIGHLIGHT-DIVERSITY. (2) IN PROGRESS -
-      new narrow PR #13 adding a containment-ratio near-duplicate
-      criterion (reject if IoU > 0.35 OR intersection/shorter_duration
-      >= 0.50) to suppress_overlaps(), with regression tests for both
-      the exact job-19 duplicate case and a genuinely-adjacent
-      low-overlap case that must NOT be rejected. (3) One final
-      operator-executed job-19 re-run once PR #13 is reviewed/merged.
-      (4) If 5 distinct, non-duplicate regions come back with
-      comparable quality, Phase 7B-QV closes as PASS. (5) Only then does
-      the next phase (operator's stated preference: Clip Cutting +
-      Vertical Reframe + Captions/ASR, to reach a first real Short for
-      review) get considered - separate task, separate authorization,
-      not started.
+      CLOSED. All five steps of the operator's plan completed: (1) PR
+      #12 merged d2fe747. (2) PR #13 merged 8a0ffa8 (pre-merge exact
+      head 69a005307df30ff680a63b70b2a21e7d066798e3, exact-head CI
+      SUCCESS). (3) Operator executed the final authorized job-19
+      smoke. (4) 5 candidates returned; operator visually confirmed the
+      closest remaining pair are genuinely distinct events - see
+      final_closure above. Phase 7B-QV = PASS/CLOSED. (5) Next phase
+      (8A - Clip Cutting MVP) separately authorized and registered as
+      RCE-20260808-CLIPCUT8A.
 
   - id: RCE-20260808-HIGHLIGHT-DIVERSITY
     title: Phase 7B correction — candidate-diversity pre-dedup truncation defect
@@ -884,14 +902,22 @@ tasks:
 
   - id: RCE-20260808-HIGHLIGHT-CONTAINMENT
     title: Phase 7B-QV correction — near-duplicate containment-ratio dedup criterion
-    status: review
+    status: complete
     owner: claude
     branch: fix/highlight-near-duplicate-containment
     base_branch: feat/initial-engine
     base_sha: d2fe7474667491c83f0ea393e6e43fd6b199f15e
-    current_sha: 69a005307df30ff680a63b70b2a21e7d066798e3
+    final_sha: 69a005307df30ff680a63b70b2a21e7d066798e3
     pr: 13
-    pr_state: open (draft)
+    merged: true
+    merge_method: squash
+    merge_commit_sha: 8a0ffa8ec6d8ff86edb42075adea9e7866cd64f5
+    merged_into: feat/initial-engine
+    result_sha_on_feat_initial_engine: 8a0ffa8ec6d8ff86edb42075adea9e7866cd64f5
+    merged_by: claude (explicit operator authorization scoped exactly to
+      "squash-merge PR #13 into feat/initial-engine, main untouched, no
+      deploy" - independently verified afterward via git fetch and the
+      GitHub API, matching exactly)
     ci: >-
       SUCCESS on current_sha 69a005307df30ff680a63b70b2a21e7d066798e3
       (check run "test" on GitHub), confirmed via a scheduled safety-net
@@ -964,35 +990,114 @@ tasks:
         adjacent low-overlap pair must NOT be rejected
       - do not re-run job 19 until this PR is reviewed and CI is green
       - do not merge PR, do not deploy
-    operator_post_fix_smoke_finding: >-
-      Operator re-ran job 19 informally against this PR's fix (not the
-      formal authorized final smoke - that remains pending) and reports
-      the old 60%-containment duplicate pair is gone, but a NEW pair
-      appeared: 389-404s and 381-396s, overlapping 7s (IoU~=0.304,
-      containment~=46.7% - just under this PR's 0.50 threshold).
-      Operator's read: this is evidence of a deeper "event-level
-      diversity" issue, not a threshold-tuning problem (chasing
-      0.50->0.45->... would never converge). Operator asked this agent
-      to visually judge two more timestamp pairs (6:29-6:44 vs
-      6:21-6:36) to determine if they're the same event or two
-      independent ones - this agent cannot do so (no access to the
-      actual video file from this sandbox) and asked the operator to
-      make that visual call themselves before any further design work.
-      This is an OPEN QUESTION, not yet answered - no code changes
-      started for it. It is explicitly separate from PR #13's own
-      scope (which correctly fixed the case it targeted) and would be
-      a new task if/when pursued.
+    operator_post_fix_smoke_finding_resolved: >-
+      Operator's informal post-fix re-run of job 19 surfaced a new
+      close-in-time pair (389-404s and 381-396s, IoU~=0.304,
+      containment~=46.7%) that raised an "event-level diversity" open
+      question - this agent could not judge it visually (no access to
+      the actual video from this sandbox) and asked the operator to
+      make the call themselves. RESOLVED: operator visually confirmed
+      389-404s and 381-396s are two SEPARATE genuine gameplay events
+      within the same Fortnite match, not a near-duplicate of one
+      event. Per explicit operator decision: do NOT add event-level
+      minimum-separation logic, do NOT change the IoU threshold (0.35),
+      do NOT change the containment threshold (0.50), do NOT change
+      scoring/audio/motion weights. The final authorized job-19 smoke
+      (post PR #13 merge) returned 5 useful candidates - see
+      RCE-20260808-HIGHLIGHT7B-QV closure for the full record.
     next_action: >-
-      PR #13 implementation complete and CI-confirmed green. CI
-      confirmed SUCCESS on current_sha via GitHub API - no new commits,
-      no review comments, no reviews, mergeable_state=clean. Job 19 must
-      NOT be re-run (formally) until this PR is reviewed, per explicit
-      instruction - note an informal operator re-run already happened
-      and surfaced the event-level-diversity open question above. PR #13
-      stays draft. Do not merge to main or to feat/initial-engine without
-      explicit authorization. Separately: awaiting operator's visual
-      A/B judgment on the 6:21-6:44 region before any event-level-
-      diversity design/code work begins.
+      None outstanding for this task. PR #13 merged (squash) into
+      feat/initial-engine at 8a0ffa8, independently verified by this
+      agent via git fetch and the GitHub API. main was not touched, no
+      deploy occurred. See RCE-20260808-HIGHLIGHT7B-QV for the closure
+      of the parent qualitative-validation phase this correction was
+      part of.
+
+  - id: RCE-20260808-CLIPCUT8A
+    title: Phase 8A — Clip Cutting MVP
+    status: active
+    owner: claude
+    branch: feat/highlight-clip-cutting
+    base_branch: feat/initial-engine
+    base_sha: 8a0ffa8ec6d8ff86edb42075adea9e7866cd64f5
+    pr: pending
+    allowed_paths:
+      - pyproject.toml
+      - src/robin_content_engine/clip_cutter.py
+      - src/robin_content_engine/cli.py
+      - src/robin_content_engine/models.py
+      - tests/test_clip_cutter.py
+      - tests/test_highlight_cut_cli.py
+    forbidden_paths:
+      - studio/**
+      - AGENTS.md
+      - CLAUDE.md
+      - AI_WORKSPACE/**
+      - main
+      - schema.sql
+      - src/robin_content_engine/api.py
+      - src/robin_content_engine/uploader.py
+      - src/robin_content_engine/pipeline.py
+      - src/robin_content_engine/youtube_auth.py
+      - src/robin_content_engine/capture_scan.py
+      - src/robin_content_engine/scene_detector.py
+      - src/robin_content_engine/highlight_features.py
+      - src/robin_content_engine/highlight_scoring.py
+      - src/robin_content_engine/clip_selector.py
+      - client_secret.json
+      - client_secret*.json
+      - token.json
+      - .env
+    merge_allowed: false
+    deploy_allowed: false
+    scope: >-
+      Narrow local clip-cutting capability only: take a rights-confirmed
+      local job, re-run the EXISTING deterministic highlight analysis
+      (scene_detector/highlight_features/highlight_scoring/
+      clip_selector - reused unmodified, not reimplemented), select one
+      ranked candidate, and cut exactly that interval to a new local MP4
+      (H.264/AAC), preserving source framing/FPS/resolution and never
+      touching the original file. No vertical crop, no captions/ASR, no
+      LLM, no thumbnail, no publishing/upload, no scheduler, no
+      analytics, no schema migration unless proven necessary.
+    build_vs_adopt: >-
+      Required BEFORE implementation: check whether the existing
+      moviepy+ffmpeg dependency (already used by video_editor.py) is
+      sufficient for accurate local clip extraction before adding
+      anything new. No new video framework/dependency without a
+      concrete, reported technical reason. No yt-dlp, no remote
+      ingestion, no source downloading.
+    stop_conditions:
+      - no vertical crop/reframe, no captions/ASR/transcription, no
+        LLM, no thumbnail generation, no publishing, no YouTube upload,
+        no scheduler, no analytics
+      - no DB/schema migration unless absolutely proven necessary
+      - do not claim the queue job, increment attempts, change job
+        status, or modify rights state
+      - do not call an LLM or YouTube, do not trigger
+        pipeline.run_once()
+      - never overwrite, move, rename, or delete the original source
+        file; fail safely or use a deterministic alternate filename
+        rather than silently overwriting an existing output
+      - do not duplicate/reimplement the highlight scoring algorithm -
+        reuse the existing scene_detector/highlight_features/
+        highlight_scoring/clip_selector functions as-is
+      - do not run the real Job 19 cut until implementation review is
+        complete, exact-head CI is green, and explicit authorization is
+        given separately
+      - do not merge PR, do not deploy
+      - no recurring/background polling for this task's PR
+    next_action: >-
+      Perform the Build vs Adopt check for moviepy+ffmpeg clip
+      extraction first and report the conclusion. Then implement
+      clip_cutter.py (cutting logic) and the `robin-engine highlight-cut
+      <job_id> --rank <N>` CLI command (orchestration reusing existing
+      analysis functions), write the required tests, validate
+      (pytest/ruff/mypy/diff-check), open a draft PR to
+      feat/initial-engine from a fresh branch off 8a0ffa8, check
+      exact-head CI once (no recurring polling), then report back and
+      stop for review - do not run the real Job 19 cut or merge without
+      separate explicit authorization.
 
 # Other branches observed on origin at the time this registry was created
 # that are NOT yet registered as tasks (owner/scope unknown to this agent —

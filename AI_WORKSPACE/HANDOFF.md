@@ -791,3 +791,58 @@ No scoring formula, audio/motion weight, or new signal-source change - per the o
 
 Merge authorized: no
 Deploy authorized: no
+
+## RCE-20260808-HIGHLIGHT-CONTAINMENT — 2026-08-08 (closed: merged)
+
+Task ID: RCE-20260808-HIGHLIGHT-CONTAINMENT
+Agent: claude
+Branch: fix/highlight-near-duplicate-containment
+Base SHA: d2fe7474667491c83f0ea393e6e43fd6b199f15e
+Final HEAD (PR head at merge time): 69a005307df30ff680a63b70b2a21e7d066798e3
+PR: #13 — merged (squash) into feat/initial-engine at 8a0ffa8ec6d8ff86edb42075adea9e7866cd64f5; main was not touched; no deploy occurred. Merged by this agent under explicit, precisely-scoped operator authorization - independently verified afterward via git fetch and the GitHub API, matching exactly.
+Status: complete
+Merge authorized: yes, for this exact action only (feat/initial-engine, not main, no deploy)
+Deploy authorized: no
+
+### Independent verification performed by this agent
+
+- Re-verified PR #13's head (`69a005307df30ff680a63b70b2a21e7d066798e3`) matched the operator's stated value exactly, and exact-head CI was `SUCCESS`, before marking ready and merging.
+- After merge: `git fetch origin feat/initial-engine main` showed `feat/initial-engine` advanced `d2fe747..8a0ffa8`, with `8a0ffa8` = `fix(highlight): add near-duplicate containment-ratio dedup criterion (#13)`. `main` confirmed unchanged at `5387af1f14888964b463b1fcaed8751d40ecbde6`.
+
+### Resolution of the open event-level-diversity question
+
+The operator's informal post-fix job-19 re-run surfaced a new close-in-time pair (`389-404s` / `381-396s`, IoU≈0.304, containment≈46.7% - just under this PR's 0.50 threshold) that raised whether a deeper "event-level diversity" mechanism was needed. This agent was explicitly asked to visually judge two timestamp ranges and correctly declined - no access to the actual video file from this sandbox, no camera/game, no Windows environment - and asked the operator to make that call themselves rather than guess. The operator visually confirmed both pairs are **genuinely separate gameplay events** within the same Fortnite match, not near-duplicates. Explicit operator decision, recorded verbatim: do NOT add event-level minimum-separation logic, do NOT change the IoU threshold (0.35), do NOT change the containment threshold (0.50), do NOT change scoring/audio/motion weights. No further code work resulted from this open question.
+
+Merge authorized: yes (as above, PR #13 only)
+Deploy authorized: no
+
+## RCE-20260808-HIGHLIGHT7B-QV — 2026-08-08 (CLOSED: PASS)
+
+Task ID: RCE-20260808-HIGHLIGHT7B-QV
+Agent: claude (governance/report) + operator (all real execution)
+Status: complete — PASS
+Final result SHA on feat/initial-engine: 8a0ffa8ec6d8ff86edb42075adea9e7866cd64f5
+Merge authorized: n/a (this task itself had no branch/PR/code - see PR #12/#13 above)
+Deploy authorized: no
+
+### Closure summary
+
+Phase 7B-QV validated the already-merged deterministic Highlight Intelligence (`robin-engine highlight-scan`) against real owned Fortnite gameplay on the operator's Windows machine, end to end:
+
+1. Real job-19 smoke (source ~409.055s) exposed the pre-dedup-truncation defect → fixed and merged as PR #12 (`d2fe747`).
+2. Operator's A/B/C qualitative grading of the corrected output: 3/5 candidates graded **A** (genuinely independent, useful moments) - confirming the base deterministic audio/motion scoring works and does not need ASR/Vision AI or weight retuning. 2/5 graded **B**, later diagnosed as a single near-duplicate pair (`389-404s`/`378-398s`, containment=60%) → fixed and merged as PR #13 (`8a0ffa8`).
+3. Operator re-ran the final authorized job-19 smoke against the merged fix: **5 useful candidates returned**.
+4. Operator visually confirmed the closest-in-time remaining pair (`389-404s` and `381-396s`) are genuinely **separate gameplay events** in the same match, not a residual near-duplicate - resolving the last open question without any further code change (see RCE-20260808-HIGHLIGHT-CONTAINMENT entry above for detail).
+
+**Final operator decision, recorded verbatim:** Phase 7B-QV = PASS / CLOSED. Do not add event-level minimum-separation/diversity logic. Do not change IoU threshold (0.35). Do not change containment threshold (0.50). Do not change scoring/audio/motion weights.
+
+### What this agent did and did not verify
+
+Independently verified by this agent: both PR merges (via `git fetch` + GitHub API), both PRs' exact-head CI results, all code-level regression tests. **Not** independently verified by this agent (operator-executed and operator-reported only, consistent with this agent having no access to the operator's real Windows machine, real capture files, or real Neon production DB from this sandbox): the actual job-19 wall-clock smoke runs, the A/B/C qualitative grading, and the final visual same-event/different-event judgment. This agent explicitly declined to guess at the visual judgment when asked, and waited for the operator's own review.
+
+### Immediately following this closure
+
+Phase 8A (Clip Cutting MVP) was separately authorized in the same operator message that closed this phase, and registered as its own task (`RCE-20260808-CLIPCUT8A`) with its own branch, allowed_paths, and stop conditions - not implied or auto-authorized by this phase's closure alone.
+
+Merge authorized: n/a
+Deploy authorized: no
