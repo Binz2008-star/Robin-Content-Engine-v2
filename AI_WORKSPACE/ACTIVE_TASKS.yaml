@@ -889,18 +889,25 @@ tasks:
     branch: fix/highlight-near-duplicate-containment
     base_branch: feat/initial-engine
     base_sha: d2fe7474667491c83f0ea393e6e43fd6b199f15e
-    current_sha: 79ad515836d4aae1288d5c6d6e36579d75fea7f6
+    current_sha: 69a005307df30ff680a63b70b2a21e7d066798e3
     pr: 13
     pr_state: open (draft)
     ci: >-
-      In progress at time of writing (check run "test" on GitHub) on
-      current_sha 79ad515836d4aae1288d5c6d6e36579d75fea7f6, checked once
-      - a 60-minute send_later safety-net check-in is scheduled, silent
-      unless action is needed. Independently run by this agent before
-      pushing: pytest 204 passed/1 warning (199 prior + 5 new
-      containment/duplicate regression tests), ruff all checks passed,
-      focused mypy on clip_selector.py - no issues found, git diff
-      --check clean.
+      Correction pushed after operator review found cli.py's
+      highlight_scan never passed selector_config.containment_threshold
+      to suppress_overlaps() (worked by coincidence since the function's
+      own default matched), and the configurability test's fixture had
+      IoU already above threshold so it didn't actually prove
+      containment_threshold changed anything. In progress at time of
+      writing (check run "test" on GitHub) on current_sha
+      69a005307df30ff680a63b70b2a21e7d066798e3, checked once - a
+      60-minute send_later safety-net check-in is scheduled, silent
+      unless action is needed. CI on the prior sha (79ad515) was
+      independently confirmed SUCCESS before this correction.
+      Independently run by this agent before pushing the correction:
+      pytest 204 passed/1 warning, ruff all checks passed, focused mypy
+      on clip_selector.py AND cli.py (newly touched, explicitly
+      authorized) - no issues found, git diff --check clean.
     allowed_paths:
       - src/robin_content_engine/clip_selector.py
       - tests/test_clip_selector.py
