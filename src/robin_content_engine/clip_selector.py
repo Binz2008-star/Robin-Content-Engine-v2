@@ -35,6 +35,7 @@ class WindowSelectorConfig:
     max_clip_seconds: float = 60.0
     duration_step_seconds: float = 5.0
     overlap_iou_threshold: float = 0.35
+    containment_threshold: float = 0.50
 
 
 @dataclass(frozen=True)
@@ -52,14 +53,52 @@ class HighlightCandidate:
         return self.end_seconds - self.start_seconds
 
 
-def _interval_iou(a: HighlightCandidate, b: HighlightCandidate) -> float:
+def _intersection_seconds(a: HighlightCandidate, b: HighlightCandidate) -> float:
     start = max(a.start_seconds, b.start_seconds)
     end = min(a.end_seconds, b.end_seconds)
-    intersection = max(0.0, end - start)
+    return max(0.0, end - start)
+
+
+def _interval_iou(a: HighlightCandidate, b: HighlightCandidate) -> float:
+    intersection = _intersection_seconds(a, b)
     union = a.duration_seconds + b.duration_seconds - intersection
     if union <= 0:
         return 0.0
     return intersection / union
+
+
+def _containment_ratio(a: HighlightCandidate, b: HighlightCandidate) -> float:
+    """Fraction of the SHORTER candidate's duration that overlaps the other.
+
+    Catches a near-duplicate case IoU alone can miss: two different-duration
+    windows covering essentially the same event, where IoU stays just under
+    threshold only because its denominator (the union) grows with the
+    longer window. Confirmed against a real case (job 19): 389-404s (15s)
+    vs. 378-398s (20s) had IoU ~= 0.346 (just under a 0.35 threshold) but
+    9 of the shorter clip's 15 seconds (60%) were duplicated inside the
+    other - a real duplicate that IoU alone let through.
+    """
+    shorter_duration = min(a.duration_seconds, b.duration_seconds)
+    if shorter_duration <= 0:
+        return 0.0
+    return _intersection_seconds(a, b) / shorter_duration
+
+
+def _is_near_duplicate(
+    a: HighlightCandidate,
+    b: HighlightCandidate,
+    iou_threshold: float,
+    containment_threshold: float,
+) -> bool:
+    """True if b should be rejected as a duplicate of already-accepted a.
+
+    Two independent criteria, either one sufficient: classic temporal IoU
+    (catches near-equal-span overlaps), and containment ratio (catches a
+    short candidate mostly swallowed by a longer one, which a wide IoU
+    denominator can let slip through - see _containment_ratio)."""
+    if _interval_iou(a, b) > iou_threshold:
+        return True
+    return _containment_ratio(a, b) >= containment_threshold
 
 
 def generate_candidate_windows(
@@ -196,11 +235,19 @@ def suppress_overlaps(
     candidates: Sequence[HighlightCandidate],
     iou_threshold: float,
     top_n: int,
+    containment_threshold: float = 0.50,
 ) -> list[HighlightCandidate]:
-    """Greedy highest-score-first temporal-IoU suppression. `candidates`
+    """Greedy highest-score-first near-duplicate suppression. `candidates`
     must already be sorted best-first (as generate_candidate_windows
     returns them) - this function does not re-sort, so the caller's
     ordering is what determines which of two overlapping candidates wins.
+
+    A candidate is rejected as a duplicate of an already-accepted one if
+    EITHER their temporal IoU exceeds `iou_threshold` OR the shorter one's
+    duration is at least `containment_threshold`-covered by the other (see
+    _containment_ratio) - IoU alone missed a real case where a short clip
+    was 60% contained in a longer one but their IoU (~0.35's denominator
+    growing with the longer span) stayed just under threshold.
     """
     if top_n <= 0:
         return []
@@ -208,6 +255,9 @@ def suppress_overlaps(
     for candidate in candidates:
         if len(selected) >= top_n:
             break
-        if all(_interval_iou(candidate, kept) <= iou_threshold for kept in selected):
+        if not any(
+            _is_near_duplicate(candidate, kept, iou_threshold, containment_threshold)
+            for kept in selected
+        ):
             selected.append(candidate)
     return selected
