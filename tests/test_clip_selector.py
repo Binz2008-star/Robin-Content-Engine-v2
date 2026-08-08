@@ -340,6 +340,90 @@ def test_all_candidates_respect_real_time_bounds_on_non_integral_duration() -> N
         assert lower <= c.duration_seconds <= upper
 
 
+# ---------------------------------------------------------------------------
+# Regression: the global candidate pool must never be truncated before
+# suppress_overlaps() runs.
+#
+# generate_candidate_windows() used to sort the full pool and return only
+# `candidates[:max_candidates_before_dedup]` (default 50). On a long source,
+# the highest-scoring ~50 raw candidates can all be overlapping/diluted
+# variants of a single dominant event (many tested durations x many start
+# offsets all partially covering the same active region) - a real ~409s
+# Fortnite capture (job 19) reproduced exactly this: requesting --top 5
+# returned only 2 near-duplicate candidates, both in the source's final
+# ~30 seconds, because every other genuinely distinct (but lower-scoring)
+# event never made it into the top-50 pool suppress_overlaps() was ever
+# shown. The fix removes the cap entirely - the full globally-ranked pool
+# is what gets passed to suppress_overlaps(), which already stops as soon
+# as top_n distinct candidates are accepted.
+# ---------------------------------------------------------------------------
+
+
+def test_pre_dedup_truncation_no_longer_discards_distinct_earlier_events() -> None:
+    # ~409s source (matches the real job-19 capture length), one dominant
+    # late event and four widely-separated earlier events. Event width is
+    # kept exactly at min_clip_seconds (15) so each event's own candidates
+    # cleanly collapse to a single survivor under suppress_overlaps (a wider
+    # plateau can itself yield two low-mutual-IoU variants of the SAME
+    # event - a separate, real characteristic of temporal IoU suppression,
+    # not what this correction is about). A dense duration_step_seconds=1.0
+    # makes the dominant event alone generate far more than 50 raw
+    # candidates across all tested durations - enough that the OLD
+    # cap-then-suppress behavior (simulated below) starves every earlier
+    # event entirely, which is exactly the defect being fixed.
+    duration_seconds = 409.055
+    windows = generate_time_windows(duration_seconds, 1.0)
+    n = len(windows)
+    regions = [
+        (30, 45, 5.0),
+        (120, 135, 5.0),
+        (210, 225, 5.0),
+        (300, 315, 5.0),
+        (n - 35, n - 20, 10.0),  # dominant, near the end - matches job 19
+    ]
+
+    def value_at(i: int) -> float:
+        for start, end, value in regions:
+            if start <= i < end:
+                return value
+        return 0.0
+
+    window_scores = [
+        WindowScore(w, value_at(i), value_at(i), 0.0, 0.0, "moderate activity")
+        for i, w in enumerate(windows)
+    ]
+    config = WindowSelectorConfig(duration_step_seconds=1.0)
+
+    ranked = generate_candidate_windows(window_scores, config)
+
+    # The corrected function must not have truncated the pool itself.
+    assert len(ranked) > 50
+
+    # Prove this fixture actually exercises the old defect: simulating the
+    # old cap-then-suppress behavior on the SAME ranked pool must fail to
+    # find all 5 distinct events (the earlier ones never survive the cut).
+    old_style_capped_pool = ranked[:50]
+    old_style_selected = suppress_overlaps(
+        old_style_capped_pool, iou_threshold=config.overlap_iou_threshold, top_n=5
+    )
+    assert len(old_style_selected) < 5, (
+        "fixture does not reproduce the pre-dedup truncation defect - "
+        "the old cap=50 behavior should have starved the earlier events"
+    )
+
+    # The actual fix: the full, uncapped pool correctly yields all 5.
+    selected = suppress_overlaps(ranked, iou_threshold=config.overlap_iou_threshold, top_n=5)
+
+    assert len(selected) == 5
+
+    matched_regions = {_dominant_region(c, regions) for c in selected}
+    assert matched_regions == {0, 1, 2, 3, 4}
+
+    for i in range(len(selected)):
+        for j in range(i + 1, len(selected)):
+            assert _interval_iou(selected[i], selected[j]) <= config.overlap_iou_threshold
+
+
 def test_five_distinct_peaks_yield_five_distinct_candidates() -> None:
     peak_regions = [
         (10, 28, 9.5),
