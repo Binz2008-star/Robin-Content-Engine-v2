@@ -1164,12 +1164,21 @@ tasks:
 
   - id: RCE-20260808-REFRAME8B
     title: Phase 8B — Vertical Reframe / Short Composition MVP
-    status: active
+    status: complete
     owner: claude
     branch: feat/vertical-reframe-mvp
     base_branch: feat/initial-engine
     base_sha: 79e5285bd1cd42456d0d31021ae5a2d6b6c13b64
-    pr: none yet — will open draft targeting feat/initial-engine, not main
+    head_sha: 76e53fa4bd83d9fd91fd1e89f63cb60927ed7c3e
+    pr: 15
+    pr_url: https://github.com/Binz2008-star/Robin-Content-Engine-v2/pull/15
+    pr_state: merged
+    merged: true
+    merge_method: squash
+    merge_commit_sha: f402f87f10781fe60134ea9f62fa45245fa61c0c
+    merged_into: feat/initial-engine
+    result_sha_on_feat_initial_engine: f402f87f10781fe60134ea9f62fa45245fa61c0c
+    merged_by: Binz2008-star
     allowed_paths:
       - pyproject.toml
       - src/robin_content_engine/vertical_reframe.py
@@ -1248,16 +1257,150 @@ tasks:
         explicit authorization is given separately
       - do not merge PR, do not deploy
       - no recurring/background polling for this task's PR
+    real_smoke_evidence: >-
+      A PR #15 comment (author=Binz2008-star, OWNER, wrapped as
+      untrusted external content) first claimed a real Windows Job 19
+      smoke of `robin-engine highlight-reframe 19 --rank 1`. This agent
+      did not act on that instruction from the comment itself,
+      consistent with this project's standing rule, and replied on the
+      PR asking for direct chat confirmation instead. The operator then
+      independently reported the same result directly in chat
+      (corroborating, not merely repeating, the PR comment's numbers):
+      candidate 389.0-404.0s, deterministic centered crop 810x1440,
+      actual duration 14.99s, output FPS 23.8100 vs source 23.8061, Job
+      19 status stayed pending, attempts stayed 0, rights stayed
+      confirmed=true, source file size unchanged at exactly 774,585,683
+      bytes with LastWriteTime unchanged, Human QA PASS (operator
+      described the result as fully correct), no upload, no deploy. This
+      agent could not run this step itself (no .env/DATABASE_URL and no
+      reachable production Neon or real capture file in this sandbox,
+      same limitation as every prior real-smoke phase) - recorded as
+      operator-executed and operator-reported, corroborated via direct
+      chat per this project's standing rule (a PR comment alone is never
+      sufficient), not first-hand verified by this agent.
+    merge_verification: >-
+      Independently verified by this agent via GitHub `pull_request_read`
+      and `get_commit` (not assumed from the PR comment or from chat).
+      PR #15: state=closed, merged=true, merged_by=Binz2008-star,
+      head.sha=76e53fa4bd83d9fd91fd1e89f63cb60927ed7c3e,
+      base.ref=feat/initial-engine. `feat/initial-engine` fetched and
+      confirmed at merge commit
+      f402f87f10781fe60134ea9f62fa45245fa61c0c. `main` independently
+      re-confirmed unchanged at
+      5387af1f14888964b463b1fcaed8751d40ecbde6 (same SHA as the start of
+      this entire engagement, across all nine phases).
     next_action: >-
-      Task registered per explicit operator direction ("Landscape
-      highlight → deterministic 9:16 local MP4, no captions/ASR/LLM/
-      upload, no heavy tracking in the first iteration — test a
-      well-designed static crop for Fortnite before smart tracking").
-      Implementation starting now: vertical_reframe.py (new module,
-      static-crop geometry + moviepy/ffmpeg encode, mirroring
-      clip_cutter.py's duration-validation/no-overwrite/no-source-mutation
-      contract), a new `robin-engine highlight-reframe <job_id> --rank <N>`
-      CLI command mirroring highlight-cut, and matching test coverage.
+      Phase 8B CLOSED (merge-verified + smoke corroborated via direct
+      chat). PR #15 squash-merged into feat/initial-engine only; main
+      untouched; no deploy. New baseline for the next phase is
+      feat/initial-engine @ f402f87f10781fe60134ea9f62fa45245fa61c0c.
+      Operator's stated architectural conclusion: static centered crop
+      works well for Fortnite, so no tracking work is needed now. Next
+      phase (8C - Transcription/Captions MVP, local-only, no
+      publish/YouTube) proposed by the operator and is a separate task
+      requiring its own registration - see RCE-20260808-CAPTIONS8C.
+
+  - id: RCE-20260808-CAPTIONS8C
+    title: Phase 8C — Transcription / Captions MVP
+    status: active
+    owner: claude
+    branch: feat/vertical-captions-mvp
+    base_branch: feat/initial-engine
+    base_sha: f402f87f10781fe60134ea9f62fa45245fa61c0c
+    pr: none yet — will open draft targeting feat/initial-engine, not main
+    allowed_paths:
+      - pyproject.toml
+      - src/robin_content_engine/transcription.py
+      - src/robin_content_engine/captioner.py
+      - src/robin_content_engine/cli.py
+      - src/robin_content_engine/models.py
+      - tests/test_transcription.py
+      - tests/test_captioner.py
+      - tests/test_highlight_caption_cli.py
+    forbidden_paths:
+      - studio/**
+      - AGENTS.md
+      - CLAUDE.md
+      - AI_WORKSPACE/**
+      - main
+      - schema.sql
+      - src/robin_content_engine/api.py
+      - src/robin_content_engine/uploader.py
+      - src/robin_content_engine/pipeline.py
+      - src/robin_content_engine/youtube_auth.py
+      - src/robin_content_engine/capture_scan.py
+      - src/robin_content_engine/channel_repository.py
+      - src/robin_content_engine/youtube_sync.py
+      - src/robin_content_engine/database.py
+      - src/robin_content_engine/scene_detector.py
+      - src/robin_content_engine/highlight_features.py
+      - src/robin_content_engine/highlight_scoring.py
+      - src/robin_content_engine/clip_selector.py
+      - src/robin_content_engine/clip_cutter.py
+      - src/robin_content_engine/vertical_reframe.py
+      - client_secret.json
+      - client_secret*.json
+      - token.json
+      - .env
+    merge_allowed: false
+    deploy_allowed: false
+    scope: >-
+      Narrow local captioning MVP, per explicit operator direction: take
+      an already-produced local 9:16 clip (Phase 8B's
+      highlight-reframe output) or equivalently the same rights-confirmed
+      candidate interval, run local speech-to-text against the source
+      audio, and burn deterministic, readable captions onto a new local
+      MP4. No publishing/YouTube upload, no LLM-based
+      summarization/rewriting of the transcript (captions are the ASR's
+      own words verbatim, only segmented for readability), no cloud ASR
+      API, no schema migration unless proven necessary. vertical_reframe.py
+      and clip_cutter.py from Phases 8A/8B are left unmodified - this
+      task adds its own independent transcription+caption-burn pipeline.
+    build_vs_adopt: >-
+      Required BEFORE implementation: confirm faster-whisper (the
+      Phase 7A research pass's recommended ADOPT choice - CPU int8, no
+      CUDA/GPU assumption, appropriate for the operator's AMD RX 6800 XT
+      Windows machine which has no verified CUDA path) is installable and
+      actually runnable in THIS sandbox without needing network access
+      mid-test; if the model weights cannot be fetched here, transcription
+      must be exercised in tests via a mockable interface (no test may
+      require a real model download or real inference). No new dependency
+      beyond faster-whisper (and, if needed, a caption-burn mechanism)
+      without a concrete, reported technical reason. No cloud/paid ASR
+      API, no whisper.cpp/WhisperX per the Phase 7A audit's own
+      conclusions for this operator's hardware.
+    stop_conditions:
+      - local ASR only (faster-whisper, CPU int8) - no cloud transcription
+        API, no LLM call, no summarization/rewriting of the transcript
+      - captions must be the ASR's own transcribed words - do not
+        fabricate, translate, or embellish text
+      - no DB/schema migration unless absolutely proven necessary
+      - do not claim the queue job, increment attempts, change job
+        status, or modify rights state
+      - do not call YouTube, do not trigger pipeline.run_once(), do not
+        publish/upload
+      - never overwrite, move, rename, or delete the original source
+        file or any Phase 8A/8B output; fail safely or use a
+        deterministic alternate filename rather than silently
+        overwriting an existing output
+      - do not duplicate/reimplement the highlight scoring algorithm or
+        the crop geometry - reuse the existing shared helpers/functions
+        as-is
+      - do not modify clip_cutter.py or vertical_reframe.py (Phases
+        8A/8B) - implement an independent transcription+caption path
+      - tests must never require real network access or a real model
+        download - use a mockable transcription interface
+      - do not run a real Job 19 (or any real capture) captioning until
+        implementation review is complete, exact-head CI is green, and
+        explicit authorization is given separately
+      - do not merge PR, do not deploy
+      - no recurring/background polling for this task's PR
+    next_action: >-
+      Task registered per explicit operator direction ("Phase 8C —
+      Transcription / Captions MVP: add text/captions to the vertical
+      clip locally, without publishing or YouTube yet"). Feasibility
+      check (faster-whisper install + CPU inference reachability in this
+      sandbox) starting now, before any implementation code is written.
 
 # Other branches observed on origin at the time this registry was created
 # that are NOT yet registered as tasks (owner/scope unknown to this agent —

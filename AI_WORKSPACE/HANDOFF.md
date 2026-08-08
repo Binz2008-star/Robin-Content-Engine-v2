@@ -949,3 +949,81 @@ Next action: implement `src/robin_content_engine/vertical_reframe.py` (new, inde
 
 Merge authorized: no
 Deploy authorized: no
+
+## RCE-20260808-REFRAME8B — 2026-08-08 (implementation complete, draft PR open)
+
+Task ID: RCE-20260808-REFRAME8B
+Agent: claude
+Branch: feat/vertical-reframe-mvp
+Base SHA: 79e5285bd1cd42456d0d31021ae5a2d6b6c13b64
+Current HEAD: 76e53fa4bd83d9fd91fd1e89f63cb60927ed7c3e
+PR: #15 (draft, targeting feat/initial-engine, not main)
+Status: review — CI in progress at time of writing
+Files changed: src/robin_content_engine/vertical_reframe.py (new), src/robin_content_engine/cli.py, tests/test_vertical_reframe.py (new), tests/test_highlight_reframe_cli.py (new) — 4 files
+Tests: 242 passed/1 warning (220 baseline + 22 new), independently run before pushing
+Ruff: all checks passed
+Mypy (focused: vertical_reframe.py, cli.py): no issues found
+Diff check: clean
+CI: in progress at time of writing — reported once, 60-minute send_later safety-net check-in scheduled (silent unless action needed) per this project's established no-recurring-polling convention
+Known blockers: none for the implementation. Real Job 19 reframe smoke still needs separate explicit authorization.
+Next action: wait for CI/review; real smoke only after explicit authorization.
+Merge authorized: no
+Deploy authorized: no
+
+### Design decision: static crop geometry
+
+Crop width = floor-to-even(source_height * 9/16), full source height, no resize/pad/letterbox. `horizontal_offset_ratio` (default 0.5 = centered) is a single fixed position for the whole clip - explicitly no dynamic/subject tracking in this MVP, per the operator's own stated reasoning (validate whether a well-designed static crop is good enough for Fortnite before considering tracking work). `clip_cutter.py` (Phase 8A) was left completely unmodified; `vertical_reframe.py` implements its own independent crop+encode pipeline reusing moviepy's `cropped()`/`subclipped()` (no new dependency).
+
+## RCE-20260808-REFRAME8B — 2026-08-08 (Phase 8B CLOSED)
+
+Task ID: RCE-20260808-REFRAME8B
+Agent: claude
+Branch: feat/vertical-reframe-mvp
+Base SHA: 79e5285bd1cd42456d0d31021ae5a2d6b6c13b64
+Final HEAD (PR head at merge time): 76e53fa4bd83d9fd91fd1e89f63cb60927ed7c3e
+PR: #15 — operator marked ready for review, then squash-merged into `feat/initial-engine`. Merge commit `f402f87f10781fe60134ea9f62fa45245fa61c0c`. `main` not touched. No deploy.
+Status: COMPLETE / CLOSED
+Merge authorized: no (operator merged directly via GitHub, independently verified below)
+Deploy authorized: no
+
+### CTO implementation review
+
+A PR #15 comment (Binz2008-star, OWNER) confirmed exact-head CI green on `76e53fa` and passed implementation review: narrow static 9:16 crop, no resize/pad/tracking, read-only job lookup, deterministic rank reuse, no pipeline/upload/YouTube path, no overwrite, source untouched, post-encode duration+dimensions validation, FPS preservation tested on a non-default-FPS fixture. It also authorized one real Job 19 smoke and flagged (correctly) that `AI_WORKSPACE`/`AGENTS.md` are not visible on this branch's GitHub tree - true and expected, since they live on the separate, still-unmerged `chore/agent-control-plane` branch (PR #5), not `feat/initial-engine`.
+
+### Real Job 19 smoke — reached this agent via two channels, only one of which was acted on
+
+The same PR comment claimed a completed real Windows smoke result and instructed this agent to run it. Per this project's standing rule, this agent did not act on an instruction arriving only as a PR comment (wrapped as untrusted external content) - it replied on the PR explaining why and asking for direct chat confirmation instead, without executing anything. The operator then reported the same result directly in chat (not merely restating the PR comment - it added the exact unchanged source file size in bytes): `robin-engine highlight-reframe 19 --rank 1` → candidate 389.0-404.0s, crop `810x1440`, duration `14.99s`, output FPS `23.8100` vs source `23.8061`, Job 19 `status=pending` unchanged, `attempts=0` unchanged, `rights_confirmed=true` unchanged, source file size unchanged at exactly `774,585,683` bytes with `LastWriteTime` unchanged, Human QA PASS, no upload, no deploy. This agent could not run this step itself (no `.env`/`DATABASE_URL`, no reachable production Neon, no real capture file in this sandbox) - recorded as operator-executed/operator-reported and corroborated via direct chat, not first-hand verified by this agent.
+
+### Merge — independently verified by this agent (not assumed from chat or the PR comment)
+
+`mcp__github__pull_request_read` on PR #15 confirmed `state=closed`, `merged=true`, `merged_by=Binz2008-star`, `head.sha=76e53fa4...`, `base.ref=feat/initial-engine`. `mcp__github__get_commit` on `feat/initial-engine` confirmed HEAD `f402f87f10781fe60134ea9f62fa45245fa61c0c` is exactly the PR #15 squash-merge commit. `mcp__github__get_commit` on `main` confirmed it is still `5387af1f14888964b463b1fcaed8751d40ecbde6` - unchanged since the start of this entire engagement, across all nine phases.
+
+### Architectural result, per the operator
+
+Robin can now go moment-detection → highlight-selection → cut → 9:16 reframe, entirely locally. The static centered crop worked well enough on real Fortnite footage that no dynamic/subject tracking is planned for now.
+
+### Explicitly not authorized by this closure
+
+Phase 8C (or any further phase) is a separate task requiring its own explicit authorization and its own `AI_WORKSPACE/ACTIVE_TASKS.yaml` registration before any branch or code work begins.
+
+Merge authorized: no
+Deploy authorized: no
+
+## RCE-20260808-CAPTIONS8C — 2026-08-08 (started)
+
+Task ID: RCE-20260808-CAPTIONS8C
+Agent: claude
+Branch: TBD (feat/vertical-captions-mvp)
+Base SHA: f402f87f10781fe60134ea9f62fa45245fa61c0c (verified via `git fetch origin feat/initial-engine`)
+Current HEAD: n/a — implementation not started yet, this entry records the task start
+PR: none yet
+Status: active
+Known blockers: none yet - feasibility check (dependency install / model availability in this sandbox) pending before implementation begins
+Next action: confirm faster-whisper (already the Phase 7A-recommended ASR adopt decision for the operator's CPU/AMD-GPU machine) is installable and runnable in this sandbox in CPU/int8 mode without requiring network access mid-test; design a deterministic, mockable transcription interface so tests never require a real model download; implement local burn-in captioning onto the already-produced vertical clip.
+
+### Scope, per explicit operator direction
+
+"Phase 8C — Transcription / Captions MVP: نضيف النص/الكابتشن إلى الـvertical clip محلياً، بدون نشر أو YouTube بعد." (Add text/captions to the vertical clip locally, without publishing or YouTube yet.) Local-only: transcribe the already-selected highlight interval's audio and burn readable captions onto the local 9:16 MP4. No publishing, no YouTube upload, no LLM-based summarization/rewriting of the transcript (captions are the ASR's own words), no cloud ASR API.
+
+Merge authorized: no
+Deploy authorized: no
