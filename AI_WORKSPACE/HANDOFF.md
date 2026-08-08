@@ -846,3 +846,38 @@ Phase 8A (Clip Cutting MVP) was separately authorized in the same operator messa
 
 Merge authorized: n/a
 Deploy authorized: no
+
+## RCE-20260808-CLIPCUT8A — 2026-08-08 (implementation complete, awaiting review)
+
+Task ID: RCE-20260808-CLIPCUT8A
+Agent: claude
+Status: review (draft PR open, not merged)
+Branch: feat/highlight-clip-cutting
+Base branch/sha: feat/initial-engine @ 8a0ffa8ec6d8ff86edb42075adea9e7866cd64f5
+Head sha: 204276bc6d11426159ae504c331a423717cd1e0d
+PR: #14 (draft) → https://github.com/Binz2008-star/Robin-Content-Engine-v2/pull/14
+Merge authorized: no
+Deploy authorized: no
+
+### Build vs Adopt (performed before implementation, per directive)
+
+Confirmed the existing `moviepy` + ffmpeg dependency (already used by `video_editor.py`'s `ShortsRenderer.render()`) is sufficient for accurate local clip extraction. No new video framework/dependency was added. FPS preservation uses moviepy's own `@use_clip_fps_by_default` fallback (confirmed via `inspect.getsource`) by simply omitting `fps=` on `write_videofile()`, rather than any manual detection logic.
+
+### What was implemented
+
+- `src/robin_content_engine/clip_cutter.py` (new): `cut_clip(source_path, output_path, start_seconds, end_seconds) -> CutResult`. Validates start/end ordering, source existence, and refuses to overwrite an existing `output_path`. Extracts via `VideoFileClip.subclipped()` + `write_videofile(codec="libx264", audio_codec="aac", ..., ffmpeg_params=["-movflags","+faststart"])`, matching the project's existing render convention. Never touches `source_path`.
+- `src/robin_content_engine/cli.py` (modified): factored the shared read-only job-loading and analysis logic out of `highlight-scan` into two reusable helpers, `_load_rights_confirmed_local_job()` and `_run_highlight_analysis()` (both call only the pre-existing, unmodified `scene_detector`/`highlight_features`/`highlight_scoring`/`clip_selector` functions - the scoring algorithm itself was not duplicated or reimplemented). Added `robin-engine highlight-cut <job_id> --rank <N>`, which loads the job, reruns the same deterministic analysis at `top_n=rank`, selects `selected[rank-1]`, and calls `cut_clip()` to write `work_dir/highlights/job-<id>-highlight-<rank>-<start_ms>-<end_ms>.mp4`, printing job ID, rank, source path, start, end, duration, score, and output path. Never claims the job, never mutates job/rights state, never constructs `ContentEngine`, never calls YouTube/LLM.
+- `tests/test_clip_cutter.py` (new, 6 tests): successful cut + duration check, source-file-unchanged, refuses-to-overwrite, rejects end<=start, rejects missing source, rejects end beyond source duration.
+- `tests/test_highlight_cut_cli.py` (new, 9 tests): rights-unconfirmed rejected, missing `source_path` rejected, nonexistent source file rejected, invalid rank (too high) rejected, rank 0 rejected before any `get_job()` call, successful cut whose output duration matches `highlight-scan`'s same-rank candidate (proving rank-consistency), never constructs `ContentEngine`, only calls `get_job()` and no mutating repository method (`FakeRepository` implements nothing else, so any mutation attempt would raise `AttributeError` and fail the test), refuses to overwrite an existing output file.
+
+### Validation performed
+
+- `pytest` (full suite, worktree `/home/user/Robin-Content-Engine-v2-clipcut`): all tests pass, including the 15 new ones.
+- `ruff check .`: clean (fixed two `E501` line-length and two `RUF046` redundant-`int()` findings during implementation).
+- Focused `mypy` on `clip_cutter.py` and `cli.py`: `Success: no issues found in 2 source files`.
+- `git diff --check`: clean, no whitespace errors.
+- Pushed once to `origin/feat/highlight-clip-cutting`. Checked exact-head CI once (per the no-recurring-polling operating rule): GitHub check run "test" was `in_progress` on `204276b` at the time of checking; not polled further.
+
+### Explicitly not done in this phase (by design)
+
+No vertical crop/reframe, no captions/ASR/LLM, no thumbnail generation, no publishing/upload, no scheduler/analytics, no DB/schema migration, no merge to `feat/initial-engine` or `main`, no deploy, and the real Job 19 cut was **not** run - it requires separate explicit operator authorization after implementation review and confirmed-green exact-head CI, per the directive.

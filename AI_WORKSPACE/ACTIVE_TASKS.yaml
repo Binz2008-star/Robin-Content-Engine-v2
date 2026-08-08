@@ -1015,12 +1015,28 @@ tasks:
 
   - id: RCE-20260808-CLIPCUT8A
     title: Phase 8A — Clip Cutting MVP
-    status: active
+    status: review
     owner: claude
     branch: feat/highlight-clip-cutting
     base_branch: feat/initial-engine
     base_sha: 8a0ffa8ec6d8ff86edb42075adea9e7866cd64f5
-    pr: pending
+    head_sha: 204276bc6d11426159ae504c331a423717cd1e0d
+    pr: 14
+    pr_url: https://github.com/Binz2008-star/Robin-Content-Engine-v2/pull/14
+    pr_state: draft
+    ci_check_at_exact_head: >-
+      Checked once immediately after push (per no-recurring-polling rule):
+      check run "test" was in_progress at 2026-08-08T15:39:45Z on
+      204276bc6d11426159ae504c331a423717cd1e0d. Not polled to completion -
+      no further automated checks will run against this PR unless a new
+      HEAD is pushed or explicitly requested.
+    build_vs_adopt_result: >-
+      Confirmed sufficient: existing moviepy+ffmpeg dependency (same
+      stack already used by video_editor.py's ShortsRenderer.render())
+      covers accurate local clip extraction with H.264/AAC output and
+      native-FPS preservation (via omitting write_videofile's fps= so
+      moviepy's @use_clip_fps_by_default falls back to the source clip's
+      own fps). No new dependency added.
     allowed_paths:
       - pyproject.toml
       - src/robin_content_engine/clip_cutter.py
@@ -1088,16 +1104,21 @@ tasks:
       - do not merge PR, do not deploy
       - no recurring/background polling for this task's PR
     next_action: >-
-      Perform the Build vs Adopt check for moviepy+ffmpeg clip
-      extraction first and report the conclusion. Then implement
-      clip_cutter.py (cutting logic) and the `robin-engine highlight-cut
-      <job_id> --rank <N>` CLI command (orchestration reusing existing
-      analysis functions), write the required tests, validate
-      (pytest/ruff/mypy/diff-check), open a draft PR to
-      feat/initial-engine from a fresh branch off 8a0ffa8, check
-      exact-head CI once (no recurring polling), then report back and
-      stop for review - do not run the real Job 19 cut or merge without
-      separate explicit authorization.
+      Implementation complete: clip_cutter.py (cut_clip()) and the
+      `robin-engine highlight-cut <job_id> --rank <N>` CLI command are
+      written, reusing the existing scene_detector/highlight_features/
+      highlight_scoring/clip_selector functions unmodified via two new
+      shared helpers (_load_rights_confirmed_local_job,
+      _run_highlight_analysis) factored out of highlight-scan. 15 new
+      tests added (6 in test_clip_cutter.py, 9 in
+      test_highlight_cut_cli.py) covering every required case from the
+      directive. Full pytest suite, ruff check ., focused mypy on
+      clip_cutter.py+cli.py, and git diff --check all pass. Draft PR #14
+      opened against feat/initial-engine at head 204276b. AWAITING
+      HUMAN/ROBIN REVIEW. Do not merge. Do not run the real Job 19 cut
+      until implementation review is complete, exact-head CI is
+      confirmed green, and the operator explicitly authorizes the real
+      smoke run.
 
 # Other branches observed on origin at the time this registry was created
 # that are NOT yet registered as tasks (owner/scope unknown to this agent —
