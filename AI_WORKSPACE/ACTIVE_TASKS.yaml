@@ -551,27 +551,35 @@ tasks:
 
   - id: RCE-20260808-HIGHLIGHT7B
     title: Phase 7B — Deterministic Gameplay Highlight Intelligence MVP
-    status: review
+    status: complete
     owner: claude
     branch: feat/highlight-intelligence-mvp
     base_branch: feat/initial-engine
     base_sha: c80b1ce54ddbdedf615cb88942fdd7e68c77b613
-    current_sha: f56ae1b1e65b38cd4d52ceff977cbb14013c6a27
+    final_sha: f56ae1b1e65b38cd4d52ceff977cbb14013c6a27
     pr: 11
-    pr_state: open (draft)
+    merged: true
+    merge_method: squash
+    merge_commit_sha: 67064bdcacb20df1362c786be6f3046514f5cfa3
+    merged_into: feat/initial-engine
+    result_sha_on_feat_initial_engine: 67064bdcacb20df1362c786be6f3046514f5cfa3
+    merged_by: Binz2008-star
     ci: >-
-      In progress at time of writing (check run "test" on GitHub) on
-      current_sha f56ae1b1e65b38cd4d52ceff977cbb14013c6a27, checked once
-      per this task's explicit instruction to stop hourly/background
-      self-check polling after this correction - no further check-in
-      scheduled. CI on the prior sha (07407aa) was independently
-      confirmed SUCCESS before this correction. Independently run by
-      this agent before pushing the correction: pytest 198 passed/1
-      warning (196 prior + 2 new non-integral-duration regression tests),
-      ruff all checks passed, focused mypy on
+      SUCCESS on final_sha f56ae1b1e65b38cd4d52ceff977cbb14013c6a27
+      (check run "test" on GitHub) - independently verified by this
+      agent via GitHub pull_request_read after the operator merged; CI
+      was in-progress (checked once, per this task's explicit
+      instruction to stop hourly/background self-check polling) at the
+      time this agent last reported. Independently run by this agent
+      before pushing the final correction: pytest 198 passed/1 warning
+      (196 prior + 2 new non-integral-duration regression tests), ruff
+      all checks passed, focused mypy on
       scene_detector.py/highlight_features.py/highlight_scoring.py/
       clip_selector.py/cli.py/models.py - no issues found, git diff
-      --check clean.
+      --check clean. The merge itself (67064bd into feat/initial-engine,
+      main untouched, no deploy) was independently verified by this
+      agent via git fetch and the GitHub pull_request_read API after the
+      operator reported it.
     correction_2026-08-08_duration_boundary: >-
       Real Windows smoke on ID 8 (26.555s source) exposed that
       generate_time_windows() truncates the final bin when source
@@ -672,19 +680,18 @@ tasks:
         explicit authorization after CI review
       - no background polling / self check-ins for this task's PR
     next_action: >-
-      Real Windows ID-8 smoke was executed by the operator (source
-      duration 26.555s, elapsed ~19.84s, requested top 5, returned 2
-      candidates pre-fix) and surfaced the duration-boundary defect fixed
-      in this correction. Wait for CI to finish on current_sha - checked
-      once, no further self-check-in scheduled per explicit instruction
-      to stop hourly polling after this correction. Once reviewed: ID 8
-      remains useful for correctness/performance smoke, but is too short
-      (26.555s) for a meaningful "top 5 distinct highlights" qualitative
-      test under the default 15s minimum + IoU suppression - a longer
-      (multi-minute) owned Fortnite capture will be needed for that,
-      under the same rights-safe local-capture boundary. No re-smoke
-      authorized yet. PR #11 stays draft. Do not merge to main or to
-      feat/initial-engine without explicit authorization.
+      None outstanding for this task. PR #11 merged (squash) into
+      feat/initial-engine at 67064bd, independently verified by this
+      agent via git fetch and the GitHub API. main was not touched, no
+      deploy occurred. Open follow-up (not part of this task's closure):
+      ID 8 (26.555s) is too short for a meaningful "top 5 distinct
+      highlights" qualitative smoke under the default 15s minimum + IoU
+      suppression - a longer (multi-minute) owned Fortnite capture will
+      be needed for that validation later, under the same rights-safe
+      local-capture boundary. Any further phase (transcription,
+      reframing, rendering, AI semantic scoring, real qualitative smoke
+      on a longer capture) is a separate task requiring its own explicit
+      authorization and registration.
 
 # Other branches observed on origin at the time this registry was created
 # that are NOT yet registered as tasks (owner/scope unknown to this agent —

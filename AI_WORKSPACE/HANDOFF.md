@@ -657,3 +657,34 @@ ID 8 is only 26.555s long. With a 15s minimum clip duration and temporal-IoU sup
 
 Merge authorized: no
 Deploy authorized: no
+
+## RCE-20260808-HIGHLIGHT7B — 2026-08-08 (closed: merged)
+
+Task ID: RCE-20260808-HIGHLIGHT7B
+Agent: claude
+Branch: feat/highlight-intelligence-mvp
+Base SHA: c80b1ce54ddbdedf615cb88942fdd7e68c77b613
+Final HEAD (PR head at merge time): f56ae1b1e65b38cd4d52ceff977cbb14013c6a27
+PR: #11 — merged (squash) into feat/initial-engine at 67064bdcacb20df1362c786be6f3046514f5cfa3; main was not touched; no deploy occurred. Merged by Binz2008-star.
+Status: complete
+Merge authorized: no (this agent did not merge; the operator merged directly via GitHub, independently verified below)
+Deploy authorized: no
+
+### Independent verification performed by this agent
+
+- `git fetch origin feat/initial-engine feat/highlight-intelligence-mvp` showed `feat/initial-engine` advanced `c80b1ce..67064bd`, with `67064bd` = `feat(highlight): add deterministic gameplay highlight intelligence MVP (#11)`.
+- GitHub `pull_request_read` on PR #11 independently confirmed: `state=closed`, `merged=true`, `merged_by=Binz2008-star`, `head.sha=f56ae1b...`, `base.ref=feat/initial-engine`, matching the merge commit on `feat/initial-engine`.
+
+### What shipped
+
+The full Phase 7B deterministic highlight-intelligence MVP, including the post-implementation CTO-review correction (candidate generation surfacing multiple distinct events instead of clustering on one, HEAD `07407aa`) and the post-real-smoke correction (real-timestamp duration validation fixing the non-integral-source-duration boundary defect the operator's actual ID 8 smoke exposed, HEAD `f56ae1b`, the merged head). `robin-engine highlight-scan <job_id> [--top N] [--json]` is now available on `feat/initial-engine`: read-only, requires `rights_confirmed=true` and a local `source_path`, single `JobRepository.get_job()` call, no render/upload/transcription/AI scoring/DB mutation.
+
+### Open follow-up (not part of this task, not authorized by this closure)
+
+- ID 8 (26.555s) is too short for a meaningful "top 5 distinct highlights" qualitative validation under the default 15s minimum clip duration + IoU suppression. A longer (multi-minute) owned Fortnite capture will be needed for that later, under the same rights-safe local-capture boundary used for ID 8.
+- Any further phase - transcription, vertical reframing, AI/LLM semantic scoring, rendering, upload, or a qualitative multi-highlight smoke on a longer capture - is a separate task requiring its own explicit authorization and its own `AI_WORKSPACE/ACTIVE_TASKS.yaml` registration before any branch or code work begins.
+- No merge to `main`.
+- No deploy.
+
+Merge authorized: no
+Deploy authorized: no
