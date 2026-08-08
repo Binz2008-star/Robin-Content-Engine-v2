@@ -30,6 +30,7 @@ from .highlight_scoring import score_windows
 from .models import HighlightCandidateResult, HighlightScanResult
 from .pipeline import ContentEngine
 from .scene_detector import SceneBoundary, SceneDetectionError, detect_scenes
+from .vertical_reframe import VerticalReframeError, reframe_to_vertical
 from .youtube_auth import AuthState, YouTubeAuth, YouTubeAuthError
 from .youtube_sync import YouTubeChannelSync, YouTubeSyncError
 
@@ -559,6 +560,96 @@ def highlight_cut(
     typer.echo(f"End: {result.end_seconds:.1f}s")
     typer.echo(f"Duration: {result.duration_seconds:.1f}s")
     typer.echo(f"Score: {candidate.score:.3f}")
+    typer.echo(f"Output path: {result.output_path}")
+
+
+def _highlight_reframe_filename(
+    job_id: int, rank: int, start_seconds: float, end_seconds: float
+) -> str:
+    start_ms = round(start_seconds * 1000)
+    end_ms = round(end_seconds * 1000)
+    return f"job-{job_id}-highlight-{rank:02d}-{start_ms}-{end_ms}-vertical.mp4"
+
+
+@app.command("highlight-reframe")
+def highlight_reframe(
+    job_id: Annotated[int, typer.Argument(help="Job ID to reframe a clip from.")],
+    rank: Annotated[
+        int,
+        typer.Option(
+            "--rank", help="Which ranked highlight-scan candidate to reframe (1 = top-ranked)."
+        ),
+    ] = 1,
+    horizontal_offset: Annotated[
+        float,
+        typer.Option(
+            "--horizontal-offset",
+            help=(
+                "Static horizontal crop position in [0.0, 1.0] "
+                "(0.0=left edge, 0.5=centered, 1.0=right edge). No dynamic/subject "
+                "tracking - this MVP uses one fixed position for the whole clip."
+            ),
+        ),
+    ] = 0.5,
+) -> None:
+    """Cut one ranked highlight candidate from a job's local source video
+    into a new local 9:16 vertical MP4 file, using a static deterministic
+    crop (no dynamic/subject tracking in this iteration). Reuses the same
+    deterministic highlight analysis as highlight-scan/highlight-cut (same
+    configs, same ranking) so --rank N always matches highlight-scan's
+    rank N exactly.
+
+    This never claims the job, never increments attempts, never changes
+    job status, never touches rights state, never calls an LLM or
+    YouTube, never uploads, and never runs the render/publish pipeline.
+    The only database interaction is a single read via
+    JobRepository.get_job(). The original source file is never modified,
+    moved, renamed, or deleted, and an existing output file is never
+    overwritten.
+    """
+    if rank < 1:
+        raise typer.BadParameter("--rank must be >= 1.")
+
+    job, video_path = _load_rights_confirmed_local_job(job_id)
+
+    try:
+        _scenes, selected = _run_highlight_analysis(video_path, rank)
+    except (SceneDetectionError, FeatureExtractionError, ClipSelectionError) as exc:
+        raise typer.BadParameter(str(exc)) from exc
+
+    if len(selected) < rank:
+        raise typer.BadParameter(
+            f"Job {job_id} only has {len(selected)} candidate(s) after overlap "
+            f"suppression; --rank {rank} is out of range."
+        )
+    candidate = selected[rank - 1]
+
+    settings = Settings()  # type: ignore[call-arg]
+    output_dir = settings.work_dir / "highlights"
+    filename = _highlight_reframe_filename(
+        job_id, rank, candidate.start_seconds, candidate.end_seconds
+    )
+    output_path = output_dir / filename
+
+    try:
+        result = reframe_to_vertical(
+            video_path,
+            output_path,
+            candidate.start_seconds,
+            candidate.end_seconds,
+            horizontal_offset_ratio=horizontal_offset,
+        )
+    except VerticalReframeError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+
+    typer.echo(f"Job {job_id}: {job['source_title']}")
+    typer.echo(f"Rank: {rank}")
+    typer.echo(f"Source path: {video_path}")
+    typer.echo(f"Start: {result.start_seconds:.1f}s")
+    typer.echo(f"End: {result.end_seconds:.1f}s")
+    typer.echo(f"Duration: {result.duration_seconds:.1f}s")
+    typer.echo(f"Score: {candidate.score:.3f}")
+    typer.echo(f"Crop: {result.crop_width}x{result.crop_height} at x={result.crop_x1}")
     typer.echo(f"Output path: {result.output_path}")
 
 
