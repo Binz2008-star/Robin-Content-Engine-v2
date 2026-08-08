@@ -500,3 +500,67 @@ A full architecture decision matrix (per-project tables covering exact file/func
 
 Merge authorized: n/a
 Deploy authorized: n/a
+
+## RCE-20260808-HIGHLIGHT7B — 2026-08-08 (implementation complete, draft PR open)
+
+Task ID: RCE-20260808-HIGHLIGHT7B
+Agent: claude
+Branch: feat/highlight-intelligence-mvp
+Base SHA: c80b1ce54ddbdedf615cb88942fdd7e68c77b613
+Current HEAD: 7e34c3289974e3af7c8351ae091f2de30948c5ea
+PR: #11 (draft, targeting feat/initial-engine, not main)
+Status: review — CI in progress at time of writing
+Files changed: pyproject.toml, src/robin_content_engine/{cli.py,models.py} (modified), src/robin_content_engine/{scene_detector.py,highlight_features.py,highlight_scoring.py,clip_selector.py} (new), tests/{test_scene_detector.py,test_highlight_features.py,test_highlight_scoring.py,test_clip_selector.py,test_highlight_scan_cli.py} (new) — 12 files
+Tests: 194 passed/1 warning (139 baseline + 55 new), independently run before pushing
+Ruff: all checks passed
+Mypy (focused: scene_detector.py, highlight_features.py, highlight_scoring.py, clip_selector.py, cli.py, models.py): no issues found
+Diff check: clean
+CI: in progress on 7e34c3289974e3af7c8351ae091f2de30948c5ea at time of writing — reported once, 60-minute send_later safety-net check-in scheduled (silent unless action needed) per this task's explicit no-background-polling instruction
+Known blockers: none for the implementation. Real Windows ID-8 smoke still needs separate explicit authorization.
+Next action: wait for CI; after review, real Windows smoke per the plan below, only after explicit authorization.
+Merge authorized: no
+Deploy authorized: no
+
+### BUILD vs ADOPT (final, executing the Phase 7A harvest audit's decision)
+
+ADOPT: PySceneDetect `AdaptiveDetector` via the `scenedetect-headless` PyPI distribution (bundles `opencv-python-headless` instead of the base `scenedetect` package's GUI-linked `opencv-python`, avoiding a second conflicting OpenCV install — confirmed by direct dependency inspection: bare `scenedetect` hard-requires `opencv-python`, no headless extra exists on that distribution name). REIMPLEMENT CLEANLY (idea only): AutoShorts' audio-energy, motion-activity, and sliding-window candidate search, in NumPy/OpenCV only. INSPIRE: OpenShorts' clip-selection architecture (window building around word/scene boundaries, mean-score comparability across durations). Explicitly excluded: transcription of any kind, vertical reframing, AI/LLM semantic scoring, yt-dlp, OpenShorts `cloud/`, torch/torchaudio/decord/CuPy/CUDA/NVENC.
+
+### Dependencies added
+
+`scenedetect-headless>=0.7.1,<0.8`, `numpy>=2.1,<3`, `opencv-python-headless>=4.10,<5` (pinned to 4.x — 5.0.0 is a very recent major release with no track record). No `scipy` (RMS/spectral flux use NumPy's own `rfft`/`hanning`). Added a narrow `[[tool.mypy.overrides]]` for `scenedetect.*`/`moviepy.*` (neither ships type stubs); this is the only non-dependency `pyproject.toml` change.
+
+### Scoring formula and rationale
+
+`base_activity_score = 0.60 * audio_score + 0.40 * motion_score`, preserving only AutoShorts' broad audio/motion fusion *ratio hypothesis* — not its GPU implementation, not any other constant. `audio_score = 0.5*normalized_rms + 0.5*normalized_spectral_flux` (both are legitimate, uncalibrated-against-each-other audio-energy signals, combined equally). Scene-change density is a **capped bonus**, not a third primary weight: `scene_bonus = min(0.10, 0.10 * normalized_scene_density)` — deliberately small and hard-capped, since fast cuts also happen at menus/respawns/loading screens, which are not highlights. `final_score = base_activity_score + scene_bonus`, bounded to `[0, 1.10]`. Every candidate carries `final_score`, `audio_score`, `motion_score`, `scene_signal`, and a deterministic `reason` string built from fixed thresholds (e.g. `"high audio spike + high motion"`) — never an LLM call.
+
+### Detector configuration
+
+`AdaptiveDetector` via `SceneDetectorConfig` (adaptive_threshold=3.0, min_scene_len_frames=15, window_width=2, min_content_val=15.0 — PySceneDetect's own library defaults, no evidence yet to deviate), optional `downscale` override. Detection only — `detect_scenes()` never invokes PySceneDetect's video-splitting/rendering; verified with a dedicated test asserting zero new files appear after calling it.
+
+### Overlap strategy
+
+`generate_candidate_windows()` runs a cumsum sliding-window search per tested duration (min→max clip seconds, stepped), producing one best-scoring candidate per duration tested; `suppress_overlaps()` then greedily accepts candidates highest-score-first, rejecting any whose temporal IoU with an already-accepted candidate exceeds `overlap_iou_threshold` (default 0.35, not hidden — a `WindowSelectorConfig` field). Neither AutoShorts nor OpenShorts had a complete overlap-handling solution (confirmed during the Phase 7A audit), so this is original to Robin.
+
+### CLI contract
+
+`robin-engine highlight-scan <job_id> [--top N] [--json]`. Requires `rights_confirmed=true` and a valid local `source_path` (rejects missing job, unconfirmed rights, missing/remote source). The only database call is `JobRepository.get_job()` — no claim, no attempts increment, no `generated_*`/`output_path`/`status` write. Never constructs `ContentEngine`, never renders, never uploads. Verified by a `FakeRepository` test double that implements *only* `get_job()`/`running()` — any accidental call to a mutating method would raise `AttributeError` and fail the test.
+
+### JSON contract
+
+`{"job_id", "source_title", "duration_seconds", "candidates": [{"rank", "start_seconds", "end_seconds", "duration_seconds", "score", "signals": {"audio", "motion", "scene"}, "reason"}]}`. Verified end-to-end against a real ~20s synthetic clip (10s black/silence + 10s moving pattern/tone, generated via the `imageio-ffmpeg`-bundled ffmpeg binary already pulled in transitively by moviepy) — the pipeline correctly found the injected signal spike and produced a sensible ranked candidate spanning into it.
+
+### Performance
+
+Deliberately CPU-only by construction (no torch/CUDA anywhere in the new code) so it runs on the operator's Windows + AMD RX 6800 XT machine without any GPU dependency; GPU acceleration was not pursued since correctness for this MVP doesn't require it. Real wall-clock timing against the operator's actual machine and actual ID 8 capture will be captured during the real smoke, not fabricated here.
+
+### Explicitly not done in this phase
+
+- No render, clip/export, captions, transcription, AI/LLM semantic scoring, vertical reframing, upload, YouTube write, queue claiming, or automatic processing.
+- No production DB mutation — read-only `get_job()` only.
+- No changes to `pipeline.py`, `uploader.py`, `youtube_auth.py`, `api.py`, or `schema.sql`.
+- No schema migration.
+- No real-machine smoke executed yet — proposed command: `robin-engine highlight-scan 8 --top 5 --json`, pending separate explicit authorization after CI/review.
+- PR #11 not merged, remains draft.
+
+Merge authorized: no
+Deploy authorized: no
