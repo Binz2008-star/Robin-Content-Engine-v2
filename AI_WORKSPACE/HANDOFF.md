@@ -1591,3 +1591,19 @@ With explicit operator approval, PR #19 was marked ready for review (`gh pr read
 Merge authorized: yes (explicit operator approval, this exact head, into feat/initial-engine only)
 Deploy authorized: no
 Main merge authorized: no — not requested, not performed
+
+## Production operations — 2026-08-11 (Job 14 real upload; standing upload authorization granted)
+
+With PR #19 merged, a dedicated worktree was created at `X:\content engine\production` tracking `feat/initial-engine` (fast-forwarded to merge commit `c7fd99159c966123f51218e8f1ff22cc56b9cce5`) — this is now the canonical source for real `production-run-once` invocations going forward, superseding the already-merged `feat/production-runner` feature branch worktree.
+
+Ran `production-run-once` for real: job 8 was correctly **skipped** ("already published") — duplicate-protection working correctly against a job already uploaded in the prior session. Job 14 was selected and processed end-to-end: highlight analysis → 9:16 reframe → local ASR (3 caption segments) → quality gate (11/11 PASS) → package → automatic dry-run PASS. Job 14's DB row confirmed unchanged before and after (`status=pending, rights_confirmed=true, youtube_id=null, attempts=0`).
+
+With explicit per-step operator approval, executed the real private upload for job 14: **video ID `qs2kXUlvi-w`**, `privacy=private`. Independently verified via `youtube-sync` (a separate real YouTube Data API read) plus a direct query of the resulting `youtube_videos` snapshot row: channel `UCIcvbGsmSwMDXxjWXq4QG8A`, `privacy_status='private'`, `is_current=true`.
+
+Post-upload `production-status`: `uploaded_private=3` (jobs 8, 14, 22), `rights_approved_eligible=0` — the queue currently has no further `pending` + `rights_confirmed` candidates. 11 jobs remain `awaiting_rights` (need an operator rights review before becoming eligible), 1 (job 19) has local processing artifacts without a completed package, 2 are `rejected`.
+
+**Standing upload authorization granted 2026-08-11.** Asked the operator explicitly whether to keep confirming each real upload individually going forward, or grant standing authorization for future eligible jobs to auto-upload after a QC pass without a per-job chat confirmation — the operator chose the standing policy. This is now recorded durably in this agent's cross-session memory (`feedback_standing_upload_authorization`). From this point forward, a job that clears `production-run-once`'s local pipeline (QC PASS + package + dry-run PASS) may proceed directly to `youtube-publish-package --execute-private-upload` without a separate chat approval gate — the dry-run/QC pass itself is now the gate. This does **not** extend to `main`/deploy/`.env` changes, which remain separately gated as always, and does not retroactively authorize anything beyond the private-upload step of an already-QC-validated package.
+
+Merge authorized: n/a (no code change this entry)
+Deploy authorized: no
+Main merge authorized: no
