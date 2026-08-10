@@ -1290,3 +1290,38 @@ Implementation details (files changed, test counts, validation results, PR numbe
 
 Merge authorized: no
 Deploy authorized: no
+
+## RCE-20260810-PUBLISH9A — 2026-08-10 (implementation complete, Draft PR opened)
+
+Task ID: RCE-20260810-PUBLISH9A
+Agent: claude
+Branch: feat/manual-private-publishing
+Base SHA: a909175ce98e6e28ce71e30875cb3718f2c4223f
+Current HEAD: bc5e8684f6ba12b0a485c8fc397c9396f6952516
+PR: #18 (draft, targeting feat/initial-engine, not main)
+Status: review — CI in_progress at time of writing (checked once, not polled to completion)
+Files changed: src/robin_content_engine/publishing.py (new), src/robin_content_engine/cli.py (youtube-publish-package command added), src/robin_content_engine/uploader.py (UploadableContent Protocol - see below) — within this task's allowed_paths
+Tests: 340 passed (303 prior baseline + 37 new), independently run before pushing; no network required, no test contacts YouTube
+Ruff: all checks passed
+Mypy (focused: publishing.py, uploader.py, cli.py, pipeline.py): no issues found, verified with a `--python-version 3.12` override to bypass the same pre-existing numpy-stub/py3.11 environment mismatch documented in the Phase 8D closure (reproduces identically on unrelated baseline files)
+Diff check: clean
+CI: in_progress at time of writing on exact head bc5e868, checked once via the GitHub check-runs API — no recurring polling, per explicit instruction
+Known blockers: none for the implementation. Real Windows dry-run smoke intentionally NOT run automatically this phase — needs separate explicit authorization. A real YouTube upload is not authorized under any circumstance in this task.
+Next action: wait for CI/review.
+Merge authorized: no
+Deploy authorized: no
+
+### uploader.py compatibility refactor (proven necessary before touching it)
+
+`YouTubeUploader.upload()` was typed to accept `GeneratedContent` specifically, but that model requires a `script` field (min 20 chars) this manual publish path has no legitimate value for — fabricating one just to satisfy the type would be exactly the "artificial pipeline/DB dependency" this task's brief explicitly said not to create. Since `.upload()` never reads `.script` (confirmed by reading its body before making any change), the fix was to narrow the parameter's type to a structural `UploadableContent` Protocol (`title`, `description`, `tags` only). First attempt declared these as plain Protocol attributes, which mypy rejected (`list[str]` vs `Sequence[str]` invariance, and "expected settable variable, got read-only attribute" against a frozen `PublishMetadata` dataclass) — fixed by declaring them as read-only `@property` members instead, which checks covariantly. `GeneratedContent` (a pydantic model with mutable `list[str]` tags) and `publishing.PublishMetadata` (a frozen dataclass) both satisfy this Protocol structurally with zero changes to `models.py`. `pipeline.py`'s existing `self.uploader.upload(render.output_path, generated)` call site is unchanged and confirmed unaffected (re-run `test_uploader.py` and the full suite green).
+
+### Design
+
+`publishing.validate_package()` is the single choke point both `dry_run()` and `execute_private_upload()` call: manifest well-formed with all required keys, `quality_gate_passed=true` as recorded, the packaged video resolved path-traversal-safe (`_resolve_packaged_video_path()` takes ONLY the basename of the manifest's `packaged_artifact_path`, joins it under the package directory, and requires the resolved result stay inside that directory via `Path.is_relative_to()` — a manifest claiming an absolute path or `..`-laden path can only ever resolve to a file directly inside the package dir, never escape it, regression-tested against a real decoy file placed outside the package directory), byte size and SHA-256 matching the manifest, and the Phase 8D quality gate re-run fresh right now (not merely trusted from the manifest — regression-tested by validating a real passing package against a deliberately stricter `QualityGateConfig` than was used at packaging time, proving the re-run is genuine).
+
+`execute_private_upload()`'s ordering is itself safety-critical and directly regression-tested: revalidate → validate metadata → refuse if `upload_attempt.json`/`upload_receipt.json` already exists (no `--force`) → require `youtube_expected_channel_id` configured → `auth.verify_current_channel()` (non-interactive; a missing/failed auth fails cleanly pointing at `youtube-auth`, never touching the uploader) → require exact channel-ID match (aborts **before** the uploader factory is ever called on mismatch — regression-tested with an uploader factory that raises `AssertionError` if invoked) → write an atomic `upload_attempt.json` (temp-file-then-`replace()`, no secrets — regression-tested by scanning the written JSON for token/secret-like substrings) → construct the uploader (factory-injected so tests control exactly when/whether it's built) and upload → on ANY exception from this point on, the attempt marker is deliberately left in place and a `PublishingError` explaining that operator reconciliation is required is raised (never auto-cleared, never retried — regression-tested, including that a second attempt is then also refused) → on success, confirm `privacy_status == "private"`, write an atomic `upload_receipt.json`, then remove the attempt marker (receipt written before marker removal, so a crash between those two steps still leaves the receipt as the durable duplicate-upload guard).
+
+`robin-engine youtube-publish-package <PACKAGE_DIR> --title T --description T [--tag T ...] [--execute-private-upload]` defaults to dry run. The CLI hard-codes `privacy_status="private"` at the single `YouTubeUploader` construction call site inside a local factory closure — regression-tested by configuring a fake `Settings.youtube_privacy_status = "public"` and confirming the constructed uploader still received `"private"`. No `--privacy`/`--public`/`--unlisted` option exists anywhere on the command (regression-tested against both the `--help` option surface and an actual rejected invocation).
+
+Merge authorized: no
+Deploy authorized: no
