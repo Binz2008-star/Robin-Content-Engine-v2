@@ -461,19 +461,19 @@ def test_production_run_once_processes_at_most_one_job_on_qc_failure(
     monkeypatch.setattr(cli_module, "YouTubeUploader", _explode)
 
     call_count = {"n": 0}
-    original_run_production = pr_module.run_production
+    original_loaded_job = pr_module._run_production_loaded_job
 
-    def counting_run_production(job_id: int, rank: int, *args: Any, **kwargs: Any) -> Any:
+    def counting_loaded_job(job: dict[str, Any], *args: Any, **kwargs: Any) -> Any:
         call_count["n"] += 1
-        if job_id == 1:
+        if job["id"] == 1:
             from robin_content_engine.quality_gate import QualityGateConfig
 
             kwargs["quality_gate_config"] = QualityGateConfig(
                 min_clip_seconds=100.0, max_clip_seconds=200.0
             )
-        return original_run_production(job_id, rank, *args, **kwargs)
+        return original_loaded_job(job, *args, **kwargs)
 
-    monkeypatch.setattr(pr_module, "run_production", counting_run_production)
+    monkeypatch.setattr(pr_module, "_run_production_loaded_job", counting_loaded_job)
 
     result = CliRunner().invoke(cli_app, ["production-run-once"])
 

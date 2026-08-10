@@ -99,6 +99,35 @@ class FakeRepository:
         return job_id
 
 
+class OnceOnlyFakeRepository(FakeRepository):
+    """Mimics the real psycopg_pool.ConnectionPool lifecycle used by
+    JobRepository: the underlying pool is a single object that can be
+    opened and closed exactly once - opening it again after it has been
+    closed raises, exactly like the real `PoolClosed` error hit during
+    the real Windows production-run-once smoke. Reentrant no-op fakes
+    (plain FakeRepository) never caught that bug because their running()
+    is unconditionally reentrant; this fake exists specifically to catch
+    a regression back to a second repository.running() cycle within a
+    single run_production_once()/run_production() call."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.running_enter_count = 0
+        self._closed = False
+
+    @contextmanager
+    def running(self):
+        if self._closed:
+            raise RuntimeError(
+                "PoolClosed: pool has already been opened/closed and cannot be reused"
+            )
+        self.running_enter_count += 1
+        try:
+            yield self
+        finally:
+            self._closed = True
+
+
 class FakeRecognizer:
     """Stands in for FasterWhisperRecognizer - never touches faster-whisper
     or the network. transcribe_calls tracks invocation count for
@@ -669,24 +698,24 @@ def test_run_production_once_qc_failure_on_candidate_one_never_tries_candidate_t
     settings = _fake_settings(tmp_path / "work", capture_dir)
 
     call_count = {"n": 0}
-    original_run_production = pr_module.run_production
+    original_loaded_job = pr_module._run_production_loaded_job
 
-    def counting_run_production(job_id: int, rank: int, *args: Any, **kwargs: Any) -> Any:
+    def counting_loaded_job(job: dict[str, Any], *args: Any, **kwargs: Any) -> Any:
         call_count["n"] += 1
-        if job_id == 1:
+        if job["id"] == 1:
             # force a QC failure for candidate 1 only, without touching
             # candidate 2's own real (passing) run
             strict_config = QualityGateConfig(min_clip_seconds=100.0, max_clip_seconds=200.0)
             kwargs["quality_gate_config"] = strict_config
-        return original_run_production(job_id, rank, *args, **kwargs)
+        return original_loaded_job(job, *args, **kwargs)
 
-    monkeypatch.setattr(pr_module, "run_production", counting_run_production)
+    monkeypatch.setattr(pr_module, "_run_production_loaded_job", counting_loaded_job)
 
     result = run_production_once(repo, settings)
 
-    # candidate 1 (lowest id) was selected and run_production() was
-    # called for it exactly once - candidate 2 was never attempted, even
-    # though it is otherwise eligible and would have passed
+    # candidate 1 (lowest id) was selected and _run_production_loaded_job()
+    # was called for it exactly once - candidate 2 was never attempted,
+    # even though it is otherwise eligible and would have passed
     assert call_count["n"] == 1
     assert result.selected_job_id == 1
     assert result.run is not None
@@ -954,4 +983,95 @@ def test_production_status_is_read_only_no_mutation(
     production_status(repo, settings)
 
     assert repo.list_jobs_calls >= 1
+
+
+# ---------------------------------------------------------------------------
+# Real-smoke blocker correction: repository.running() must be entered
+# exactly once per invocation, never reopened after close - reproducing
+# the real psycopg_pool.ConnectionPool lifecycle (via OnceOnlyFakeRepository)
+# that the plain reentrant FakeRepository never exercised, and that a real
+# Windows production-run-once smoke hit as a hard `PoolClosed` crash.
+# ---------------------------------------------------------------------------
+
+
+def test_run_production_once_opens_repository_exactly_once(
+    speech_video: Path, tmp_path: Path, patched_recognizer: type[FakeRecognizer]
+) -> None:
+    repo = OnceOnlyFakeRepository()
+    repo.seed(job_id=1, source_path=str(speech_video), rights_confirmed=True)
+    capture_dir = tmp_path / "captures"
+    capture_dir.mkdir()
+    settings = _fake_settings(tmp_path / "work", capture_dir)
+
+    result = run_production_once(repo, settings)
+
+    assert repo.running_enter_count == 1
+    assert result.selected_job_id == 1
+    assert result.run is not None
+    assert result.run.package is not None
+
+
+def test_run_production_once_no_eligible_job_opens_repository_exactly_once(
+    tmp_path: Path,
+) -> None:
+    """Even the empty-queue path (no candidate selected, no media
+    processing) must still only open the repository once, covering both
+    scan_captures() and list_jobs()."""
+    repo = OnceOnlyFakeRepository()
+    capture_dir = tmp_path / "captures"
+    capture_dir.mkdir()
+    settings = _fake_settings(tmp_path / "work", capture_dir)
+
+    result = run_production_once(repo, settings)
+
+    assert repo.running_enter_count == 1
+    assert result.selected_job_id is None
+
+
+def test_run_production_manual_path_opens_repository_exactly_once(
+    speech_video: Path, tmp_path: Path, patched_recognizer: type[FakeRecognizer]
+) -> None:
+    """The public run_production() contract (used by manual
+    `production-run`) must still work unchanged, using exactly one
+    repository.running() cycle - the job lookup - before delegating all
+    media processing to the internal loaded-job helper."""
+    repo = OnceOnlyFakeRepository()
+    repo.seed(job_id=1, source_path=str(speech_video), rights_confirmed=True)
+    settings = _fake_settings(tmp_path / "work")
+
+    result = run_production(1, 1, repo, settings)
+
+    assert repo.running_enter_count == 1
+    assert result.job_id == 1
+    assert result.package is not None
+
+
+def test_run_production_once_never_calls_public_run_production(
+    speech_video: Path,
+    tmp_path: Path,
+    patched_recognizer: type[FakeRecognizer],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """run_production_once() must delegate directly to
+    _run_production_loaded_job(), never to the public run_production() -
+    calling the public function would attempt a second
+    repository.running() cycle against an already-closed connection
+    pool."""
+    repo = OnceOnlyFakeRepository()
+    repo.seed(job_id=1, source_path=str(speech_video), rights_confirmed=True)
+    capture_dir = tmp_path / "captures"
+    capture_dir.mkdir()
+    settings = _fake_settings(tmp_path / "work", capture_dir)
+
+    def fail_if_called(*args: Any, **kwargs: Any) -> Any:
+        raise AssertionError(
+            "run_production_once() must not call the public run_production()"
+        )
+
+    monkeypatch.setattr(pr_module, "run_production", fail_if_called)
+
+    result = run_production_once(repo, settings)
+
+    assert result.selected_job_id == 1
+    assert repo.running_enter_count == 1
     assert repo.get_job_calls == []  # never opens individual jobs

@@ -72,22 +72,16 @@ class ProductionRunError(Exception):
 # ---------------------------------------------------------------------------
 
 
-def _load_rights_confirmed_local_job(
-    job_id: int, repository: JobRepository
-) -> tuple[dict[str, Any], Path]:
-    """Read-only job lookup, mirroring cli.py's own helper of the same
-    name (used by highlight-scan/highlight-cut/highlight-reframe/
-    highlight-caption) field-for-field. Duplicated here rather than
-    imported from cli.py to avoid any risk of regressing those already-
-    proven, already-shipped commands via a shared-code refactor - the
-    tradeoff of a small amount of duplicated glue against touching code
-    that has already carried a real production job through a real
-    private YouTube upload. Never claims the job or mutates any state."""
-    with repository.running():
-        job = repository.get_job(job_id)
-
-    if job is None:
-        raise ProductionRunError(f"Job {job_id} not found.")
+def _validate_job_and_source(job: dict[str, Any]) -> Path:
+    """Pure validation of an ALREADY-LOADED job row - performs no
+    repository access of its own. Used both by
+    _load_rights_confirmed_local_job() (right after its own single fetch)
+    and directly by run_production_once() (against a row already in hand
+    from its own single list_jobs() snapshot, so selecting a candidate
+    never requires a second database round-trip). Raises
+    ProductionRunError if rights aren't confirmed or the local source
+    file doesn't exist."""
+    job_id = job["id"]
     if not job["rights_confirmed"]:
         raise ProductionRunError(
             f"Job {job_id} does not have confirmed publishing rights "
@@ -102,6 +96,27 @@ def _load_rights_confirmed_local_job(
     video_path = Path(source_path)
     if not video_path.is_file():
         raise ProductionRunError(f"Source file does not exist: {video_path}")
+    return video_path
+
+
+def _load_rights_confirmed_local_job(
+    job_id: int, repository: JobRepository
+) -> tuple[dict[str, Any], Path]:
+    """Read-only job lookup - exactly ONE repository.running() cycle,
+    mirroring cli.py's own helper of the same name (used by highlight-
+    scan/highlight-cut/highlight-reframe/highlight-caption) field-for-
+    field. Duplicated here rather than imported from cli.py to avoid any
+    risk of regressing those already-proven, already-shipped commands
+    via a shared-code refactor - the tradeoff of a small amount of
+    duplicated glue against touching code that has already carried a
+    real production job through a real private YouTube upload. Never
+    claims the job or mutates any state."""
+    with repository.running():
+        job = repository.get_job(job_id)
+
+    if job is None:
+        raise ProductionRunError(f"Job {job_id} not found.")
+    video_path = _validate_job_and_source(job)
     return job, video_path
 
 
@@ -187,10 +202,10 @@ class ProductionRunResult:
     package: PackageValidation | None
 
 
-def run_production(
-    job_id: int,
+def _run_production_loaded_job(
+    job: dict[str, Any],
+    video_path: Path,
     rank: int,
-    repository: JobRepository,
     settings: Settings,
     *,
     horizontal_offset_ratio: float = 0.5,
@@ -198,12 +213,21 @@ def run_production(
     quality_gate_config: QualityGateConfig | None = None,
     package_dest_root: Path | None = None,
 ) -> ProductionRunResult:
-    """Orchestrate one job/rank through every already-proven local stage -
-    highlight analysis, 9:16 reframe, local ASR + caption burn-in, the
-    Phase 8D quality gate, and Phase 8D packaging - reusing every
-    underlying module unmodified. Does NOT publish; see publishing.py's
-    dry_run()/execute_private_upload() for that, called separately by the
-    CLI against this function's returned package directory.
+    """Orchestrate one already-loaded job/rank through every already-
+    proven local stage - highlight analysis, 9:16 reframe, local ASR +
+    caption burn-in, the Phase 8D quality gate, and Phase 8D packaging -
+    reusing every underlying module unmodified. Does NOT publish; see
+    publishing.py's dry_run()/execute_private_upload() for that, called
+    separately by the CLI against this function's returned package
+    directory.
+
+    Performs ZERO repository access - job must already be loaded and
+    validated (rights_confirmed, source_path existence) by the caller,
+    e.g. via _load_rights_confirmed_local_job() or
+    _validate_job_and_source(). This lets callers keep the database
+    connection pool open for only as long as the lookup itself takes,
+    never across the (potentially very long) media-processing stages
+    below.
 
     Resumable by construction: each expensive stage's existing
     deterministic filename and refuse-to-overwrite behavior is used to
@@ -227,18 +251,14 @@ def run_production(
     A clip with no detected speech falls back to using the reframed
     (uncaptioned) clip as the final artifact rather than failing the
     whole run - this is the one new behavior beyond pure orchestration
-    this module introduces. Every other failure (missing/unconfirmed
-    job, analysis failure, reframe failure, a genuine transcription/
-    caption-burn failure, or a quality-gate/packaging/package-validation
-    failure) raises ProductionRunError with an explicit reason.
+    this module introduces. Every other failure (analysis failure,
+    reframe failure, a genuine transcription/caption-burn failure, or a
+    quality-gate/packaging/package-validation failure) raises
+    ProductionRunError with an explicit reason.
 
-    Never mutates JobRepository (read-only get_job() only, same as
-    Phases 5-9), never touches YouTube, never uploads.
+    Never touches JobRepository, never touches YouTube, never uploads.
     """
-    if rank < 1:
-        raise ProductionRunError("rank must be >= 1.")
-
-    job, video_path = _load_rights_confirmed_local_job(job_id, repository)
+    job_id = job["id"]
 
     try:
         _scenes, selected = _run_highlight_analysis(video_path, rank)
@@ -336,6 +356,44 @@ def run_production(
         final_video_path=final_video_path,
         quality_gate=quality_gate,
         package=package,
+    )
+
+
+def run_production(
+    job_id: int,
+    rank: int,
+    repository: JobRepository,
+    settings: Settings,
+    *,
+    horizontal_offset_ratio: float = 0.5,
+    model_size: str = "base",
+    quality_gate_config: QualityGateConfig | None = None,
+    package_dest_root: Path | None = None,
+) -> ProductionRunResult:
+    """Public manual-run entry point (used by the `production-run` CLI
+    command). Enters repository.running() exactly once to look up and
+    validate the job, then leaves the repository context before
+    delegating all media processing to _run_production_loaded_job() -
+    the database connection pool is never held open during highlight
+    analysis, reframing, ASR, captioning, quality gating, or packaging.
+
+    Never mutates JobRepository (read-only get_job() only, same as
+    Phases 5-9), never touches YouTube, never uploads.
+    """
+    if rank < 1:
+        raise ProductionRunError("rank must be >= 1.")
+
+    job, video_path = _load_rights_confirmed_local_job(job_id, repository)
+
+    return _run_production_loaded_job(
+        job,
+        video_path,
+        rank,
+        settings,
+        horizontal_offset_ratio=horizontal_offset_ratio,
+        model_size=model_size,
+        quality_gate_config=quality_gate_config,
+        package_dest_root=package_dest_root,
     )
 
 
@@ -439,13 +497,18 @@ def run_production_once(
     candidate is tried.
 
     The moment a candidate clears that precheck, it is selected and
-    run_production() is called EXACTLY ONCE for the entire invocation.
-    Whatever happens to that one job from that point on - a quality-gate
-    failure, a package-validation failure, a genuine analysis/reframe/
-    caption error (raised as ProductionRunError, propagated to the
-    caller) - this invocation ends for that job. It never falls through
-    to try a different candidate; "at most one job processed per
-    invocation" is a hard guarantee, not merely a preference.
+    _run_production_loaded_job() is called EXACTLY ONCE for the entire
+    invocation, directly against the row already in hand from the single
+    list_jobs() snapshot below (never a second database round-trip, and
+    never through the public run_production() - the repository's
+    connection pool is already closed by that point and psycopg_pool
+    does not support reopening a closed pool). Whatever happens to that
+    one job from that point on - a quality-gate failure, a package-
+    validation failure, a genuine analysis/reframe/caption error (raised
+    as ProductionRunError, propagated to the caller) - this invocation
+    ends for that job. It never falls through to try a different
+    candidate; "at most one job processed per invocation" is a hard
+    guarantee, not merely a preference.
 
     If no candidate clears the precheck, selected_job_id is None (the
     CLI prints "NO ELIGIBLE JOB" and exits 0 - a normal empty-queue
@@ -453,6 +516,13 @@ def run_production_once(
     scan_captures() itself already does (INSERT-only registration of new
     captures with rights_confirmed=False) - no job status/attempts/
     rights change, no legacy ContentEngine/claim_next semantics.
+
+    Uses exactly ONE `with repository.running():` block, covering both
+    scan_captures() and list_jobs() - the connection pool is opened once
+    and closed once per invocation, never reopened. All subsequent
+    candidate selection and (if any) media processing happens after that
+    block has already exited, so long-running highlight analysis/
+    reframe/ASR/captioning never holds a database connection open.
     """
     with repository.running():
         scan_result = scan_captures(
@@ -460,8 +530,6 @@ def run_production_once(
             repository,
             stability_wait_seconds=settings.capture_stability_wait_seconds,
         )
-
-    with repository.running():
         all_jobs = repository.list_jobs()
 
     dest_root = package_dest_root or _DEFAULT_PACKAGE_ROOT
@@ -479,7 +547,7 @@ def run_production_once(
     )
 
     skipped: list[SkippedCandidate] = []
-    selected_job_id: int | None = None
+    selected_job: dict[str, Any] | None = None
     for job in candidates:
         job_id = job["id"]
         state = _precheck_local_state(job_id, dest_root)
@@ -494,21 +562,27 @@ def run_production_once(
                 )
             )
             continue
-        selected_job_id = job_id
+        selected_job = job
         break
 
-    if selected_job_id is None:
+    if selected_job is None:
         return ProductionRunOnceResult(
             capture_scan=scan_result, selected_job_id=None, run=None, skipped=skipped
         )
 
-    # The ONE and only run_production() call this invocation ever makes.
+    selected_job_id = selected_job["id"]
+    video_path = _validate_job_and_source(selected_job)
+
+    # The ONE and only media-processing call this invocation ever makes.
     # Any exception here (ProductionRunError) propagates to the caller
-    # rather than being swallowed to try another candidate.
-    run_result = run_production(
-        selected_job_id,
+    # rather than being swallowed to try another candidate. Calls the
+    # internal loaded-job helper directly - NOT the public
+    # run_production() - since the repository context above has already
+    # closed the connection pool.
+    run_result = _run_production_loaded_job(
+        selected_job,
+        video_path,
         1,
-        repository,
         settings,
         horizontal_offset_ratio=horizontal_offset_ratio,
         model_size=model_size,
