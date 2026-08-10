@@ -1851,7 +1851,7 @@ tasks:
     branch: feat/production-runner
     base_branch: feat/initial-engine
     base_sha: 5bdb6ad87a1e5ff73c1db95665fbc13a85826180
-    current_sha: 570c7a81980bcde24641e15e48ae93735181cbfc
+    current_sha: e62a987b7b0b8a586db0b9b45b64311f2e887570
     pr: 19
     pr_url: https://github.com/Binz2008-star/Robin-Content-Engine-v2/pull/19
     pr_state: open (draft)
@@ -1951,11 +1951,57 @@ tasks:
       - tests must use fake/mocked auth/uploader only - no test may
         contact YouTube
       - never expose/print .env, tokens, or client secrets
-    ci_at_exact_head: >-
+    ci_at_exact_head_2026-08-10_initial: >-
       Checked once via the GitHub check-runs API on exact head
       570c7a81980bcde24641e15e48ae93735181cbfc: check run "test",
       status=in_progress at time of writing (not polled to completion,
-      per this task's own no-recurring-polling instruction).
+      per this task's own no-recurring-polling instruction). This head
+      later completed as FAILURE (run 31392736396, 367 passed/1 failed)
+      per CTO review round 1 - see cto_review_round1_2026-08-10 below.
+    cto_review_round1_2026-08-10: >-
+      Binz2008-star (OWNER) posted a CTO review on PR #19: exact-head CI
+      was RED (run 31392736396, 1 test failure); the PR implemented a
+      manual per-job helper rather than the authorized operational
+      runner; missing production-run-once (capture-scan first, never
+      auto-confirm rights, automatic deterministic single-job
+      selection); missing read-only production-status; missing
+      automatic deterministic publish metadata; resume/package trust
+      too weak (an existing package directory was loaded without
+      validating bytes/hash/QC before reuse); automatic selection
+      needed to skip already-published/ambiguous jobs without a DB
+      schema change. Corrected in commit e62a987 - see
+      cto_review_round1_correction_2026-08-10 below. No real YouTube
+      write performed as part of this correction round.
+    cto_review_round1_correction_2026-08-10: >-
+      (1) CI fix: test_production_run_title_without_description_fails
+      asserted the literal "--description" substring, but Typer/Rich's
+      text wrapping breaks words after hyphens by default and CI's
+      narrower detected terminal width wrapped exactly at that
+      boundary (not reproduced on Windows locally) - fixed by asserting
+      the plain word "description" instead. (2) Added `robin-engine
+      production-run-once`: scans the capture directory first (reuses
+      capture_scan.scan_captures() unmodified), deterministically
+      selects exactly ONE eligible rights-confirmed job (oldest id
+      first, skipping already-published/ambiguous ones), runs the full
+      pipeline, then publishes (dry-run by default,
+      --execute-private-upload for a real PRIVATE-ONLY write, capped at
+      one upload per invocation by construction); prints "NO ELIGIBLE
+      JOB" on an empty/exhausted queue. `production-run <job_id>` kept
+      as the manual/debug command. (3) Added read-only `robin-engine
+      production-status [--json]` - awaiting-rights/rights-approved-
+      eligible/processing/packaged/uploaded-private/ambiguous counts,
+      derived purely from filename globs and marker-file existence, no
+      DB write/network/video-decode. (4) Added
+      build_automatic_metadata() - fixed deterministic title/
+      description, no LLM, no TTS. (5) run_production() no longer
+      blindly trusts an existing package directory - it is always
+      re-validated via publishing.validate_package() (the Phase 9
+      contract) before reuse; ProductionRunResult.package is now
+      PackageValidation (from publishing.py), not the narrower
+      PackageResult (from quality_gate.py). (6) local_upload_state()
+      derives published/ambiguous/none purely from
+      upload_receipt.json/upload_attempt.json existence - no DB schema
+      change. 30 new regression tests (398 total).
     test_isolation_fix: >-
       While writing tests/test_production_run_cli.py, the publish-path
       tests initially collided on the real (gitignored, untracked)
@@ -1973,16 +2019,20 @@ tasks:
       created during debugging were removed (gitignored, never staged
       or committed).
     next_action: >-
-      Phase 10 implementation complete, Draft PR #19 opened targeting
-      feat/initial-engine (not main). Not merged - per this task's own
-      authorization, real end-to-end production smoke (including any
-      real YouTube upload) is deferred to a separate CTO-approved pass,
-      not run automatically in this implementation session. Awaiting
-      CTO review of PR #19 before either (a) a real Windows smoke is
-      authorized, or (b) this PR is marked ready and considered for
-      merge into feat/initial-engine under this session's own merge
-      authority (requires an explicit CTO PASS on this exact head first
-      - not assumed from GitHub's "mergeable" status alone).
+      CTO review round 1 corrections pushed (commit e62a987, exact HEAD
+      e62a987b7b0b8a586db0b9b45b64311f2e887570). CI for this exact head
+      had not yet registered a check run at time of writing (checked
+      via three methods - check-runs API, workflow-runs list, `gh pr
+      checks` - all consistently empty; not polled further, per this
+      task's own no-recurring-polling instruction). PR #19 remains
+      draft, targeting feat/initial-engine (not main), not merged. Real
+      end-to-end production smoke (including any real YouTube upload)
+      still deferred to a separate CTO-approved pass. Awaiting CTO
+      re-review of this exact head before either (a) a real Windows
+      smoke is authorized, or (b) this PR is marked ready and
+      considered for merge under this session's own merge authority
+      (requires an explicit CTO PASS on this exact head first - not
+      assumed from GitHub's "mergeable" status alone).
 
 # Other branches observed on origin at the time this registry was created
 # that are NOT yet registered as tasks (owner/scope unknown to this agent —

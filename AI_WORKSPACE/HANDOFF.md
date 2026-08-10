@@ -1431,3 +1431,31 @@ While writing `tests/test_production_run_cli.py`, the publish-path tests initial
 
 Merge authorized: no
 Deploy authorized: no
+
+## RCE-20260810-PRODUCTION10 — 2026-08-10 (CTO review round 1 corrections pushed)
+
+Task ID: RCE-20260810-PRODUCTION10
+Agent: claude
+Branch: feat/production-runner
+Previous HEAD: 570c7a81980bcde24641e15e48ae93735181cbfc (exact-head CI later completed RED - run 31392736396, 367 passed/1 failed)
+New HEAD: e62a987b7b0b8a586db0b9b45b64311f2e887570
+PR: #19 (still draft, targeting feat/initial-engine, not main)
+Status: review — CI for this exact head had not yet registered a check run at time of writing (checked via check-runs API, workflow-runs list, and `gh pr checks` - all consistently empty; not polled further)
+Files changed: src/robin_content_engine/production_runner.py, src/robin_content_engine/cli.py, tests/test_production_run_cli.py, tests/test_production_runner.py — same allowed_paths as the initial implementation, no other paths touched
+Tests: 398 passed (349 baseline + 49, up from 368/19), independently run before pushing; no network required
+Ruff: all checks passed
+Mypy (focused: production_runner.py, cli.py): no issues found (same pre-existing, unrelated numpy-stub/py3.11 environment mismatch bypass as every prior phase)
+Diff check: clean
+Known blockers: none for the implementation. Real Windows end-to-end production smoke (including any real upload) still intentionally NOT run - deferred to a separate CTO-approved pass.
+Next action: wait for CI to register and for CTO re-review of this exact head.
+Merge authorized: no
+Deploy authorized: no
+
+### CTO review (Binz2008-star, OWNER, posted directly on PR #19) and this round's response
+
+Six blockers were raised: (1) exact-head CI was RED; (2) the PR implemented only a manual per-job helper, not the authorized operational runner; (3) missing read-only status command; (4) missing automatic deterministic publish metadata; (5) resume/package trust too weak - an existing package directory was loaded and reported reusable without validating its bytes/hash/QC; (6) automatic selection needed to skip already-published/ambiguous jobs without a DB schema change.
+
+All six addressed in commit `e62a987`: (1) fixed a Typer/Rich hyphen-wrap text-matching fragility in the failing test (a Linux-CI-only text-wrapping difference, not a CLI behavior bug - see `ACTIVE_TASKS.yaml`'s `cto_review_round1_correction_2026-08-10` for the full explanation); (2) added `production-run-once` (capture-scan first, never auto-confirms rights, deterministic single-job selection, full pipeline, then publish - dry-run by default); (3) added read-only `production-status [--json]`; (4) added `build_automatic_metadata()` (no LLM, no TTS); (5) `run_production()` now always re-validates an existing package via `publishing.validate_package()` (the Phase 9 contract) before reuse - `ProductionRunResult.package` is now `PackageValidation`, not the narrower `PackageResult`; (6) `local_upload_state()` derives published/ambiguous/none purely from `upload_receipt.json`/`upload_attempt.json` existence, no schema change. 30 new regression tests. No real YouTube write performed.
+
+Merge authorized: no
+Deploy authorized: no
