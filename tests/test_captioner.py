@@ -17,6 +17,7 @@ from robin_content_engine import captioner as captioner_module  # noqa: E402
 from robin_content_engine.captioner import (  # noqa: E402
     CaptionError,
     burn_captions,
+    escape_subtitles_filter_path,
     segments_to_srt,
 )
 from robin_content_engine.transcription import TranscriptSegment  # noqa: E402
@@ -164,7 +165,7 @@ def test_rejects_output_with_wrong_duration_and_cleans_up_failed_attempt(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(captioner_module, "_probe_output", lambda path: (999.0, 64, 64))
+    monkeypatch.setattr(captioner_module, "_probe_output", lambda path: (999.0, 64, 64, 10.0))
     output_path = tmp_path / "out.mp4"
 
     with pytest.raises(CaptionError, match="duration"):
@@ -179,10 +180,25 @@ def test_rejects_output_with_wrong_dimensions_and_cleans_up_failed_attempt(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(captioner_module, "_probe_output", lambda path: (4.0, 999, 999))
+    monkeypatch.setattr(captioner_module, "_probe_output", lambda path: (4.0, 999, 999, 10.0))
     output_path = tmp_path / "out.mp4"
 
     with pytest.raises(CaptionError, match="dimensions"):
+        burn_captions(source_video, output_path, segments)
+
+    assert not output_path.exists()
+
+
+def test_rejects_output_with_wrong_fps_and_cleans_up_failed_attempt(
+    source_video: Path,
+    segments: list[TranscriptSegment],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(captioner_module, "_probe_output", lambda path: (4.0, 64, 64, 999.0))
+    output_path = tmp_path / "out.mp4"
+
+    with pytest.raises(CaptionError, match="FPS"):
         burn_captions(source_video, output_path, segments)
 
     assert not output_path.exists()
@@ -196,3 +212,85 @@ def test_no_leftover_srt_file(
     burn_captions(source_video, output_path, segments)
 
     assert not output_path.with_suffix(".srt").exists()
+
+
+# ---------------------------------------------------------------------------
+# CTO review round 1: partial-output cleanup, probe-failure cleanup, and
+# path escaping (regression coverage)
+# ---------------------------------------------------------------------------
+
+
+def test_cleans_up_partial_output_on_ffmpeg_failure(
+    source_video: Path,
+    segments: list[TranscriptSegment],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A failed ffmpeg run can still have written a partial/corrupt file to
+    the output path before exiting non-zero. burn_captions() must delete
+    that partial output (never video_path) so a retry at the same
+    deterministic path isn't blocked by "already exists"."""
+    output_path = tmp_path / "out.mp4"
+
+    def fake_run(cmd: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        # cmd's last element is the output path this call was asked to
+        # produce - simulate ffmpeg having written a partial file before
+        # failing.
+        Path(cmd[-1]).write_bytes(b"partial, corrupt output")
+        return subprocess.CompletedProcess(cmd, returncode=1, stdout="", stderr="boom")
+
+    monkeypatch.setattr(captioner_module.subprocess, "run", fake_run)
+
+    with pytest.raises(CaptionError, match="ffmpeg caption burn-in failed"):
+        burn_captions(source_video, output_path, segments)
+
+    assert not output_path.exists()
+    # the real source file is a different fixture instance entirely and was
+    # never passed to fake_run as the output target - unaffected.
+    assert source_video.is_file()
+
+
+def test_cleans_up_output_when_post_encode_probe_raises(
+    source_video: Path,
+    segments: list[TranscriptSegment],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A successfully-exited ffmpeg can still leave a file that doesn't
+    parse as valid video (e.g. interrupted write, disk full mid-mux).
+    burn_captions() must catch a probe failure, clean up, and raise
+    CaptionError rather than letting a raw exception escape."""
+
+    def failing_probe(path: Path) -> tuple[float, int, int, float]:
+        raise RuntimeError("simulated corrupt output, cannot probe")
+
+    monkeypatch.setattr(captioner_module, "_probe_output", failing_probe)
+    output_path = tmp_path / "out.mp4"
+
+    with pytest.raises(CaptionError, match="Failed to probe"):
+        burn_captions(source_video, output_path, segments)
+
+    assert not output_path.exists()
+
+
+def test_escape_subtitles_filter_path_on_windows_style_path() -> None:
+    windows_path = Path(
+        r"X:\content engine\Robin-Content-Engine-v2\work\highlights\job-19.srt"
+    )
+
+    escaped = escape_subtitles_filter_path(windows_path)
+
+    assert escaped == (
+        r"filename='X\:\\content engine\\Robin-Content-Engine-v2\\work\\highlights"
+        r"\\job-19.srt'"
+    )
+    # the drive-letter colon must not survive unescaped - ffmpeg's filter
+    # option parser would otherwise treat it as a key=value separator
+    assert "X:" not in escaped
+    assert escaped.startswith("filename='")
+    assert escaped.endswith("'")
+
+
+def test_escape_subtitles_filter_path_rejects_literal_single_quote() -> None:
+    with pytest.raises(CaptionError, match="single quote"):
+        escape_subtitles_filter_path(Path("/tmp/it's-a-path.srt"))

@@ -107,3 +107,69 @@ def test_reuses_loaded_model_across_calls(
     recognizer.transcribe(media_path)
 
     assert len(_FakeWhisperModel.instances) == 1
+
+
+# ---------------------------------------------------------------------------
+# CTO review round 1: model-load and transcription failures must surface as
+# TranscriptionError, not a raw exception, so the CLI's existing
+# `except TranscriptionError` boundary actually catches them.
+# ---------------------------------------------------------------------------
+
+
+class _ExplodingOnConstructWhisperModel:
+    def __init__(self, model_size: str, *, device: str, compute_type: str) -> None:
+        raise OSError("simulated model download/load failure")
+
+
+def test_wraps_model_load_failure_as_transcription_error(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setattr(transcription_module, "WhisperModel", _ExplodingOnConstructWhisperModel)
+    media_path = tmp_path / "clip.mp4"
+    media_path.write_bytes(b"fake")
+    recognizer = FasterWhisperRecognizer(model_size="tiny")
+
+    with pytest.raises(TranscriptionError, match="Failed to load speech recognition model"):
+        recognizer.transcribe(media_path)
+
+
+class _ExplodingOnTranscribeWhisperModel:
+    def __init__(self, model_size: str, *, device: str, compute_type: str) -> None:
+        pass
+
+    def transcribe(self, media_path: str) -> tuple[list[_FakeWhisperSegment], object]:
+        raise RuntimeError("simulated runtime decoding failure")
+
+
+def test_wraps_transcribe_failure_as_transcription_error(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setattr(transcription_module, "WhisperModel", _ExplodingOnTranscribeWhisperModel)
+    media_path = tmp_path / "clip.mp4"
+    media_path.write_bytes(b"fake")
+    recognizer = FasterWhisperRecognizer(model_size="tiny")
+
+    with pytest.raises(TranscriptionError, match="Transcription failed"):
+        recognizer.transcribe(media_path)
+
+
+def test_model_load_failure_does_not_cache_a_broken_model(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A failed load must not be remembered as "loaded" - a later call
+    should retry loading, not silently reuse None or a broken state."""
+    monkeypatch.setattr(transcription_module, "WhisperModel", _ExplodingOnConstructWhisperModel)
+    media_path = tmp_path / "clip.mp4"
+    media_path.write_bytes(b"fake")
+    recognizer = FasterWhisperRecognizer(model_size="tiny")
+
+    with pytest.raises(TranscriptionError):
+        recognizer.transcribe(media_path)
+
+    monkeypatch.setattr(transcription_module, "WhisperModel", _FakeWhisperModel)
+    _FakeWhisperModel.instances.clear()
+
+    segments = recognizer.transcribe(media_path)
+
+    assert [s.text for s in segments] == ["hello there", "general kenobi"]
+    assert len(_FakeWhisperModel.instances) == 1

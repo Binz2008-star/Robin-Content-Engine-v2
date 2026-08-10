@@ -43,9 +43,15 @@ class FasterWhisperRecognizer:
 
     def _get_model(self) -> WhisperModel:
         if self._model is None:
-            self._model = WhisperModel(
-                self._model_size, device=self._device, compute_type=self._compute_type
-            )
+            try:
+                self._model = WhisperModel(
+                    self._model_size, device=self._device, compute_type=self._compute_type
+                )
+            except Exception as exc:
+                raise TranscriptionError(
+                    f"Failed to load speech recognition model '{self._model_size}' "
+                    f"(device={self._device}, compute_type={self._compute_type}): {exc}"
+                ) from exc
         return self._model
 
     def transcribe(self, media_path: Path) -> list[TranscriptSegment]:
@@ -53,12 +59,17 @@ class FasterWhisperRecognizer:
             raise TranscriptionError(f"Media file does not exist: {media_path}")
 
         model = self._get_model()
-        segments_iter, _info = model.transcribe(str(media_path))
-        return [
-            TranscriptSegment(
-                start_seconds=float(segment.start),
-                end_seconds=float(segment.end),
-                text=segment.text.strip(),
-            )
-            for segment in segments_iter
-        ]
+        try:
+            segments_iter, _info = model.transcribe(str(media_path))
+            return [
+                TranscriptSegment(
+                    start_seconds=float(segment.start),
+                    end_seconds=float(segment.end),
+                    text=segment.text.strip(),
+                )
+                for segment in segments_iter
+            ]
+        except TranscriptionError:
+            raise
+        except Exception as exc:
+            raise TranscriptionError(f"Transcription failed for {media_path}: {exc}") from exc
