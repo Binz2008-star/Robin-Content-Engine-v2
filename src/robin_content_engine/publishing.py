@@ -107,17 +107,33 @@ def _sha256_file(path: Path) -> str:
 
 
 def _resolve_packaged_video_path(package_dir: Path, manifest: dict[str, Any]) -> Path:
-    """Never trusts manifest paths blindly: only the FILENAME (basename) of
-    manifest['packaged_artifact_path'] is used, joined under package_dir and
-    resolved - a manifest claiming an absolute path or a path containing
-    '..' components can only ever resolve to a file directly inside
-    package_dir, never escape it."""
+    """Never trusts manifest paths blindly. quality_gate.package_short()
+    stores packaged_artifact_path as str(package_dir / video_name) -
+    absolute or relative depending on the dest_root it was called with
+    (both are legitimate; the CLI's default dest_root is relative, but
+    package_short() is also called directly with an absolute dest_root
+    e.g. in tests), but it NEVER contains a parent-traversal ('..') or
+    current-directory ('.') path component, since it's built purely from
+    real directory/file names. Any such component is therefore EXPLICITLY
+    rejected outright as tampering, before any file lookup is attempted -
+    not merely silently reduced away. Only after that explicit rejection
+    is the FILENAME (basename) taken, joined under package_dir, and its
+    resolved location double-checked to still be inside package_dir as
+    defense in depth - nothing outside package_dir can ever be selected."""
     raw = manifest.get("packaged_artifact_path")
     if not isinstance(raw, str) or not raw.strip():
         raise PublishingError("manifest.json packaged_artifact_path is missing or empty.")
 
-    name = Path(raw).name
-    if not name or name in (".", ".."):
+    raw_path = Path(raw)
+    if any(part in (".", "..") for part in raw_path.parts):
+        raise PublishingError(
+            "manifest.json packaged_artifact_path contains a parent-traversal or "
+            "current-directory component, which is never valid for a legitimate Phase 8D "
+            f"package (rejected as tampering): {raw!r}"
+        )
+
+    name = raw_path.name
+    if not name:
         raise PublishingError(f"manifest.json packaged_artifact_path is invalid: {raw!r}")
 
     package_dir_resolved = package_dir.resolve()
@@ -253,15 +269,27 @@ def execute_private_upload(
     tags: Sequence[str],
     settings: Settings,
     auth: YouTubeAuth,
-    uploader_factory: Callable[[], YouTubeUploader],
+    uploader_factory: Callable[..., YouTubeUploader],
     *,
     quality_gate_config: QualityGateConfig | None = None,
     now: datetime | None = None,
 ) -> UploadResult:
     """The only path in this module that may perform a real network call
-    (via whatever uploader_factory() returns) - callers control exactly
+    (via whatever uploader_factory(...) returns) - callers control exactly
     what `auth`/`uploader_factory` are, so tests can inject fakes and
     assert zero real requests are made.
+
+    THIS FUNCTION, not its caller, owns the private-only invariant:
+    uploader_factory is invoked BY this function with the exact
+    construction arguments a YouTubeUploader needs, and privacy_status is
+    always passed as the literal "private" from right here - never read
+    from settings.youtube_privacy_status, never left for the caller to
+    decide. A caller can inject a different uploader_factory for tests,
+    but cannot make this function request any privacy value other than
+    "private", since the value is a literal in this function's own source,
+    not a parameter. This closes the gap where a factory could otherwise
+    have silently constructed an uploader with a different privacy_status
+    and this service would only detect it after the remote upload.
 
     Order of operations, each gating the next:
     1. Revalidate the package (identical checks to dry_run()).
@@ -276,16 +304,22 @@ def execute_private_upload(
        configured expected channel ID; abort before constructing
        YouTubeUploader on any mismatch.
     7. Write an atomic upload_attempt.json (no secrets/tokens).
-    8. Construct the uploader (via uploader_factory - the caller is
-       responsible for hard-coding privacy_status="private" there) and
-       upload exactly the validated packaged MP4.
-    9. If anything raises from step 8 onward, the attempt marker is
-       intentionally left in place (ambiguous state - the remote upload
-       may have already succeeded even though this response was lost)
-       and a PublishingError wrapping the original is raised. No
-       automatic cleanup, no retry.
-    10. On success, confirm privacy_status == "private", write an atomic
-        upload_receipt.json, then remove the attempt marker.
+    8. Call uploader_factory(client_secret_file=..., token_file=...,
+       privacy_status="private", category_id=...) - this function's own
+       hard-coded "private", regardless of settings.youtube_privacy_status
+       - and upload exactly the validated packaged MP4.
+    9. If anything raises from step 8 through the upload call itself, the
+       attempt marker is intentionally left in place (ambiguous state -
+       the remote upload may have already succeeded even though this
+       response was lost) and a PublishingError wrapping the original is
+       raised. No automatic cleanup, no retry.
+    10. On success, confirm privacy_status == "private", then attempt to
+        write an atomic upload_receipt.json. If THAT write itself fails,
+        the remote upload has already succeeded but this package has no
+        durable record of it - the attempt marker is preserved (not
+        removed) and a PublishingError demanding operator reconciliation
+        is raised, distinct from a pre-upload failure. Only once the
+        receipt is durably written is the attempt marker removed.
     """
     validation = validate_package(package_dir, quality_gate_config=quality_gate_config)
     metadata = build_publish_metadata(title, description, tags)
@@ -330,7 +364,12 @@ def execute_private_upload(
     )
 
     try:
-        uploader = uploader_factory()
+        uploader = uploader_factory(
+            client_secret_file=settings.youtube_client_secret_file,
+            token_file=settings.youtube_token_file,
+            privacy_status="private",
+            category_id=settings.youtube_category_id,
+        )
         result = uploader.upload(validation.packaged_video_path, metadata)
     except Exception as exc:
         raise PublishingError(
@@ -348,17 +387,28 @@ def execute_private_upload(
         )
 
     receipt_path = package_dir / _RECEIPT_FILENAME
-    _write_json_atomic(
-        receipt_path,
-        {
-            "format_version": _UPLOAD_STATE_FORMAT_VERSION,
-            "package_sha256": validation.manifest["sha256"],
-            "youtube_video_id": result.youtube_id,
-            "channel_id": identity.channel_id,
-            "privacy_status": "private",
-            "uploaded_at": (now or datetime.now(UTC)).isoformat(),
-        },
-    )
+    try:
+        _write_json_atomic(
+            receipt_path,
+            {
+                "format_version": _UPLOAD_STATE_FORMAT_VERSION,
+                "package_sha256": validation.manifest["sha256"],
+                "youtube_video_id": result.youtube_id,
+                "channel_id": identity.channel_id,
+                "privacy_status": "private",
+                "uploaded_at": (now or datetime.now(UTC)).isoformat(),
+            },
+        )
+    except Exception as exc:
+        raise PublishingError(
+            f"The upload to YouTube SUCCEEDED (video ID {result.youtube_id!r}), but writing "
+            f"upload_receipt.json failed - the remote video now exists but this package has "
+            "no durable record of it. The attempt marker at "
+            f"{attempt_path} was intentionally preserved. Do not retry automatically; "
+            "operator reconciliation is required (verify the video on YouTube, then manually "
+            f"record or clean up as appropriate). Original error: {exc}"
+        ) from exc
+
     attempt_path.unlink(missing_ok=True)
 
     return result

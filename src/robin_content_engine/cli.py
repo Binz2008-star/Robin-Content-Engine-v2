@@ -939,17 +939,12 @@ def youtube_publish_package(
     settings = Settings()  # type: ignore[call-arg]
     auth = YouTubeAuth(settings.youtube_client_secret_file, settings.youtube_token_file)
 
-    def _uploader_factory() -> YouTubeUploader:
-        return YouTubeUploader(
-            client_secret_file=settings.youtube_client_secret_file,
-            token_file=settings.youtube_token_file,
-            privacy_status="private",
-            category_id=settings.youtube_category_id,
-        )
-
+    # privacy_status="private" is enforced inside execute_private_upload()
+    # itself, not here - YouTubeUploader is passed as a plain constructor
+    # so this call site has no opportunity to influence the privacy value.
     try:
         upload_result = execute_private_upload(
-            package_dir, title, description, clean_tags, settings, auth, _uploader_factory
+            package_dir, title, description, clean_tags, settings, auth, YouTubeUploader
         )
     except PublishingError as exc:
         raise typer.BadParameter(str(exc)) from exc

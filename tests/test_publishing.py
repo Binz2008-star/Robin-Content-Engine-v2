@@ -66,8 +66,49 @@ class FakeUploader:
         return self.result
 
 
-def _fake_settings(expected_channel_id: str | None = EXPECTED_CHANNEL_ID) -> SimpleNamespace:
-    return SimpleNamespace(youtube_expected_channel_id=expected_channel_id)
+def _fake_settings(
+    expected_channel_id: str | None = EXPECTED_CHANNEL_ID,
+    privacy_status: str = "public",
+) -> SimpleNamespace:
+    """privacy_status defaults to "public" deliberately - execute_private_
+    upload() must never read or be influenced by this field; it always
+    supplies "private" itself when constructing the uploader."""
+    return SimpleNamespace(
+        youtube_expected_channel_id=expected_channel_id,
+        youtube_client_secret_file=Path("client_secret.json"),
+        youtube_token_file=Path("token.json"),
+        youtube_category_id="20",
+        youtube_privacy_status=privacy_status,
+    )
+
+
+def _factory_for(uploader: FakeUploader) -> Any:
+    """A minimal uploader_factory matching execute_private_upload()'s real
+    contract (called with client_secret_file/token_file/privacy_status/
+    category_id keyword arguments) that ignores them and returns a
+    pre-built fake - used by every test that doesn't care about exactly
+    what was passed. RecordingUploaderFactory (below) is used instead
+    where a test needs to inspect the received kwargs."""
+
+    def factory(**kwargs: Any) -> FakeUploader:
+        return uploader
+
+    return factory
+
+
+class RecordingUploaderFactory:
+    """Records every call's kwargs so a test can assert exactly what
+    execute_private_upload() passed - in particular, that privacy_status
+    is always "private" regardless of what settings.youtube_privacy_status
+    says."""
+
+    def __init__(self, uploader: FakeUploader) -> None:
+        self.uploader = uploader
+        self.calls: list[dict[str, Any]] = []
+
+    def __call__(self, **kwargs: Any) -> FakeUploader:
+        self.calls.append(kwargs)
+        return self.uploader
 
 
 def _make_source_video(
@@ -331,7 +372,7 @@ def test_execute_requires_expected_channel_id(package_dir: Path) -> None:
             [],
             _fake_settings(expected_channel_id=None),
             auth,
-            lambda: uploader,
+            _factory_for(uploader),
             quality_gate_config=TEST_CONFIG,
         )
 
@@ -355,7 +396,7 @@ def test_execute_missing_auth_fails_safely(package_dir: Path) -> None:
             [],
             _fake_settings(),
             auth,
-            lambda: uploader,
+            _factory_for(uploader),
             quality_gate_config=TEST_CONFIG,
         )
 
@@ -373,7 +414,7 @@ def test_execute_wrong_channel_fails_before_uploader_construction(package_dir: P
     auth = FakeAuth(channel_id=WRONG_CHANNEL_ID)
     factory_calls = {"n": 0}
 
-    def exploding_factory() -> FakeUploader:
+    def exploding_factory(**kwargs: Any) -> FakeUploader:
         factory_calls["n"] += 1
         raise AssertionError("uploader must never be constructed on a channel mismatch")
 
@@ -403,7 +444,7 @@ def test_execute_correct_channel_invokes_uploader_exactly_once(package_dir: Path
     uploader = FakeUploader()
     factory_calls = {"n": 0}
 
-    def factory() -> FakeUploader:
+    def factory(**kwargs: Any) -> FakeUploader:
         factory_calls["n"] += 1
         return uploader
 
@@ -433,7 +474,7 @@ def test_execute_success_creates_receipt(package_dir: Path) -> None:
     uploader = FakeUploader(result=UploadResult(youtube_id="videoID123", privacy_status="private"))
 
     execute_private_upload(
-        package_dir, "Title", "Description.", [], _fake_settings(), auth, lambda: uploader,
+        package_dir, "Title", "Description.", [], _fake_settings(), auth, _factory_for(uploader),
         quality_gate_config=TEST_CONFIG,
     )
 
@@ -461,7 +502,8 @@ def test_execute_refuses_when_receipt_already_exists(package_dir: Path) -> None:
 
     with pytest.raises(PublishingError, match="receipt already exists"):
         execute_private_upload(
-            package_dir, "Title", "Description.", [], _fake_settings(), auth, lambda: uploader,
+            package_dir, "Title", "Description.", [], _fake_settings(), auth,
+            _factory_for(uploader),
             quality_gate_config=TEST_CONFIG,
         )
 
@@ -480,7 +522,8 @@ def test_execute_refuses_when_attempt_marker_already_exists(package_dir: Path) -
 
     with pytest.raises(PublishingError, match="attempt marker already exists"):
         execute_private_upload(
-            package_dir, "Title", "Description.", [], _fake_settings(), auth, lambda: uploader,
+            package_dir, "Title", "Description.", [], _fake_settings(), auth,
+            _factory_for(uploader),
             quality_gate_config=TEST_CONFIG,
         )
 
@@ -498,7 +541,8 @@ def test_execute_ambiguous_failure_preserves_attempt_marker(package_dir: Path) -
 
     with pytest.raises(PublishingError, match="attempt marker"):
         execute_private_upload(
-            package_dir, "Title", "Description.", [], _fake_settings(), auth, lambda: uploader,
+            package_dir, "Title", "Description.", [], _fake_settings(), auth,
+            _factory_for(uploader),
             quality_gate_config=TEST_CONFIG,
         )
 
@@ -511,7 +555,8 @@ def test_execute_ambiguous_failure_preserves_attempt_marker(package_dir: Path) -
     # a second attempt must also be refused - no automatic retry
     with pytest.raises(PublishingError, match="attempt marker already exists"):
         execute_private_upload(
-            package_dir, "Title", "Description.", [], _fake_settings(), auth, lambda: uploader,
+            package_dir, "Title", "Description.", [], _fake_settings(), auth,
+            _factory_for(uploader),
             quality_gate_config=TEST_CONFIG,
         )
 
@@ -544,7 +589,7 @@ def test_execute_success_does_not_modify_video_or_manifest(package_dir: Path) ->
     auth = FakeAuth()
     uploader = FakeUploader()
     execute_private_upload(
-        package_dir, "Title", "Description.", [], _fake_settings(), auth, lambda: uploader,
+        package_dir, "Title", "Description.", [], _fake_settings(), auth, _factory_for(uploader),
         quality_gate_config=TEST_CONFIG,
     )
 
@@ -562,7 +607,7 @@ def test_attempt_and_receipt_contain_no_secrets(package_dir: Path) -> None:
     uploader = FakeUploader()
 
     execute_private_upload(
-        package_dir, "Title", "Description.", [], _fake_settings(), auth, lambda: uploader,
+        package_dir, "Title", "Description.", [], _fake_settings(), auth, _factory_for(uploader),
         quality_gate_config=TEST_CONFIG,
     )
 
@@ -577,10 +622,177 @@ def test_attempt_marker_contains_no_secrets_on_failure(package_dir: Path) -> Non
 
     with pytest.raises(PublishingError):
         execute_private_upload(
-            package_dir, "Title", "Description.", [], _fake_settings(), auth, lambda: uploader,
+            package_dir, "Title", "Description.", [], _fake_settings(), auth,
+            _factory_for(uploader),
             quality_gate_config=TEST_CONFIG,
         )
 
     attempt_text = (package_dir / "upload_attempt.json").read_text(encoding="utf-8").lower()
     for forbidden in ("token", "client_secret", "password", "refresh_token", "access_token"):
         assert forbidden not in attempt_text
+
+
+# ---------------------------------------------------------------------------
+# CTO review round 1, item 1: the SERVICE (not merely the caller) owns the
+# private-only invariant - execute_private_upload() itself must supply
+# privacy_status="private" when invoking uploader_factory, regardless of
+# what settings/environment configuration says.
+# ---------------------------------------------------------------------------
+
+
+def test_execute_private_upload_supplies_private_itself_even_with_public_settings(
+    package_dir: Path,
+) -> None:
+    uploader = FakeUploader()
+    recorder = RecordingUploaderFactory(uploader)
+    settings = _fake_settings(privacy_status="public")
+    assert settings.youtube_privacy_status == "public"  # sanity: environment says "public"
+
+    result = execute_private_upload(
+        package_dir,
+        "Title",
+        "Description.",
+        [],
+        settings,
+        FakeAuth(),
+        recorder,
+        quality_gate_config=TEST_CONFIG,
+    )
+
+    assert len(recorder.calls) == 1
+    assert recorder.calls[0]["privacy_status"] == "private"
+    assert recorder.calls[0]["client_secret_file"] == settings.youtube_client_secret_file
+    assert recorder.calls[0]["token_file"] == settings.youtube_token_file
+    assert recorder.calls[0]["category_id"] == settings.youtube_category_id
+    assert result.youtube_id == "abc123XYZ"
+
+
+# ---------------------------------------------------------------------------
+# CTO review round 1, item 2: explicit path-traversal rejection, proven
+# against a decoy file that legitimately exists at the traversal target's
+# basename INSIDE package_dir - validation must fail because the manifest
+# path itself is rejected as tampering, not merely because nothing was
+# found.
+# ---------------------------------------------------------------------------
+
+
+def test_validate_package_rejects_traversal_even_with_matching_decoy_in_package_dir(
+    package_dir: Path,
+) -> None:
+    # A file with the SAME basename the traversal targets, placed exactly
+    # where the (safe) basename-only fallback would have looked - proving
+    # this isn't merely "not found", the traversal itself is refused.
+    decoy = package_dir / "evil.mp4"
+    decoy.write_bytes(b"decoy content that must never be selected")
+
+    manifest = _read_manifest(package_dir)
+    manifest["packaged_artifact_path"] = "..\\..\\evil.mp4"
+    _write_manifest(package_dir, manifest)
+
+    with pytest.raises(PublishingError, match="traversal"):
+        validate_package(package_dir, quality_gate_config=TEST_CONFIG)
+
+    # the decoy was never touched/selected
+    assert decoy.read_bytes() == b"decoy content that must never be selected"
+
+
+def test_validate_package_absolute_path_to_elsewhere_is_still_contained(
+    package_dir: Path, tmp_path: Path
+) -> None:
+    # An absolute packaged_artifact_path is legitimate on its own (that's
+    # exactly what package_short() writes when called with an absolute
+    # dest_root - see test_validate_package_missing_directory_fails's
+    # sibling tests using the package_dir fixture itself). What must NOT
+    # happen is that an absolute path pointing somewhere else gets
+    # selected - only the basename is ever used, so a file elsewhere with
+    # the same basename is never picked up; here no matching file exists
+    # inside package_dir, so this fails safely as "not found", not by
+    # actually reading the outside file.
+    outside = tmp_path / "outside.mp4"
+    outside.write_bytes(b"must never be selected")
+
+    manifest = _read_manifest(package_dir)
+    manifest["packaged_artifact_path"] = str(outside)
+    _write_manifest(package_dir, manifest)
+
+    with pytest.raises(PublishingError, match="not found"):
+        validate_package(package_dir, quality_gate_config=TEST_CONFIG)
+
+
+def test_validate_package_accepts_legitimate_nested_manifest_path(package_dir: Path) -> None:
+    # A real Phase 8D manifest's packaged_artifact_path is a multi-segment
+    # relative path like "work\ready\<stem>\<stem>.mp4" - no '..'/'.'
+    # component, just real subdirectory names - and must keep working.
+    manifest = _read_manifest(package_dir)
+    video_name = Path(manifest["packaged_artifact_path"]).name
+    manifest["packaged_artifact_path"] = f"work\\ready\\{package_dir.name}\\{video_name}"
+    _write_manifest(package_dir, manifest)
+
+    validation = validate_package(package_dir, quality_gate_config=TEST_CONFIG)
+
+    assert validation.packaged_video_path == (package_dir / video_name).resolve()
+
+
+# ---------------------------------------------------------------------------
+# CTO review round 1, item 3: receipt-write ambiguous state - the uploader
+# SUCCEEDS but writing upload_receipt.json fails. The remote video may
+# already exist; this must preserve the attempt marker, never auto-retry,
+# raise PublishingError with an explicit reconciliation message, and block
+# a subsequent attempt.
+# ---------------------------------------------------------------------------
+
+
+def test_execute_receipt_write_failure_after_successful_upload_preserves_attempt(
+    package_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from robin_content_engine import publishing as publishing_module
+
+    original_write_json_atomic = publishing_module._write_json_atomic
+
+    def flaky_write(path: Path, payload: dict[str, Any]) -> None:
+        if path.name == "upload_receipt.json":
+            raise OSError("simulated disk failure while writing the receipt")
+        original_write_json_atomic(path, payload)
+
+    monkeypatch.setattr(publishing_module, "_write_json_atomic", flaky_write)
+
+    uploader = FakeUploader(result=UploadResult(youtube_id="realVideoID", privacy_status="private"))
+    recorder = RecordingUploaderFactory(uploader)
+
+    with pytest.raises(PublishingError, match="SUCCEEDED"):
+        execute_private_upload(
+            package_dir,
+            "Title",
+            "Description.",
+            [],
+            _fake_settings(),
+            FakeAuth(),
+            recorder,
+            quality_gate_config=TEST_CONFIG,
+        )
+
+    # uploader called exactly once
+    assert len(recorder.calls) == 1
+    assert len(uploader.upload_calls) == 1
+
+    # attempt marker remains, receipt absent
+    assert (package_dir / "upload_attempt.json").is_file()
+    assert not (package_dir / "upload_receipt.json").exists()
+
+    # a subsequent attempt is refused by the preserved marker - no
+    # automatic retry
+    with pytest.raises(PublishingError, match="attempt marker already exists"):
+        execute_private_upload(
+            package_dir,
+            "Title",
+            "Description.",
+            [],
+            _fake_settings(),
+            FakeAuth(),
+            recorder,
+            quality_gate_config=TEST_CONFIG,
+        )
+
+    # the blocked retry did not call the uploader again
+    assert len(recorder.calls) == 1
+    assert len(uploader.upload_calls) == 1
