@@ -1493,3 +1493,45 @@ Also corrected `production-status`: an explicitly rejected/quarantined unconfirm
 
 Merge authorized: no
 Deploy authorized: no
+
+## RCE-20260810-PRODUCTION10 — 2026-08-10 (real-smoke PoolClosed blocker, narrow correction pushed)
+
+Task ID: RCE-20260810-PRODUCTION10
+Agent: claude
+Branch: feat/production-runner
+Previous HEAD: 62d46d1cc7f1da9f1e5376839a86406357c79945 (exact-head CI confirmed SUCCESS by the CTO, run 31405151466)
+New HEAD: d2bc6f40239cf41fa11e7da27c790f760e4cd967
+PR: #19 (still draft, targeting feat/initial-engine, not main)
+Status: review — CI check "test" in_progress at time of writing (checked once, not polled)
+Files changed: src/robin_content_engine/production_runner.py, tests/test_production_runner.py, tests/test_production_run_cli.py — same allowed_paths, no other paths touched, database.py untouched
+Tests: 420 passed (416 baseline + 4 new), independently run before pushing; no network required
+Ruff: all checks passed
+Mypy (focused: production_runner.py, test_production_runner.py, test_production_run_cli.py): blocked by a pre-existing, unrelated environment issue — numpy's stub file uses Python-3.12-only `type` statement syntax while this repo's mypy config pins `python_version = "3.11"`; reproduces identically on the unmodified pre-fix HEAD 62d46d1 (confirmed via `git stash`) and does not reproduce on files with no numpy-transitive import chain (e.g. database.py passes clean) — not caused by this change
+Diff check: clean
+Known blockers: none for this correction. Real Windows end-to-end production smoke (including any real upload) remains deferred until the CTO re-authorizes a retry against this corrected head.
+Next action: wait for CI and CTO re-review of this exact head, then retry the real production-run-once smoke if authorized.
+Merge authorized: no
+Deploy authorized: no
+
+### What happened and this round's response
+
+An authorized real Windows `production-run-once` smoke (session-only `YOUTUBE_EXPECTED_CHANNEL_ID`, no `.env` write) crashed before any candidate was selected, with `psycopg_pool.PoolClosed: pool has already been opened/closed and cannot be reused`. Full detail in `ACTIVE_TASKS.yaml`'s `real_smoke_pool_closed_blocker_2026-08-10` / `real_smoke_pool_closed_correction_2026-08-10`.
+
+**Root cause:** `run_production_once()` (as of `62d46d1`) opened and closed the `JobRepository` connection pool twice in sequence — once around `scan_captures()`, a second time around `list_jobs()`. `psycopg_pool.ConnectionPool` is single-use: once closed, it cannot be reopened. The plain `FakeRepository` test double used throughout the test suite has a reentrant no-op `running()`, so this class of bug was invisible to the existing tests.
+
+Before reporting, this agent confirmed the crash had zero side effects: `production-status --json` counts were identical before/after, no stray `upload_attempt.json` files existed anywhere on disk, no code had been changed, and the exact HEAD was unchanged. Per this task's own stop-and-report discipline for a real-smoke failure, the agent stopped and reported rather than self-correcting. The CTO then posted an explicit narrow-fix directive on PR #19 (no `database.py` change unless the narrow approach proved impossible; keep the public `run_production()` contract for manual `production-run`; give `run_production_once()` exactly one `repository.running()` cycle).
+
+**Fix (commit `d2bc6f4`):**
+
+1. `run_production()`'s media-processing body (highlight analysis, 9:16 reframe, local ASR, caption burn-in with no-speech fallback, quality gate, packaging + `publishing.validate_package()`) was extracted into a new internal helper, `_run_production_loaded_job()`, which performs **zero** repository access.
+2. The public `run_production()` contract is unchanged: it still enters `repository.running()` exactly once to look up and validate the job (via `_load_rights_confirmed_local_job()`), then delegates to the new helper.
+3. A new pure function, `_validate_job_and_source()`, holds the rights/source-path/file-existence checks with no repository access — reused by both `_load_rights_confirmed_local_job()` (after its own single fetch) and directly by `run_production_once()` (against a row already in hand).
+4. `run_production_once()` now uses **exactly one** `with repository.running():` block, covering both `scan_captures()` and `list_jobs()`. Candidate selection (eligibility filter + `_precheck_local_state()`) happens after that block exits, entirely against the already-loaded snapshot. The selected candidate's row is validated via `_validate_job_and_source()` and passed straight into `_run_production_loaded_job()` — **never** through the public `run_production()`, which would otherwise try to reopen the already-closed pool.
+5. `database.py` was **not** touched — the narrow, single-repository-cycle approach was sufficient; no global pool reopen/reentrancy semantics were needed.
+
+**New test coverage:** a new `OnceOnlyFakeRepository` test double mimics the real `ConnectionPool`'s single-use lifecycle — the first `running()` entry succeeds, but any entry after the first exit raises (matching the real `PoolClosed` error text). Four new regression tests prove: `run_production_once()` opens the repository exactly once end-to-end (job selected and processed); `run_production_once()` opens the repository exactly once on the empty-queue path (no eligible candidate); manual `run_production()` still opens the repository exactly once; and `run_production_once()` never calls the public `run_production()` (a monkeypatched trap that fails the test if it is called). The existing test that had monkeypatched `run_production()` to inject a QC failure for candidate 1 (`test_run_production_once_qc_failure_on_candidate_one_never_tries_candidate_two`, plus its CLI-level counterpart) was updated to monkeypatch `_run_production_loaded_job()` instead, since `run_production_once()` no longer calls the public function at all.
+
+4 new regression tests (420 total, up from 416). No real YouTube write performed during this correction — the fix was implemented and validated entirely with fakes/local fixtures, per explicit instruction not to attempt a real upload during this round.
+
+Merge authorized: no
+Deploy authorized: no

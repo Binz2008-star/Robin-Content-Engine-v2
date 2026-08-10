@@ -1851,7 +1851,7 @@ tasks:
     branch: feat/production-runner
     base_branch: feat/initial-engine
     base_sha: 5bdb6ad87a1e5ff73c1db95665fbc13a85826180
-    current_sha: 62d46d1cc7f1da9f1e5376839a86406357c79945
+    current_sha: d2bc6f40239cf41fa11e7da27c790f760e4cd967
     pr: 19
     pr_url: https://github.com/Binz2008-star/Robin-Content-Engine-v2/pull/19
     pr_state: open (draft)
@@ -2060,19 +2060,71 @@ tasks:
       AUTO_QUARANTINE_REASON) correctly remains awaiting_rights - both
       proven by dedicated regression tests. 18 new regression tests
       (416 total, up from 398).
+    real_smoke_pool_closed_blocker_2026-08-10: >-
+      Authorized real Windows production-run-once smoke (session-only
+      YOUTUBE_EXPECTED_CHANNEL_ID, no .env modification) crashed before
+      candidate selection with psycopg_pool.PoolClosed: "pool has
+      already been opened/closed and cannot be reused". Root cause:
+      run_production_once() (commit 62d46d1) opened/closed the
+      JobRepository connection pool twice in sequence - once for
+      scan_captures(), a separate time for list_jobs() - and
+      psycopg_pool does not support reopening a pool once closed.
+      Confirmed zero side effects before stopping: production-status
+      counts identical before/after, no stray upload_attempt.json
+      anywhere, no code changed, exact head unchanged. No real YouTube
+      upload occurred (crash was pre-selection). Reported to CTO instead
+      of self-correcting, per this task's own stop-and-report discipline
+      for a real-smoke failure.
+    real_smoke_pool_closed_correction_2026-08-10: >-
+      Commit d2bc6f40239cf41fa11e7da27c790f760e4cd967, per explicit CTO
+      review directive on PR #19 (narrow fix only, no database.py
+      change). run_production()'s media-processing body (highlight
+      analysis, reframe, ASR, caption/no-speech fallback, quality gate,
+      packaging + validate_package()) extracted into a new internal
+      helper, _run_production_loaded_job(), which performs ZERO
+      repository access. Public run_production() (manual `production-
+      run`) unchanged in contract: one repository.running() cycle to
+      look up/validate the job, then delegates to the helper.
+      run_production_once() now uses exactly ONE `with
+      repository.running():` block covering both scan_captures() and
+      list_jobs(); candidate selection and (if any) media processing
+      happen after that block exits, validating the already-loaded row
+      via a new pure _validate_job_and_source() helper and calling
+      _run_production_loaded_job() directly - never the public
+      run_production(), which would otherwise try to reopen the
+      already-closed pool. database.py untouched (narrow approach was
+      sufficient; no global pool reopen/reentrancy semantics needed).
+      New OnceOnlyFakeRepository test double mimics the real
+      ConnectionPool's single-use lifecycle (raises on a second
+      running() entry after close) - the prior reentrant FakeRepository
+      could not have caught this bug. 4 new regression tests prove
+      exactly one repository lifecycle for run_production_once() (both
+      the job-selected and no-eligible-job paths) and for manual
+      run_production(), and that run_production_once() never calls the
+      public run_production(). Full suite: 420 passed, 0 failed (up
+      from 416). ruff clean. Focused mypy on touched files blocked by a
+      pre-existing, unrelated environment issue (numpy stub requires
+      Python 3.12 syntax under this repo's mypy python_version=3.11
+      config; reproduces identically on unmodified database.py's
+      sibling-free import chain vs. production_runner.py's numpy-
+      transitive imports, and reproduces identically at the pre-fix
+      HEAD 62d46d1 via git stash - confirmed not caused by this
+      change). git diff --check clean. No real YouTube upload, no
+      merge, no deploy, no main change, no .env modification.
     next_action: >-
-      CTO review round 2 corrections pushed (commit 62d46d1, exact HEAD
-      62d46d1cc7f1da9f1e5376839a86406357c79945). CI in_progress at
-      single check at time of writing (not polled further, per this
-      task's own no-recurring-polling instruction). PR #19 remains
-      draft, targeting feat/initial-engine (not main), not merged. Real
-      end-to-end production smoke (including any real YouTube upload)
-      still deferred to a separate CTO-approved pass. Awaiting CTO
-      re-review of this exact head before either (a) a real Windows
-      smoke is authorized, or (b) this PR is marked ready and
-      considered for merge under this session's own merge authority
-      (requires an explicit CTO PASS on this exact head first - not
-      assumed from GitHub's "mergeable" status alone).
+      Pool-lifecycle correction pushed (commit d2bc6f4, exact HEAD
+      d2bc6f40239cf41fa11e7da27c790f760e4cd967). CI check "test" was
+      in_progress at time of writing (checked once via the check-runs
+      API, not polled further, per this task's own no-recurring-polling
+      instruction). PR #19 remains draft, targeting feat/initial-engine
+      (not main), not merged. Real end-to-end production smoke
+      (including any real YouTube upload) remains deferred until CTO
+      re-authorizes a retry against this corrected head. Awaiting CTO
+      re-review before either (a) a real Windows smoke retry is
+      authorized, or (b) this PR is marked ready and considered for
+      merge under this session's own merge authority (requires an
+      explicit CTO PASS on this exact head first - not assumed from
+      GitHub's "mergeable" status alone).
 
 # Other branches observed on origin at the time this registry was created
 # that are NOT yet registered as tasks (owner/scope unknown to this agent —
