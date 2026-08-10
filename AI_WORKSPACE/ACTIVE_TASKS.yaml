@@ -1844,6 +1844,114 @@ tasks:
       and its own task registration before any branch or code work
       begins, per this project's standing rule.
 
+  - id: RCE-20260810-PRODUCTION10
+    title: Phase 10 — Production Runner
+    status: active
+    owner: claude
+    branch: feat/production-runner
+    base_branch: feat/initial-engine
+    base_sha: 5bdb6ad87a1e5ff73c1db95665fbc13a85826180
+    pr: pending
+    merge_allowed: false
+    deploy_allowed: false
+    authorization_note: >-
+      Authorized under an "Expanded Executive Authority" directive (chat,
+      2026-08-10) granting broad independent implementation/refactor/PR/
+      governance authority within named boundaries, rather than a
+      narrowly-scoped single-feature brief like every prior phase. No
+      prior "Phase 10" specification was found anywhere (git history,
+      this file, HANDOFF.md, GitHub issues/PRs) despite the directive
+      referring to "the previous Phase 10 directive" as the functional
+      spec - this agent searched before proceeding and used the
+      directive's own "CURRENT MISSION" section (connect Capture ->
+      Rights -> Highlight -> Cut -> Vertical -> ASR -> Captions -> QC ->
+      Package -> Private Publish into one orchestrated run) as the
+      working spec, exercising the explicitly delegated "architecture
+      decisions within Robin's established vision" / "choose the safest
+      implementation among reasonable alternatives" authority. Real
+      end-to-end production smoke (including any real YouTube upload)
+      is explicitly NOT run as part of this implementation pass - the
+      directive's own LOCAL EXECUTION AUTHORITY section lists
+      "production-run-once real local smoke" as occurring "after CTO
+      approval," and CURRENT MISSION's own closing instruction is to
+      implement, validate, open/update the Draft PR, check CI once, and
+      report to CTO review - not to execute a real smoke automatically.
+    scope: >-
+      Orchestrate the already-proven local stages (highlight analysis,
+      9:16 reframe, local ASR + caption burn-in, Phase 8D quality gate,
+      Phase 8D packaging, and optionally Phase 9A private-only YouTube
+      publish) into one command per job/rank, reusing every underlying
+      module unmodified. Resumable by construction: each stage's
+      existing deterministic filename + refuse-to-overwrite behavior is
+      used to skip already-completed expensive stages (reframe+ASR+
+      caption burn-in) on a re-run, rather than introducing a new state-
+      file format. Gracefully falls back to an uncaptioned (but still
+      vertical-reframed) artifact when a clip has no detected speech,
+      rather than failing the whole run - the only NEW behavior this
+      phase introduces beyond pure orchestration, and one explicitly
+      flagged in the directive as a decision this agent may make
+      independently. No JobRepository status/attempts mutation (kept
+      read-only, matching Phases 5-9's own pattern) - the existing
+      status/attempts fields are tied to the legacy pipeline.py
+      render/upload flow, and repurposing them for this new flow would
+      be a genuine schema/semantics decision this task's own directive
+      requires stopping and reporting before making, not a default. The
+      optional publish step reuses publishing.execute_private_upload()
+      exactly as youtube-publish-package does - zero duplicated safety
+      logic (channel-identity guard, duplicate-upload protection,
+      hard-coded private, etc.).
+    allowed_paths:
+      - src/robin_content_engine/production_runner.py
+      - src/robin_content_engine/cli.py
+      - tests/test_production_runner.py
+      - tests/test_production_run_cli.py
+    forbidden_paths:
+      - studio/**
+      - AGENTS.md
+      - CLAUDE.md
+      - AI_WORKSPACE/**
+      - main
+      - schema.sql
+      - src/robin_content_engine/database.py
+      - src/robin_content_engine/pipeline.py
+      - src/robin_content_engine/quality_gate.py
+      - src/robin_content_engine/publishing.py
+      - src/robin_content_engine/captioner.py
+      - src/robin_content_engine/transcription.py
+      - src/robin_content_engine/vertical_reframe.py
+      - src/robin_content_engine/clip_cutter.py
+      - src/robin_content_engine/scene_detector.py
+      - src/robin_content_engine/highlight_features.py
+      - src/robin_content_engine/highlight_scoring.py
+      - src/robin_content_engine/clip_selector.py
+      - src/robin_content_engine/uploader.py
+      - src/robin_content_engine/youtube_auth.py
+      - client_secret.json
+      - client_secret*.json
+      - token.json
+      - .env
+    stop_conditions:
+      - do not run a real end-to-end production smoke (including any
+        real YouTube upload) in this implementation pass - implement,
+        validate, open/update the Draft PR, check CI once, report to
+        CTO review
+      - do not merge this PR without an explicit CTO PASS on this exact
+        head, or unless it is a narrow governance/docs-only change
+      - do not touch main, do not deploy
+      - no JobRepository status/attempts mutation
+      - no schema migration - stop and report if one seems necessary
+      - do not modify quality_gate.py, publishing.py, captioner.py,
+        transcription.py, vertical_reframe.py, clip_cutter.py, or the
+        highlight scoring/selector/detector modules - reuse only
+      - the optional publish step must remain private-only, hard-coded,
+        with no CLI option to select public/unlisted
+      - tests must use fake/mocked auth/uploader only - no test may
+        contact YouTube
+      - never expose/print .env, tokens, or client secrets
+    next_action: >-
+      Implementation in progress this session - see HANDOFF.md for the
+      current state.
+
 # Other branches observed on origin at the time this registry was created
 # that are NOT yet registered as tasks (owner/scope unknown to this agent —
 # not fabricated here). Whoever owns them should add a task entry above

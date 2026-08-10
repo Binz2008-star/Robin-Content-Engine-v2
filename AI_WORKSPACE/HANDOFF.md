@@ -1367,3 +1367,28 @@ Robin's pipeline is now validated end-to-end through a real, verified, private Y
 
 Merge authorized: no
 Deploy authorized: no
+
+## RCE-20260810-PRODUCTION10 — 2026-08-10 (Phase 10 registered, implementation starting)
+
+Task ID: RCE-20260810-PRODUCTION10
+Agent: claude
+Branch: feat/production-runner (to be created from feat/initial-engine @ 5bdb6ad87a1e5ff73c1db95665fbc13a85826180)
+Base SHA: 5bdb6ad87a1e5ff73c1db95665fbc13a85826180
+Status: ACTIVE — implementation starting this session
+Merge authorized: no
+Deploy authorized: no
+
+### Authorization context
+
+This task was opened under an "Expanded Executive Authority" directive (direct chat, 2026-08-10) — a broader grant than every prior phase's narrowly-scoped single-feature brief, covering independent implementation/refactor/branch/PR/governance decisions within named boundaries (no `main` merge, no deploy, no public/unlisted YouTube, no schema migration without stopping, no unattended recurring execution before a CTO-approved real smoke, no secrets exposure). The directive referred to "the previous Phase 10 directive" as the functional specification, but this agent searched git history, `ACTIVE_TASKS.yaml`, `HANDOFF.md`, and GitHub issues/PRs and found no such prior directive anywhere — so the directive's own "CURRENT MISSION" section (orchestrate Capture → Rights → Highlight → Cut → Vertical → ASR → Captions → QC → Package → Private Publish into one run) is being used as the working spec, per the explicitly delegated architecture-decision authority.
+
+Per the same directive's own LOCAL EXECUTION AUTHORITY section ("production-run-once real local smoke" listed as occurring "after CTO approval") and CURRENT MISSION's closing instruction, this pass implements, validates, opens/updates the Draft PR, checks CI once, and reports to CTO review - it does NOT execute a real end-to-end production smoke (including any real YouTube upload) automatically.
+
+### Scope
+
+New `src/robin_content_engine/production_runner.py` orchestrates the existing proven stages for one job/rank into a single command, reusing every underlying module (`scene_detector`, `highlight_features`, `highlight_scoring`, `clip_selector`, `vertical_reframe`, `transcription`, `captioner`, `quality_gate`, `publishing`) unmodified. Resumable by construction via each stage's existing deterministic filename + refuse-to-overwrite behavior (no new state-file format). Falls back to an uncaptioned vertical artifact when a clip has no detected speech rather than failing the whole run - the one new behavioral decision this phase introduces. No `JobRepository` status/attempts mutation. Optional publish step reuses `publishing.execute_private_upload()` exactly as `youtube-publish-package` does.
+
+Implementation details (files changed, test counts, validation results, PR number) will be appended in the next HANDOFF entry once implementation is complete.
+
+Merge authorized: no
+Deploy authorized: no
