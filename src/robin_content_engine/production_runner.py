@@ -14,7 +14,7 @@ from .clip_selector import (
     suppress_overlaps,
 )
 from .config import Settings
-from .database import JobRepository
+from .database import AUTO_QUARANTINE_REASON, JobRepository
 from .highlight_features import (
     FeatureExtractionError,
     compute_scene_density,
@@ -380,6 +380,29 @@ class ProductionRunOnceResult:
     skipped: list[SkippedCandidate] = field(default_factory=list)
 
 
+def _precheck_local_state(job_id: int, package_dest_root: Path) -> str:
+    """Cheap, read-only precheck for job_id's rank-1 package - PURE
+    FILESYSTEM: a glob for this job's deterministic rank-1 package
+    directory name prefix plus marker-file existence checks. No video
+    decode, no highlight analysis, no media processing of any kind (the
+    package directory name embeds the candidate window's start/end
+    timestamps, but production-run-once always uses rank 1 against an
+    unchanged source, which is deterministic - the same candidate window
+    every time - so a prior run's package, if any, is reliably found by
+    job id prefix alone without needing to recompute the window here).
+    Returns "published", "ambiguous", or "none"."""
+    if not package_dest_root.is_dir():
+        return "none"
+    prefix = f"job-{job_id}-highlight-01-"
+    package_dirs = [p for p in package_dest_root.glob(f"{prefix}*") if p.is_dir()]
+    states = {local_upload_state(p) for p in package_dirs}
+    if "published" in states:
+        return "published"
+    if "ambiguous" in states:
+        return "ambiguous"
+    return "none"
+
+
 def run_production_once(
     repository: JobRepository,
     settings: Settings,
@@ -392,36 +415,44 @@ def run_production_once(
 ) -> ProductionRunOnceResult:
     """The operational entry point: scan for new captures (idempotent,
     never auto-confirms rights - reuses capture_scan.scan_captures()
-    unmodified), then deterministically select and fully process exactly
-    ONE eligible rights-confirmed local job.
+    unmodified), then deterministically select and process AT MOST ONE
+    eligible local job.
 
-    Selection order is ascending job id (a stable, deterministic FIFO -
-    oldest rights-confirmed job first, so a growing backlog is worked
-    through fairly rather than newest-first starving older jobs
-    forever). For each candidate in that order, run_production() is
-    called at rank 1 (this doubles as both the "is this job already
-    done" probe and the actual processing - run_production() is already
-    cheap/resumable when a valid package exists, so there is no separate
-    lighter-weight probe path to keep in sync). A candidate is skipped
-    (recorded in the result's `skipped` list, never raising) and the
-    next candidate tried when:
-      - run_production() itself raises ProductionRunError (e.g. a
-        corrupt/stale existing package, or a genuine analysis/reframe/
-        caption failure for that specific source)
-      - the quality gate fails for that candidate
-      - the resulting package's local_upload_state() is "published"
-        (already uploaded - never re-selected)
-      - the resulting package's local_upload_state() is "ambiguous" (a
-        prior upload attempt's outcome is unknown - never auto-retried,
-        operator reconciliation required)
+    Eligibility mirrors the real queue-processing contract, not merely
+    "rights confirmed": a candidate must have status == "pending",
+    rights_confirmed == True, a local source_path, and no youtube_id
+    already recorded. This deliberately excludes "uploaded", "rendered",
+    "processing", "quarantined", and "failed" rows - a rights-confirmed
+    job that was ever quarantined (including by an operator, or as a
+    legacy pipeline side effect) or already carries a youtube_id must
+    NOT be picked up automatically; it requires the existing explicit
+    operator retry path (rights-approve / a manual requeue) to become
+    "pending" again before this runner will ever touch it.
 
-    If no candidate is eligible, selected_job_id is None (the CLI prints
-    "NO ELIGIBLE JOB" and exits 0 - this is a normal empty-queue outcome,
-    not a failure). Never mutates JobRepository beyond what
+    Selection order is ascending job id (a stable, deterministic FIFO).
+    For each eligible candidate in that order, ONLY a cheap, read-only,
+    filesystem-only precheck (_precheck_local_state() - no video decode,
+    no highlight analysis) is performed to detect a pre-existing
+    receipt/attempt from an earlier run under the same job id; a
+    candidate found "published" or "ambiguous" this way is skipped
+    (recorded in `skipped`) WITHOUT any media processing, and the next
+    candidate is tried.
+
+    The moment a candidate clears that precheck, it is selected and
+    run_production() is called EXACTLY ONCE for the entire invocation.
+    Whatever happens to that one job from that point on - a quality-gate
+    failure, a package-validation failure, a genuine analysis/reframe/
+    caption error (raised as ProductionRunError, propagated to the
+    caller) - this invocation ends for that job. It never falls through
+    to try a different candidate; "at most one job processed per
+    invocation" is a hard guarantee, not merely a preference.
+
+    If no candidate clears the precheck, selected_job_id is None (the
+    CLI prints "NO ELIGIBLE JOB" and exits 0 - a normal empty-queue
+    outcome, not a failure). Never mutates JobRepository beyond what
     scan_captures() itself already does (INSERT-only registration of new
-    captures with rights_confirmed=False, per capture_scan.py's own
-    design) - no job status/attempts/rights change, no legacy
-    ContentEngine/claim_next semantics.
+    captures with rights_confirmed=False) - no job status/attempts/
+    rights change, no legacy ContentEngine/claim_next semantics.
     """
     with repository.running():
         scan_result = scan_captures(
@@ -433,35 +464,25 @@ def run_production_once(
     with repository.running():
         all_jobs = repository.list_jobs()
 
+    dest_root = package_dest_root or _DEFAULT_PACKAGE_ROOT
+
     candidates = sorted(
-        (job for job in all_jobs if job.get("rights_confirmed") and job.get("source_path")),
+        (
+            job
+            for job in all_jobs
+            if job.get("status") == "pending"
+            and job.get("rights_confirmed")
+            and job.get("source_path")
+            and not job.get("youtube_id")
+        ),
         key=lambda job: job["id"],
     )
 
     skipped: list[SkippedCandidate] = []
+    selected_job_id: int | None = None
     for job in candidates:
         job_id = job["id"]
-        try:
-            run_result = run_production(
-                job_id,
-                1,
-                repository,
-                settings,
-                horizontal_offset_ratio=horizontal_offset_ratio,
-                model_size=model_size,
-                quality_gate_config=quality_gate_config,
-                package_dest_root=package_dest_root,
-            )
-        except ProductionRunError as exc:
-            skipped.append(SkippedCandidate(job_id=job_id, reason=str(exc)))
-            continue
-
-        if not run_result.quality_gate.passed:
-            skipped.append(SkippedCandidate(job_id=job_id, reason="quality gate failed"))
-            continue
-
-        assert run_result.package is not None
-        state = local_upload_state(run_result.package.package_dir)
+        state = _precheck_local_state(job_id, dest_root)
         if state == "published":
             skipped.append(SkippedCandidate(job_id=job_id, reason="already published"))
             continue
@@ -473,18 +494,32 @@ def run_production_once(
                 )
             )
             continue
+        selected_job_id = job_id
+        break
 
+    if selected_job_id is None:
         return ProductionRunOnceResult(
-            capture_scan=scan_result,
-            selected_job_id=job_id,
-            run=run_result,
-            skipped=skipped,
+            capture_scan=scan_result, selected_job_id=None, run=None, skipped=skipped
         )
+
+    # The ONE and only run_production() call this invocation ever makes.
+    # Any exception here (ProductionRunError) propagates to the caller
+    # rather than being swallowed to try another candidate.
+    run_result = run_production(
+        selected_job_id,
+        1,
+        repository,
+        settings,
+        horizontal_offset_ratio=horizontal_offset_ratio,
+        model_size=model_size,
+        quality_gate_config=quality_gate_config,
+        package_dest_root=dest_root,
+    )
 
     return ProductionRunOnceResult(
         capture_scan=scan_result,
-        selected_job_id=None,
-        run=None,
+        selected_job_id=selected_job_id,
+        run=run_result,
         skipped=skipped,
     )
 
@@ -504,6 +539,7 @@ class JobProductionState:
 @dataclass(frozen=True)
 class ProductionStatusReport:
     awaiting_rights: int
+    rejected: int
     rights_approved_eligible: int
     processing: int
     packaged: int
@@ -520,7 +556,22 @@ def _classify_job_state(job: dict[str, Any], settings: Settings, package_dest_ro
     (comparatively expensive) highlight analysis for every job just to
     describe where it stands."""
     if not job.get("rights_confirmed"):
-        return "awaiting_rights"
+        # Mirrors JobRepository.list_pending_rights_review()'s own
+        # reviewable-state predicate exactly, so this status report is
+        # truthful about what the rights-review CLI would actually show:
+        # a job that was never reviewed (status='pending') or was only
+        # auto-quarantined before an operator could review it (the
+        # AUTO_QUARANTINE_REASON marker) is genuinely still "awaiting
+        # rights". An explicitly operator-rejected job (status=
+        # 'quarantined' with a DIFFERENT last_error, e.g. "Rights
+        # rejected by operator.") already had its rights decision made -
+        # reporting it as "awaiting rights" would be false.
+        status = job.get("status")
+        last_error = job.get("last_error")
+        auto_quarantined = status == "quarantined" and last_error == AUTO_QUARANTINE_REASON
+        if status == "pending" or auto_quarantined:
+            return "awaiting_rights"
+        return "rejected"
 
     job_id = job["id"]
     prefix = f"job-{job_id}-highlight-"
@@ -562,6 +613,7 @@ def production_status(
 
     counts = {
         "awaiting_rights": 0,
+        "rejected": 0,
         "rights_approved_eligible": 0,
         "processing": 0,
         "packaged": 0,
@@ -578,6 +630,7 @@ def production_status(
 
     return ProductionStatusReport(
         awaiting_rights=counts["awaiting_rights"],
+        rejected=counts["rejected"],
         rights_approved_eligible=counts["rights_approved_eligible"],
         processing=counts["processing"],
         packaged=counts["packaged"],

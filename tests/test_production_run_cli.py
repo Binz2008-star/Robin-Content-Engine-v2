@@ -44,13 +44,23 @@ class FakeRepository:
         yield self
 
     def seed(
-        self, *, job_id: int, source_path: str | None, rights_confirmed: bool = True
+        self,
+        *,
+        job_id: int,
+        source_path: str | None,
+        rights_confirmed: bool = True,
+        status: str = "pending",
+        youtube_id: str | None = None,
+        last_error: str | None = None,
     ) -> None:
         self.jobs[job_id] = {
             "id": job_id,
             "source_path": source_path,
             "source_title": "clip",
             "rights_confirmed": rights_confirmed,
+            "status": status,
+            "youtube_id": youtube_id,
+            "last_error": last_error,
         }
         self._next_id = max(self._next_id, job_id + 1)
 
@@ -74,6 +84,9 @@ class FakeRepository:
             "source_title": source_title,
             "rights_confirmed": rights_confirmed,
             "rights_note": rights_note,
+            "status": "pending",
+            "youtube_id": None,
+            "last_error": None,
         }
         self.enqueue_calls.append(dict(self.jobs[job_id]))
         return job_id
@@ -420,6 +433,55 @@ def test_production_run_once_no_eligible_job_prints_exact_phrase(
     assert "NO ELIGIBLE JOB" in result.output
 
 
+@pytest.mark.parametrize(
+    "excluded_status", ["uploaded", "rendered", "processing", "failed", "quarantined"]
+)
+def test_production_run_once_excludes_non_pending_status(
+    excluded_status: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = FakeRepository()
+    repo.seed(job_id=1, source_path="/tmp/whatever.mp4", status=excluded_status)
+    _patch(monkeypatch, repo, tmp_path)
+
+    result = CliRunner().invoke(cli_app, ["production-run-once"])
+
+    assert result.exit_code == 0, result.output
+    assert "NO ELIGIBLE JOB" in result.output
+    assert repo.get_job_calls == []
+
+
+def test_production_run_once_processes_at_most_one_job_on_qc_failure(
+    analyzable_video: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = FakeRepository()
+    repo.seed(job_id=1, source_path=str(analyzable_video))
+    repo.seed(job_id=2, source_path=str(analyzable_video))
+    _patch(monkeypatch, repo, tmp_path)
+    monkeypatch.setattr(cli_module, "YouTubeAuth", _explode)
+    monkeypatch.setattr(cli_module, "YouTubeUploader", _explode)
+
+    call_count = {"n": 0}
+    original_run_production = pr_module.run_production
+
+    def counting_run_production(job_id: int, rank: int, *args: Any, **kwargs: Any) -> Any:
+        call_count["n"] += 1
+        if job_id == 1:
+            from robin_content_engine.quality_gate import QualityGateConfig
+
+            kwargs["quality_gate_config"] = QualityGateConfig(
+                min_clip_seconds=100.0, max_clip_seconds=200.0
+            )
+        return original_run_production(job_id, rank, *args, **kwargs)
+
+    monkeypatch.setattr(pr_module, "run_production", counting_run_production)
+
+    result = CliRunner().invoke(cli_app, ["production-run-once"])
+
+    assert result.exit_code != 0
+    assert "Quality gate: FAIL" in result.output
+    assert call_count["n"] == 1  # candidate 2 was never attempted
+
+
 def test_production_run_once_discovers_new_capture_without_auto_approving(
     analyzable_video: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -581,6 +643,26 @@ def test_production_status_text_output(
     assert "Awaiting rights: 1" in result.output
     assert "Rights-approved eligible: 1" in result.output
     assert repo.get_job_calls == []  # status uses list_jobs(), not get_job()
+
+
+def test_production_status_rejected_job_not_shown_as_awaiting_rights(
+    analyzable_video: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = FakeRepository()
+    repo.seed(
+        job_id=1,
+        source_path=str(analyzable_video),
+        rights_confirmed=False,
+        status="quarantined",
+        last_error="Rights rejected by operator.",
+    )
+    _patch(monkeypatch, repo, tmp_path)
+
+    result = CliRunner().invoke(cli_app, ["production-status"])
+
+    assert result.exit_code == 0, result.output
+    assert "Awaiting rights: 0" in result.output
+    assert "Rejected: 1" in result.output
 
 
 def test_production_status_json_output(

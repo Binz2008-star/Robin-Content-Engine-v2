@@ -56,12 +56,18 @@ class FakeRepository:
         source_path: str | None,
         rights_confirmed: bool = True,
         source_title: str = "clip",
+        status: str = "pending",
+        youtube_id: str | None = None,
+        last_error: str | None = None,
     ) -> None:
         self.jobs[job_id] = {
             "id": job_id,
             "source_path": source_path,
             "source_title": source_title,
             "rights_confirmed": rights_confirmed,
+            "status": status,
+            "youtube_id": youtube_id,
+            "last_error": last_error,
         }
         self._next_id = max(self._next_id, job_id + 1)
 
@@ -85,6 +91,9 @@ class FakeRepository:
             "source_title": source_title,
             "rights_confirmed": rights_confirmed,
             "rights_note": rights_note,
+            "status": "pending",
+            "youtube_id": None,
+            "last_error": None,
         }
         self.enqueue_calls.append(dict(self.jobs[job_id]))
         return job_id
@@ -566,6 +575,159 @@ def test_run_production_once_rejected_rights_job_never_processed(tmp_path: Path)
     assert repo.get_job_calls == []
 
 
+# ---------------------------------------------------------------------------
+# CTO review round 2, item 1: eligibility must honor queue state, not just
+# rights_confirmed - a rights-confirmed row whose DB status is anything
+# other than "pending" (or that already carries a youtube_id) must never
+# be selected automatically.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "excluded_status", ["uploaded", "rendered", "processing", "failed", "quarantined"]
+)
+def test_run_production_once_excludes_non_pending_status(
+    excluded_status: str, tmp_path: Path
+) -> None:
+    repo = FakeRepository()
+    repo.seed(
+        job_id=1,
+        source_path="/tmp/whatever.mp4",
+        rights_confirmed=True,
+        status=excluded_status,
+    )
+    capture_dir = tmp_path / "captures"
+    capture_dir.mkdir()
+    settings = _fake_settings(tmp_path / "work", capture_dir)
+
+    result = run_production_once(repo, settings)
+
+    assert result.selected_job_id is None
+    assert repo.get_job_calls == []
+
+
+def test_run_production_once_excludes_job_with_existing_youtube_id(
+    speech_video: Path, tmp_path: Path
+) -> None:
+    repo = FakeRepository()
+    repo.seed(
+        job_id=1,
+        source_path=str(speech_video),
+        rights_confirmed=True,
+        status="pending",
+        youtube_id="MMaVyYUt8XE",
+    )
+    capture_dir = tmp_path / "captures"
+    capture_dir.mkdir()
+    settings = _fake_settings(tmp_path / "work", capture_dir)
+
+    result = run_production_once(repo, settings)
+
+    assert result.selected_job_id is None
+    assert repo.get_job_calls == []
+
+
+def test_run_production_once_pending_job_with_no_youtube_id_is_selected(
+    speech_video: Path, tmp_path: Path, patched_recognizer: type[FakeRecognizer]
+) -> None:
+    repo = FakeRepository()
+    repo.seed(
+        job_id=1,
+        source_path=str(speech_video),
+        rights_confirmed=True,
+        status="pending",
+        youtube_id=None,
+    )
+    capture_dir = tmp_path / "captures"
+    capture_dir.mkdir()
+    settings = _fake_settings(tmp_path / "work", capture_dir)
+
+    result = run_production_once(repo, settings)
+
+    assert result.selected_job_id == 1
+
+
+# ---------------------------------------------------------------------------
+# CTO review round 2, item 2: at most ONE job processed per invocation -
+# once media processing begins for the selected candidate, a failure
+# there must end the invocation, never falling through to a second
+# candidate.
+# ---------------------------------------------------------------------------
+
+
+def test_run_production_once_qc_failure_on_candidate_one_never_tries_candidate_two(
+    speech_video: Path,
+    tmp_path: Path,
+    patched_recognizer: type[FakeRecognizer],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repo = FakeRepository()
+    repo.seed(job_id=1, source_path=str(speech_video), rights_confirmed=True)
+    repo.seed(job_id=2, source_path=str(speech_video), rights_confirmed=True)
+    capture_dir = tmp_path / "captures"
+    capture_dir.mkdir()
+    settings = _fake_settings(tmp_path / "work", capture_dir)
+
+    call_count = {"n": 0}
+    original_run_production = pr_module.run_production
+
+    def counting_run_production(job_id: int, rank: int, *args: Any, **kwargs: Any) -> Any:
+        call_count["n"] += 1
+        if job_id == 1:
+            # force a QC failure for candidate 1 only, without touching
+            # candidate 2's own real (passing) run
+            strict_config = QualityGateConfig(min_clip_seconds=100.0, max_clip_seconds=200.0)
+            kwargs["quality_gate_config"] = strict_config
+        return original_run_production(job_id, rank, *args, **kwargs)
+
+    monkeypatch.setattr(pr_module, "run_production", counting_run_production)
+
+    result = run_production_once(repo, settings)
+
+    # candidate 1 (lowest id) was selected and run_production() was
+    # called for it exactly once - candidate 2 was never attempted, even
+    # though it is otherwise eligible and would have passed
+    assert call_count["n"] == 1
+    assert result.selected_job_id == 1
+    assert result.run is not None
+    assert result.run.job_id == 1
+    assert result.run.quality_gate.passed is False
+    assert result.run.package is None
+
+
+def test_run_production_once_precheck_never_runs_highlight_analysis(
+    speech_video: Path,
+    tmp_path: Path,
+    patched_recognizer: type[FakeRecognizer],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The precheck phase (scanning candidates for a pre-existing
+    receipt/attempt) must be pure filesystem - proven here by counting
+    calls to _run_highlight_analysis() and confirming it runs only once
+    (for the single selected job), never once per candidate scanned."""
+    repo = FakeRepository()
+    repo.seed(job_id=1, source_path=str(speech_video), rights_confirmed=True)
+    repo.seed(job_id=2, source_path=str(speech_video), rights_confirmed=True)
+    capture_dir = tmp_path / "captures"
+    capture_dir.mkdir()
+    settings = _fake_settings(tmp_path / "work", capture_dir)
+
+    analysis_calls = {"n": 0}
+    original_analysis = pr_module._run_highlight_analysis
+
+    def counting_analysis(*args: Any, **kwargs: Any) -> Any:
+        analysis_calls["n"] += 1
+        return original_analysis(*args, **kwargs)
+
+    monkeypatch.setattr(pr_module, "_run_highlight_analysis", counting_analysis)
+
+    run_production_once(repo, settings)
+
+    # exactly one call - from the single run_production() call for the
+    # selected job, not from prechecking both candidates
+    assert analysis_calls["n"] == 1
+
+
 def test_run_production_once_selects_exactly_one_deterministic_job(
     speech_video: Path, tmp_path: Path, patched_recognizer: type[FakeRecognizer]
 ) -> None:
@@ -695,11 +857,67 @@ def test_production_status_counts_every_state(
     status = production_status(repo, settings)
 
     assert status.awaiting_rights == 1
+    assert status.rejected == 0
     assert status.rights_approved_eligible == 1
     assert status.packaged == 1
     assert status.uploaded_private == 1
     assert status.ambiguous == 1
     assert {j.job_id for j in status.jobs} == {1, 2, 3, 4, 5}
+
+
+# ---------------------------------------------------------------------------
+# CTO review round 2, item 4: production-status truthfulness - an
+# explicitly rejected/quarantined unconfirmed job must not be shown as
+# "awaiting rights", using the same reviewable-state predicate
+# JobRepository.list_pending_rights_review() itself uses.
+# ---------------------------------------------------------------------------
+
+
+def test_production_status_explicitly_rejected_job_is_not_awaiting_rights(
+    speech_video: Path, tmp_path: Path
+) -> None:
+    repo = FakeRepository()
+    repo.seed(
+        job_id=1,
+        source_path=str(speech_video),
+        rights_confirmed=False,
+        status="quarantined",
+        last_error="Rights rejected by operator.",
+    )
+    settings = _fake_settings(tmp_path / "work")
+
+    status = production_status(repo, settings)
+
+    assert status.awaiting_rights == 0
+    assert status.rejected == 1
+    assert status.jobs[0].state == "rejected"
+
+
+def test_production_status_auto_quarantined_unconfirmed_job_still_awaiting_rights(
+    speech_video: Path, tmp_path: Path
+) -> None:
+    """An auto-quarantined-before-review job (quarantine_unconfirmed()'s
+    own AUTO_QUARANTINE_REASON marker, not an operator decision) must
+    still count as "awaiting rights", not "rejected" - it remains
+    reviewable via rights-approve/rights-reject, exactly matching
+    JobRepository.list_pending_rights_review()'s own semantics."""
+    from robin_content_engine.database import AUTO_QUARANTINE_REASON
+
+    repo = FakeRepository()
+    repo.seed(
+        job_id=1,
+        source_path=str(speech_video),
+        rights_confirmed=False,
+        status="quarantined",
+        last_error=AUTO_QUARANTINE_REASON,
+    )
+    settings = _fake_settings(tmp_path / "work")
+
+    status = production_status(repo, settings)
+
+    assert status.awaiting_rights == 1
+    assert status.rejected == 0
+    assert status.jobs[0].state == "awaiting_rights"
 
 
 def test_production_status_processing_state(

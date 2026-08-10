@@ -1054,15 +1054,30 @@ def production_run_once_command(
     """The operational Robin runner: scan the configured local capture
     directory for new gameplay recordings (idempotent registration,
     NEVER auto-confirming rights - reuses capture-scan unmodified),
-    then automatically and deterministically select exactly ONE eligible
-    rights-confirmed local job (oldest first) that has not already been
-    published and has no ambiguous prior upload attempt, and run it
-    through the full local production pipeline - highlight analysis,
-    9:16 reframe, local ASR + caption burn-in (or an uncaptioned
-    fallback if the clip has no detected speech), the Phase 8D quality
-    gate, and Phase 8D packaging - followed by a publish step using
-    fixed, deterministic, truthful metadata (no LLM, no TTS, no operator
-    input required for normal operation).
+    then automatically and deterministically select AT MOST ONE eligible
+    local job (oldest job id first) and run it through the full local
+    production pipeline - highlight analysis, 9:16 reframe, local ASR +
+    caption burn-in (or an uncaptioned fallback if the clip has no
+    detected speech), the Phase 8D quality gate, and Phase 8D
+    packaging - followed by a publish step using fixed, deterministic,
+    truthful metadata (no LLM, no TTS, no operator input required for
+    normal operation).
+
+    Eligibility mirrors the real queue-processing contract: status ==
+    "pending", rights_confirmed == True, a local source_path, and no
+    youtube_id already recorded. This deliberately excludes "uploaded",
+    "rendered", "processing", "quarantined", and "failed" jobs - such a
+    job requires the existing explicit operator retry path (rights-
+    approve / a manual requeue) to become "pending" again before this
+    command will ever touch it automatically. A cheap, read-only,
+    filesystem-only precheck (no media processing) additionally skips a
+    candidate with a pre-existing upload_receipt.json (already
+    published) or upload_attempt.json without one (ambiguous - operator
+    reconciliation required, never auto-retried) before selecting the
+    next candidate; once a candidate is actually selected, at most ONE
+    is ever run in a single invocation - a quality-gate, package, or
+    processing failure on the selected job ends that invocation rather
+    than falling through to try another job.
 
     Prints "NO ELIGIBLE JOB" and exits 0 if there is nothing to do - an
     empty queue is a normal outcome, not a failure.
@@ -1070,7 +1085,7 @@ def production_run_once_command(
     Publishing defaults to a zero-network-I/O dry run; only
     --execute-private-upload performs a real write, and it is always
     PRIVATE ONLY (no CLI option can select public/unlisted) with at most
-    ONE upload attempt per invocation - this command processes exactly
+    ONE upload attempt per invocation - this command processes at most
     one job, and publishing.execute_private_upload()'s own atomic
     duplicate-upload guard makes a second upload attempt on the same
     package impossible regardless.
@@ -1093,7 +1108,7 @@ def production_run_once_command(
             horizontal_offset_ratio=horizontal_offset,
             model_size=model_size,
         )
-    except CaptureScanError as exc:
+    except (CaptureScanError, ProductionRunError) as exc:
         raise typer.BadParameter(str(exc)) from exc
 
     scan = once_result.capture_scan
@@ -1152,9 +1167,12 @@ def production_status_command(
     ] = False,
 ) -> None:
     """Read-only status report across every job: awaiting rights,
-    rights-approved eligible, processing (local production started),
-    packaged, uploaded (private), and ambiguous upload states (a prior
-    upload attempt whose outcome is unknown - never auto-retried).
+    rejected (explicitly operator-rejected/quarantined - never
+    "awaiting rights", per the same reviewable-state predicate
+    JobRepository.list_pending_rights_review() itself uses), rights-
+    approved eligible, processing (local production started), packaged,
+    uploaded (private), and ambiguous upload states (a prior upload
+    attempt whose outcome is unknown - never auto-retried).
 
     Pure reads only - no database write, no network I/O, no video
     decoding (local state is derived entirely from deterministic
@@ -1169,6 +1187,7 @@ def production_status_command(
     if as_json:
         payload = {
             "awaiting_rights": status.awaiting_rights,
+            "rejected": status.rejected,
             "rights_approved_eligible": status.rights_approved_eligible,
             "processing": status.processing,
             "packaged": status.packaged,
@@ -1180,6 +1199,7 @@ def production_status_command(
         return
 
     typer.echo(f"Awaiting rights: {status.awaiting_rights}")
+    typer.echo(f"Rejected: {status.rejected}")
     typer.echo(f"Rights-approved eligible: {status.rights_approved_eligible}")
     typer.echo(f"Processing: {status.processing}")
     typer.echo(f"Packaged: {status.packaged}")
