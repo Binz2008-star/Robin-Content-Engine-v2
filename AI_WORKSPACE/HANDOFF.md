@@ -1325,3 +1325,45 @@ Deploy authorized: no
 
 Merge authorized: no
 Deploy authorized: no
+
+## RCE-20260810-PUBLISH9A — 2026-08-10 (Phase 9A CLOSED — merged, real dry-run + first private upload PASS)
+
+Task ID: RCE-20260810-PUBLISH9A
+Agent: claude
+Branch: feat/manual-private-publishing
+Final HEAD (PR head at merge time): 6ed6795adb8e224e4bbaa2833ec945c186bc8dd2
+PR: #18 — squash-merged into `feat/initial-engine`. Merge commit `5bdb6ad87a1e5ff73c1db95665fbc13a85826180`. `main` not touched. No deploy.
+Status: COMPLETE / CLOSED
+Merge authorized: no (operator merged directly via GitHub, independently verified below)
+Deploy authorized: no
+
+### CTO review corrections (both rounds, before merge)
+
+Round 1 (commit `36d0246`): (1) private-only enforcement moved from the CLI's own closure into `execute_private_upload()` itself, which now invokes the injected `uploader_factory` with `privacy_status="private"` as a literal in its own source, never reading `settings.youtube_privacy_status`; (2) explicit path-traversal rejection of any `..`/`.` component in the manifest's `packaged_artifact_path`, tested against a decoy file placed at the traversal target's exact basename inside the package directory; (3) a receipt-write failure after a successful upload is now distinguished from an upload failure — raises `PublishingError` stating the upload SUCCEEDED and reconciliation is required, while preserving `upload_attempt.json`.
+
+Round 2 (commit `6ed6795`): (1) traversal detection made host-OS-independent — `_split_path_components()` manually splits on both `\` and `/` regardless of platform, since `pathlib.Path`'s own parsing is host-OS-dependent and would otherwise let a Windows-style `..\..\evil.mp4` traversal slip through undetected on Linux CI; (2) the attempt-marker write changed from write-then-replace to `_create_upload_attempt_exclusive()` using `open(path, "x")` (`O_CREAT|O_EXCL`), closing a check-then-write race where two concurrent calls could both pass the early existence check before either created the marker.
+
+### Exact-head CI re-confirmed
+
+GitHub Actions API on exact head `6ed6795adb8e224e4bbaa2833ec945c186bc8dd2`: run `31388646724`, status=completed, conclusion=**SUCCESS**.
+
+### Real Windows dry-run + first real private YouTube upload — executed directly by this agent
+
+Ran on the operator's Windows machine, exact head `6ed6795`, against the Phase 8D package `work\ready\job-22-highlight-01-41000-56000-vertical-captioned\` (package SHA-256 `7036bf708a495e064b26a47801c202f038b0b514014a3f6a24bb539f114188c9`). Installed `robin-engine` still pointed at an older source tree, so the CLI was invoked as `python -m robin_content_engine.cli` with `PYTHONPATH` pointed at this branch's `src/` — no code changed, reinstalled, or committed.
+
+First pass stopped cleanly at the channel-identity preflight: `youtube_expected_channel_id` was unconfigured in the environment, so the command correctly refused before any upload attempt — exactly the documented safety-gate behavior, not a defect. The operator pasted `.env` contents directly into chat at this point (a real secrets exposure - `DATABASE_URL` and `DEEPSEEK_API_KEY` - this agent did not repeat either value back and flagged it, recommending rotation if the operator was concerned about chat-log exposure). Rather than editing `.env`, the operator re-authorized the smoke with the expected channel ID set as a session-only `$env:YOUTUBE_EXPECTED_CHANNEL_ID` (a non-secret channel identifier, never written to any file). Preflight then confirmed expected == authenticated channel (`UCIcvbGsmSwMDXxjWXq4QG8A`, "Robin", `@roben.1`). A second real dry-run PASSED (zero network I/O, confirmed no `upload_attempt.json`/`upload_receipt.json` created).
+
+`youtube-publish-package ... --execute-private-upload` was run **exactly once**: **UPLOAD SUCCESS**, YouTube video ID `MMaVyYUt8XE`, privacy `private`, elapsed 14.37s. `upload_receipt.json` created (`channel_id=UCIcvbGsmSwMDXxjWXq4QG8A`, `privacy_status=private`, `package_sha256` matching exactly); `upload_attempt.json` absent afterward (removed only after the receipt was durably written). Independent read-only `videos().list(part="status,snippet", id="MMaVyYUt8XE")` (no insert/update/delete) confirmed exactly one matching item, `snippet.channelId=UCIcvbGsmSwMDXxjWXq4QG8A`, `status.privacyStatus=private`. Post-upload integrity re-verified: packaged MP4 and `manifest.json` byte-identical (same SHA-256, size, LastWriteTime) to their pre-upload state; worktree git status clean, HEAD unchanged; no DB/JobRepository/rights mutation; no deploy; no second upload attempt.
+
+The operator's explicit, scoped, gate-by-gate re-authorization for exactly one real PRIVATE upload superseded this task's original "do not upload the Job 22 package or any other real artifact" stop condition, exactly as every prior phase's real-smoke step has superseded its own phase's pre-smoke stop condition once separately and explicitly authorized in direct chat.
+
+### Merge — independently verified by this agent (not assumed from chat alone)
+
+`gh pr view 18` confirmed `state=MERGED`, `closed=true`, `headRefOid=6ed6795adb8e224e4bbaa2833ec945c186bc8dd2` (exactly the head this agent ran the real dry-run and upload against), `mergeCommit.oid=5bdb6ad87a1e5ff73c1db95665fbc13a85826180`, `base.ref=feat/initial-engine`, `mergedAt=2026-08-10T12:47:45Z`. `git fetch` confirmed `feat/initial-engine` at `5bdb6ad87a1e5ff73c1db95665fbc13a85826180`. `main` independently re-confirmed unchanged at `5387af1f14888964b463b1fcaed8751d40ecbde6` — same SHA as the start of this entire engagement, across all fourteen phases.
+
+### Milestone
+
+Robin's pipeline is now validated end-to-end through a real, verified, private YouTube publish: Capture → Rights → Highlight → Cut → 9:16 Reframe → ASR → Captions → Quality Gate → Package → Manual Private Publish. Any further phase (public/unlisted publishing, autonomous publishing, scheduling, or anything else) requires its own separate explicit authorization and task registration.
+
+Merge authorized: no
+Deploy authorized: no
