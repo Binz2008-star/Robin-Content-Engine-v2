@@ -1388,7 +1388,46 @@ Per the same directive's own LOCAL EXECUTION AUTHORITY section ("production-run-
 
 New `src/robin_content_engine/production_runner.py` orchestrates the existing proven stages for one job/rank into a single command, reusing every underlying module (`scene_detector`, `highlight_features`, `highlight_scoring`, `clip_selector`, `vertical_reframe`, `transcription`, `captioner`, `quality_gate`, `publishing`) unmodified. Resumable by construction via each stage's existing deterministic filename + refuse-to-overwrite behavior (no new state-file format). Falls back to an uncaptioned vertical artifact when a clip has no detected speech rather than failing the whole run - the one new behavioral decision this phase introduces. No `JobRepository` status/attempts mutation. Optional publish step reuses `publishing.execute_private_upload()` exactly as `youtube-publish-package` does.
 
-Implementation details (files changed, test counts, validation results, PR number) will be appended in the next HANDOFF entry once implementation is complete.
+Implementation details for Phase 10 (files changed, test counts, validation results, PR number) will be appended in the next HANDOFF entry once implementation is complete.
+
+Merge authorized: no
+Deploy authorized: no
+
+## RCE-20260810-PRODUCTION10 — 2026-08-10 (implementation complete, Draft PR opened)
+
+Task ID: RCE-20260810-PRODUCTION10
+Agent: claude
+Branch: feat/production-runner
+Base SHA: 5bdb6ad87a1e5ff73c1db95665fbc13a85826180
+Current HEAD: 570c7a81980bcde24641e15e48ae93735181cbfc
+PR: #19 (draft, targeting feat/initial-engine, not main)
+Status: review — CI in_progress at time of writing (checked once, not polled to completion)
+Files changed: src/robin_content_engine/production_runner.py (new), src/robin_content_engine/cli.py (production-run command added) — exactly this task's allowed_paths, no other paths touched
+Tests: 368 passed (349 prior baseline + 19 new), independently run before pushing; no network required
+Ruff: all checks passed
+Mypy (focused: production_runner.py, cli.py): no issues found, verified with the same `--python-version 3.12` override used in every prior phase to bypass a pre-existing numpy-stub/py3.11 environment mismatch unrelated to this change
+Diff check: clean
+CI: in_progress at time of writing on exact head 570c7a8, checked once via the GitHub check-runs API — no recurring polling
+Known blockers: none for the implementation. Real Windows end-to-end production smoke (including any real YouTube upload) intentionally NOT run automatically this session, per this task's own authorization — deferred to a separate CTO-approved pass.
+Next action: wait for CI/CTO review; real smoke only after explicit authorization.
+Merge authorized: no
+Deploy authorized: no
+
+### Design decisions made independently under this session's expanded authority
+
+**No prior "Phase 10" spec existed.** The authorizing directive referred to "the previous Phase 10 directive" as the functional specification; this agent searched git history, `ACTIVE_TASKS.yaml`, `HANDOFF.md`, and GitHub issues/PRs before proceeding and found none. Used the directive's own "CURRENT MISSION" section (connect Capture → Rights → Highlight → Cut → Vertical → ASR → Captions → QC → Package → Private Publish into one run) as the working spec.
+
+**Duplicated rather than refactored the shared job-lookup/analysis helpers.** `cli.py` already has `_load_rights_confirmed_local_job()` and `_run_highlight_analysis()`, used by four already-shipped commands (one of which carried a real job through Phase 9A's real private YouTube upload). Rather than extracting these into a shared import (which would touch that already-proven code), `production_runner.py` defines its own field-for-field copies, accepting a small amount of duplication as the safer tradeoff - explicitly exercising the "choose the safest implementation among reasonable alternatives" delegated authority.
+
+**No JobRepository mutation.** The existing `status`/`attempts` columns are semantically tied to the legacy `pipeline.py` render/upload flow; deciding what they should mean for this new quality-gated flow is a genuine schema/semantics decision the authorizing directive itself said to stop and report rather than default into. `run_production()` stays read-only (`get_job()` only), matching every prior phase's own pattern.
+
+**No-speech fallback, not a failure.** `captioner.burn_captions()` raises `CaptionError("No non-empty transcript segments to caption.")` when a clip has no detected speech (the exact failure Phase 8C's real Job 19 smoke first surfaced). `run_production()` catches specifically this message and falls back to the reframed (uncaptioned) clip as the final artifact - any other `CaptionError`/`TranscriptionError` still propagates as a genuine failure. A silent gameplay clip with no commentary is a normal outcome, not a defect.
+
+**Resumable by construction.** Rather than a new state-file format, each expensive stage (reframe, ASR+caption-burn, packaging) is skipped on a re-run if its existing deterministic output already exists - identical filename scheme to the already-shipped `highlight-reframe`/`highlight-caption` commands, so a production-run and a manual CLI run for the same job/rank interoperate and can resume each other's partial work.
+
+### A real bug caught and fixed during test-writing (not a production code defect)
+
+While writing `tests/test_production_run_cli.py`, the publish-path tests initially collided across repeated runs on the real (gitignored, never committed) `work/ready/` directory in the worktree - `production-run`'s packaging defaults to the same literal relative `work/ready/` root `short-package` already uses (deliberately not `Settings.work_dir`-relative), so a test that doesn't isolate its working directory can hit a prior run's leftover `upload_attempt.json`/`upload_receipt.json` markers. This is expected, correct production behavior (the duplicate-upload guard doing exactly its job) surfacing a test-isolation gap, not a code defect - fixed by adding the same `monkeypatch.chdir(tmp_path)` pattern `tests/test_short_package_cli.py` already uses for the identical reason. Re-verified stable across two consecutive full test-file runs. Stray untracked `work/ready/` artifacts created while debugging were removed before committing (never staged).
 
 Merge authorized: no
 Deploy authorized: no

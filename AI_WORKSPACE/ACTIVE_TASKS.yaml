@@ -1846,12 +1846,15 @@ tasks:
 
   - id: RCE-20260810-PRODUCTION10
     title: Phase 10 — Production Runner
-    status: active
+    status: review
     owner: claude
     branch: feat/production-runner
     base_branch: feat/initial-engine
     base_sha: 5bdb6ad87a1e5ff73c1db95665fbc13a85826180
-    pr: pending
+    current_sha: 570c7a81980bcde24641e15e48ae93735181cbfc
+    pr: 19
+    pr_url: https://github.com/Binz2008-star/Robin-Content-Engine-v2/pull/19
+    pr_state: open (draft)
     merge_allowed: false
     deploy_allowed: false
     authorization_note: >-
@@ -1948,9 +1951,38 @@ tasks:
       - tests must use fake/mocked auth/uploader only - no test may
         contact YouTube
       - never expose/print .env, tokens, or client secrets
+    ci_at_exact_head: >-
+      Checked once via the GitHub check-runs API on exact head
+      570c7a81980bcde24641e15e48ae93735181cbfc: check run "test",
+      status=in_progress at time of writing (not polled to completion,
+      per this task's own no-recurring-polling instruction).
+    test_isolation_fix: >-
+      While writing tests/test_production_run_cli.py, the publish-path
+      tests initially collided on the real (gitignored, untracked)
+      work/ready/ directory in the worktree across repeated runs -
+      production-run's packaging step defaults to the same literal
+      relative "work/ready/" root as short-package (deliberately not
+      Settings.work_dir-relative, matching that command's own design),
+      so a CLI test that does not monkeypatch.chdir() into an isolated
+      tmp_path can collide with a prior run's upload_attempt.json/
+      upload_receipt.json markers under a real relative path. Fixed by
+      adding the same monkeypatch.chdir(tmp_path) isolation
+      tests/test_short_package_cli.py already uses for the identical
+      reason; re-verified stable across two consecutive full test-file
+      runs before proceeding. Stray untracked work/ready/ artifacts
+      created during debugging were removed (gitignored, never staged
+      or committed).
     next_action: >-
-      Implementation in progress this session - see HANDOFF.md for the
-      current state.
+      Phase 10 implementation complete, Draft PR #19 opened targeting
+      feat/initial-engine (not main). Not merged - per this task's own
+      authorization, real end-to-end production smoke (including any
+      real YouTube upload) is deferred to a separate CTO-approved pass,
+      not run automatically in this implementation session. Awaiting
+      CTO review of PR #19 before either (a) a real Windows smoke is
+      authorized, or (b) this PR is marked ready and considered for
+      merge into feat/initial-engine under this session's own merge
+      authority (requires an explicit CTO PASS on this exact head first
+      - not assumed from GitHub's "mergeable" status alone).
 
 # Other branches observed on origin at the time this registry was created
 # that are NOT yet registered as tasks (owner/scope unknown to this agent —
