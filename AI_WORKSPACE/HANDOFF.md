@@ -1245,3 +1245,48 @@ Editing this task's `ACTIVE_TASKS.yaml` entry for this closure initially left a 
 
 Merge authorized: no
 Deploy authorized: no
+
+## chore/agent-control-plane — 2026-08-10 (PR #5: full-file YAML syntax repair)
+
+Task: governance repair, authorized as Step 0 of RCE-20260810-PUBLISH9A
+Agent: claude
+Branch: chore/agent-control-plane
+PR: #5 (still open/draft, not merged)
+Status: COMPLETE
+
+### What was fixed
+
+Three pre-existing YAML syntax defects, all predating this session, found via `yaml.safe_load` (the same parser used to originally expose the `RCE-20260808-HIGHLIGHT7B-QV` defect):
+
+1. `RCE-20260808-HIGHLIGHT7B-QV`'s `branch:` field — an unquoted multi-line plain scalar (`branch: none — no code changes...`) — converted to `branch: >-` folded block scalar, exact text unchanged.
+2. `RCE-20260808-HIGHLIGHT-DIVERSITY`'s `merged_by:` field — a multi-line plain scalar containing `authorization: "نعمله Ready ثم...` (an embedded `: "` inside a plain scalar, parsed as a stray mapping separator) — converted to `merged_by: >-` folded block scalar, exact text unchanged.
+3. `RCE-20260808-HIGHLIGHT-CONTAINMENT`'s `merged_by:` field — same class of defect (`authorization scoped exactly to\n"squash-merge...`) — same fix, exact text unchanged.
+4. `RCE-20260808-HIGHLIGHT-DIVERSITY`'s `allowed_paths` list item `- src/robin_content_engine/cli.py  # amended 2026-08-08: ...` — a multi-line inline comment where only the first line carried a `#`, so the continuation lines were parsed as invalid sequence content — reflowed so every continuation line carries its own `#`, exact wording unchanged (only line-wrapping of the comment text differs).
+
+Verified via `git diff` that every affected field's actual text content is unchanged — only the YAML form (plain scalar → folded block scalar, or comment formatting) changed, per the explicit "do not alter the meaning or any other historical entry" instruction.
+
+### Whole-file validation
+
+`yaml.safe_load()` on the complete file: **parses with zero syntax errors**, 16 tasks (before this session's own `RCE-20260810-PUBLISH9A` registration was added in the next commit; 17 after). A separate custom loader that raises on any duplicate mapping key at any nesting level: **zero duplicate keys found anywhere in the file**.
+
+Merge authorized: no (PR #5 left open/draft, not merged, per explicit instruction)
+Deploy authorized: no
+
+## RCE-20260810-PUBLISH9A — 2026-08-10 (Phase 9A registered, implementation starting)
+
+Task ID: RCE-20260810-PUBLISH9A
+Agent: claude
+Branch: feat/manual-private-publishing (to be created from feat/initial-engine @ a909175ce98e6e28ce71e30875cb3718f2c4223f)
+Base SHA: a909175ce98e6e28ce71e30875cb3718f2c4223f
+Status: ACTIVE — implementation starting this session
+Merge authorized: no
+Deploy authorized: no
+
+### Scope
+
+Manual, PRIVATE-ONLY publishing path connecting a validated Phase 8D `work/ready/<package>/` artifact to the existing `YouTubeAuth`/`YouTubeUploader` code (reused unmodified, no new YouTube SDK/client). This authorization covers IMPLEMENTATION and offline/dry-run testing ONLY — it does not authorize any real YouTube upload, no live `videos().insert` call, no public/unlisted upload, no autonomous publishing. `privacy_status` is hard-forced to `"private"` with no CLI option able to select public/unlisted. Manual operator-supplied metadata only (title/description/tags) — no LLM/automated metadata generation. See `AI_WORKSPACE/ACTIVE_TASKS.yaml` for the full stop-condition list, including the mandatory duplicate-upload safety contract (atomic `upload_attempt.json`/`upload_receipt.json`, no `--force`, ambiguous-state preservation on an uploader exception after upload execution has begun) and the channel-identity guard (authenticated channel ID must exactly match `youtube_expected_channel_id` before `YouTubeUploader` is ever constructed).
+
+Implementation details (files changed, test counts, validation results, PR number) will be appended in the next HANDOFF entry once implementation is complete.
+
+Merge authorized: no
+Deploy authorized: no

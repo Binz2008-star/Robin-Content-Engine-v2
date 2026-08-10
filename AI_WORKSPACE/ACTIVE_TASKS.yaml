@@ -1655,6 +1655,102 @@ tasks:
       - do not run a real Windows smoke automatically in this phase
       - do not merge, do not deploy
 
+  - id: RCE-20260810-PUBLISH9A
+    title: Phase 9A — Manual Private Publishing Integration
+    status: active
+    owner: claude
+    branch: feat/manual-private-publishing
+    base_branch: feat/initial-engine
+    base_sha: a909175ce98e6e28ce71e30875cb3718f2c4223f
+    pr: pending
+    merge_allowed: false
+    deploy_allowed: false
+    scope: >-
+      Connect a validated Phase 8D work/ready/<package>/ artifact to the
+      existing YouTubeAuth/YouTubeUploader code via a highly controlled,
+      manual, PRIVATE-ONLY publishing path. This authorizes
+      IMPLEMENTATION and offline/dry-run testing only - it does NOT
+      authorize a real YouTube video upload. No videos().insert call may
+      be executed under this task; no public/unlisted upload; no
+      autonomous publishing. Reuses the existing YouTubeAuth/
+      YouTubeUploader unmodified (no new YouTube SDK/client). The new
+      publishing path hard-forces privacy_status="private" - no CLI
+      option can select public/unlisted, and this is not inherited from
+      environment configuration. Manual operator-supplied metadata only
+      (title/description/tags) - no LLM/automated metadata generation of
+      any kind in this phase.
+    allowed_paths:
+      - src/robin_content_engine/publishing.py
+      - src/robin_content_engine/cli.py
+      - tests/test_publishing.py
+      - tests/test_youtube_publish_cli.py
+      - src/robin_content_engine/uploader.py
+        # only if a genuinely necessary small compatibility refactor is
+        # proven first - not a default target
+    forbidden_paths:
+      - studio/**
+      - AGENTS.md
+      - CLAUDE.md
+      - AI_WORKSPACE/**
+      - main
+      - schema.sql
+      - src/robin_content_engine/pipeline.py
+      - src/robin_content_engine/database.py
+      - src/robin_content_engine/quality_gate.py
+      - src/robin_content_engine/captioner.py
+      - src/robin_content_engine/vertical_reframe.py
+      - src/robin_content_engine/clip_cutter.py
+      - src/robin_content_engine/scene_detector.py
+      - src/robin_content_engine/highlight_features.py
+      - src/robin_content_engine/highlight_scoring.py
+      - src/robin_content_engine/clip_selector.py
+      - src/robin_content_engine/capture_scan.py
+      - src/robin_content_engine/channel_repository.py
+      - src/robin_content_engine/youtube_sync.py
+      - src/robin_content_engine/youtube_auth.py
+        # reused, not modified, unless a proven compatibility need
+        # surfaces - not a default target
+      - client_secret.json
+      - client_secret*.json
+      - token.json
+      - .env
+    stop_conditions:
+      - no real YouTube upload, no live videos().insert call, in this
+        task under any circumstance
+      - no public or unlisted upload - privacy_status is hard-forced to
+        "private" with no CLI option to override it
+      - do not upload the Job 22 package or any other real artifact
+      - do not change or delete an existing YouTube video
+      - no DB/JobRepository mutation, no job status/attempts/rights
+        change, no ContentEngine construction
+      - no LLM/DeepSeek/OpenAI metadata generation - manual
+        operator-supplied title/description/tags only
+      - no browser OAuth in the publish command - load existing
+        credentials non-interactively only; fail safely and point the
+        operator at `youtube-auth` if missing
+      - the real-upload code path must revalidate the package, require
+        youtube_expected_channel_id, verify the authenticated channel ID
+        exactly matches it, and abort before constructing YouTubeUploader
+        on any mismatch
+      - mandatory duplicate-upload safety - an atomic upload_attempt.json
+        (no secrets/tokens) before calling the uploader; refuse a new
+        attempt if upload_attempt.json or upload_receipt.json already
+        exists; no --force option in this phase; if the uploader raises
+        after upload execution has begun, preserve the
+        attempt/ambiguous-state record rather than auto-clearing and
+        retrying (the remote upload may have already succeeded) -
+        require operator reconciliation before any future retry
+      - do not trust manifest paths blindly - resolve paths and require
+        the packaged video to remain inside the supplied package
+        directory; reject path traversal/escaped paths
+      - tests must use fake/mocked auth/uploader only - no test may
+        contact YouTube
+      - one Draft PR targeting feat/initial-engine, not main
+      - check exact-head CI once, no recurring/background polling
+      - do not merge, do not deploy
+      - do not reinstall/repair the shared editable install as part of
+        this task
+
 # Other branches observed on origin at the time this registry was created
 # that are NOT yet registered as tasks (owner/scope unknown to this agent —
 # not fabricated here). Whoever owns them should add a task entry above
