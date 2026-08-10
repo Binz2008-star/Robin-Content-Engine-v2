@@ -1120,3 +1120,55 @@ Any further phase (model-size benchmarking, caption styling, publishing, or anyt
 
 Merge authorized: no
 Deploy authorized: no
+
+## RCE-20260808-CAPTIONS8C — 2026-08-10 (real captioning smoke closed)
+
+Task ID: RCE-20260808-CAPTIONS8C
+Agent: claude
+Branch: feat/vertical-captions-mvp (exact HEAD 3968486290a5ea2559221a3e8c7f689f63ce7ca2, independently re-verified before this closure)
+PR: #16 (already merged, see prior entry — this entry only closes the previously-open real-smoke item)
+Status: COMPLETE / CLOSED (real-smoke item now resolved)
+Merge authorized: no
+Deploy authorized: no
+
+### Exact-head CI re-confirmed
+
+GitHub check-runs API on exact head `3968486290a5ea2559221a3e8c7f689f63ce7ca2`: check run "test", status=completed, conclusion=**SUCCESS**.
+
+### Real smoke — executed directly by this agent this session (not operator-reported)
+
+Unlike every prior real-data phase in this project, this session's sandbox has real Windows filesystem/DB access, so this agent ran the commands itself rather than relying on operator report.
+
+**Run 1 (job 19, exact head 3968486):** `robin-engine highlight-caption 19 --rank 1 --model-size base`. faster-whisper `base` model downloaded successfully (verified present in the local Hugging Face cache afterward). Transcription produced **zero non-empty transcript segments** (no detected speech in job 19's rank-1 candidate audio) — command correctly failed with `Invalid value: No non-empty transcript segments to caption.` (exit code 2), the documented no-speech path, not a defect. Elapsed 173.4s. Job 19 `status`/`attempts`/`rights_confirmed` and the source file's size (774,585,683 bytes) and LastWriteTime were independently confirmed unchanged before and after (read via a direct `JobRepository.get_job()` call, not just CLI output).
+
+**Run 2 (job 22, per operator direction — needed a speech-containing capture):** `robin-engine capture-scan` discovered 3 new local Fortnite captures (jobs 20/21/22, all `created_at` today vs job 19's 2026-08-08); operator selected job 22 (`Fortnite   2026-08-08 16-03-14.mp4`) after this agent surfaced the ambiguity rather than guessing. `rights-show 22` confirmed newly-discovered/unconfirmed; `rights-approve 22 --note "Personally recorded Fortnite gameplay with operator microphone commentary, confirmed by operator."` confirmed rights; `rights-show 22` re-confirmed `rights_confirmed=true`. `robin-engine highlight-caption 22 --rank 1 --model-size base` **PASSED** — model reused from cache (no re-download, per the operator's instruction), 1 non-empty transcript segment, candidate window 41.0s–56.0s (15.0s, score 0.510, crop 810x1440 at x=875). Output `work\highlights\job-22-highlight-01-41000-56000-vertical-captioned.mp4`: exists, 8,833,903 bytes, 810x1440 (9:16 ✅), ~24.43 fps, 14.98s duration. Elapsed 60.3s. Job 22 `status`(pending)/`attempts`(0)/`rights_confirmed`(true) and the source file's size (119,192,294 bytes) and LastWriteTime were independently confirmed unchanged before and after. Repo tracked git status remained clean throughout; HEAD unchanged.
+
+Operator reviewed the job-22 output and reported: the spoken audio is colloquial Arabic; the beginning of the speech was captioned correctly, but the rest of the clip's speech has no visible captions — consistent with the "1 transcript segment" result for a 15s clip. Operator explicitly judged this **acceptable**, not a blocker requiring a fix in this phase (recorded for any future phase that revisits transcription completeness for non-English/dialectal audio).
+
+No upload, no YouTube write, no deploy, no `pipeline.run_once()` in either run.
+
+### Closure
+
+Phase 8C is now fully closed — merge verified (prior entry) and real smoke executed and reported (this entry). New baseline for the next phase remains `feat/initial-engine @ 5781882d1ba00330e72a3d825f0fc2b1e03e4fab`. Next phase (8D — Final Short Quality Gate / Packaging MVP) is a separate task, registered as `RCE-20260810-QUALITY8D` — see the next entry.
+
+Merge authorized: no
+Deploy authorized: no
+
+## RCE-20260810-QUALITY8D — 2026-08-10 (Phase 8D registered, implementation starting)
+
+Task ID: RCE-20260810-QUALITY8D
+Agent: claude
+Branch: feat/final-short-quality-gate (to be created from feat/initial-engine @ 5781882d1ba00330e72a3d825f0fc2b1e03e4fab)
+Base SHA: 5781882d1ba00330e72a3d825f0fc2b1e03e4fab
+Status: ACTIVE — implementation starting this session
+Merge authorized: no
+Deploy authorized: no
+
+### Scope
+
+Final LOCAL automated quality gate for an already-produced local short: inspect a produced artifact and decide PASS or FAIL-with-explicit-reasons (existence, non-empty, decodability, duration bounds, 9:16 aspect ratio, valid width/height, valid FPS, audio presence, non-black start/end frames with a conservative threshold, sampled-frame decode integrity, metadata NaN/invalid-value checks), plus a separate packaging command that copies a PASS-ing artifact and a JSON manifest (with SHA-256) into `work/ready/`. No publishing/upload in this phase. See `AI_WORKSPACE/ACTIVE_TASKS.yaml` for the full stop-condition list (no YouTube/uploader/pipeline.run_once, no JobRepository mutation, no cloud AI/LLM, no yt-dlp, no semantic/CV/engagement scoring).
+
+Implementation details (Build-vs-Adopt decision, files changed, test counts, validation results, PR number) will be appended in the next HANDOFF entry once implementation is complete.
+
+Merge authorized: no
+Deploy authorized: no

@@ -1443,6 +1443,48 @@ tasks:
       real-smoke phase in this project (4-8B), this closure records the
       merge as verified but the real captioning smoke as an open item,
       not as passed.
+    exact_head_ci_2026-08-10: >-
+      Independently re-confirmed by this agent via the GitHub check-runs
+      API on exact head 3968486290a5ea2559221a3e8c7f689f63ce7ca2:
+      check run "test", status=completed, conclusion=SUCCESS.
+    real_smoke_result_2026-08-10: >-
+      The previously-open real captioning smoke item is now closed. This
+      agent executed both runs directly (this session's sandbox has real
+      filesystem/DB/Windows access, unlike prior phases' sandboxes) on
+      the operator's Windows machine, exact head
+      3968486290a5ea2559221a3e8c7f689f63ce7ca2, branch
+      feat/vertical-captions-mvp, via the real `robin-engine` CLI (no
+      manual DB writes). Run 1: `robin-engine highlight-caption 19
+      --rank 1 --model-size base` - faster-whisper base model downloaded
+      successfully (confirmed present in the local Hugging Face cache
+      afterward), transcription ran, but produced zero non-empty
+      transcript segments (job 19's rank-1 candidate audio has no
+      detected speech) - the command correctly failed with "Invalid
+      value: No non-empty transcript segments to caption." (exit code
+      2), exactly the documented no-speech failure path, not a defect;
+      elapsed 173.4s; job 19 status/attempts/rights and the source file
+      size+LastWriteTime were all independently confirmed unchanged
+      before and after. Run 2 (per operator direction, to get a
+      speech-containing capture): `robin-engine capture-scan` discovered
+      3 new local Fortnite captures (jobs 20/21/22); operator selected
+      job 22; `rights-show 22` confirmed unconfirmed/pending;
+      `rights-approve 22 --note "Personally recorded Fortnite gameplay
+      with operator microphone commentary, confirmed by operator."`
+      confirmed rights; `robin-engine highlight-caption 22 --rank 1
+      --model-size base` PASSED - model reused from cache (no
+      re-download), 1 non-empty transcript segment, output
+      `work\highlights\job-22-highlight-01-41000-56000-vertical-captioned.mp4`,
+      810x1440 (9:16), ~24.43fps, 14.98s duration, 8,833,903 bytes,
+      elapsed 60.3s; job 22 status(pending)/attempts(0)/rights(confirmed)
+      and source file size(119,192,294 bytes)/LastWriteTime were all
+      independently confirmed unchanged before and after. Operator
+      reviewed the output and reported the spoken audio is colloquial
+      Arabic; the beginning of the speech was captioned correctly but
+      the remainder of the clip has no visible captions (consistent with
+      the "1 transcript segment" result for a 15s window) - operator
+      explicitly judged this acceptable (not a blocker) rather than a
+      defect requiring a fix in this phase. No upload, no YouTube write,
+      no deploy, no pipeline.run_once() in either run.
     merge_verification: >-
       Independently verified by this agent via GitHub `pull_request_read`
       and `get_commit` (not assumed from the PR comment or from chat).
@@ -1455,17 +1497,90 @@ tasks:
       (same SHA as the start of this entire engagement, across all ten
       phases).
     next_action: >-
-      Phase 8C CLOSED (merge-verified). PR #16 squash-merged into
-      feat/initial-engine only; main untouched; no deploy. UNLIKE prior
-      phases, the real Job 19 caption smoke was never run or reported via
-      direct chat before merge - if/when the operator runs it on their
-      own machine, record the result here (and note this sandbox cannot
-      run it itself regardless of authorization, per the egress-proxy
-      block on the Hugging Face model download). New baseline for the
-      next phase is feat/initial-engine @
-      5781882d1ba00330e72a3d825f0fc2b1e03e4fab. Any further phase
-      requires its own separate explicit authorization and task
-      registration.
+      Phase 8C CLOSED (merge-verified) AND real-smoke item now closed as
+      of 2026-08-10 - see real_smoke_result_2026-08-10 above. New
+      baseline for the next phase is feat/initial-engine @
+      5781882d1ba00330e72a3d825f0fc2b1e03e4fab. Next phase (8D - Final
+      Short Quality Gate / Packaging MVP) separately authorized and
+      registered below as RCE-20260810-QUALITY8D.
+
+  - id: RCE-20260810-QUALITY8D
+    title: Phase 8D — Final Short Quality Gate / Packaging MVP
+    status: active
+    owner: claude
+    branch: feat/final-short-quality-gate
+    base_branch: feat/initial-engine
+    base_sha: 5781882d1ba00330e72a3d825f0fc2b1e03e4fab
+    pr: pending
+    merge_allowed: false
+    deploy_allowed: false
+    scope: >-
+      Final LOCAL automated quality gate for an already-produced local
+      short (Phase 8C's highlight-caption output, or equivalent), per
+      explicit operator direction. Inspects a produced artifact and
+      decides PASS or FAIL-with-explicit-reasons: file existence/
+      non-empty, decodability, duration bounds, 9:16 aspect ratio, valid
+      width/height, valid FPS, audio presence, non-black start/end
+      frames (conservative threshold - must not falsely reject normal
+      dark Fortnite gameplay), sampled-frame decode integrity, and
+      metadata NaN/invalid-value checks. A separate packaging command
+      copies a PASS-ing artifact plus a JSON manifest (including
+      SHA-256) into work/ready/ - never uploads. No semantic gameplay
+      judgment, caption OCR, ASR correctness scoring, profanity
+      filtering, CV subject detection, thumbnail scoring, or engagement
+      prediction in this phase.
+    allowed_paths:
+      - src/robin_content_engine/quality_gate.py
+      - src/robin_content_engine/cli.py
+      - src/robin_content_engine/models.py
+      - tests/test_quality_gate.py
+      - tests/test_short_qc_cli.py
+      - tests/test_short_package_cli.py
+    forbidden_paths:
+      - studio/**
+      - AGENTS.md
+      - CLAUDE.md
+      - AI_WORKSPACE/**
+      - main
+      - schema.sql
+      - src/robin_content_engine/api.py
+      - src/robin_content_engine/uploader.py
+      - src/robin_content_engine/pipeline.py
+      - src/robin_content_engine/youtube_auth.py
+      - src/robin_content_engine/capture_scan.py
+      - src/robin_content_engine/channel_repository.py
+      - src/robin_content_engine/youtube_sync.py
+      - src/robin_content_engine/database.py
+      - src/robin_content_engine/scene_detector.py
+      - src/robin_content_engine/highlight_features.py
+      - src/robin_content_engine/highlight_scoring.py
+      - src/robin_content_engine/clip_selector.py
+      - src/robin_content_engine/clip_cutter.py
+      - src/robin_content_engine/vertical_reframe.py
+      - src/robin_content_engine/captioner.py
+      - src/robin_content_engine/transcription.py
+      - client_secret.json
+      - client_secret*.json
+      - token.json
+      - .env
+    stop_conditions:
+      - no YouTube call, no uploader.py, no pipeline.run_once()
+      - no JobRepository mutation - no job status/attempts/rights change
+      - no production DB required for short-qc (must work offline)
+      - no LLM/cloud AI, no yt-dlp, no cloud QA service
+      - no semantic gameplay judgment, caption OCR, ASR correctness
+        scoring, profanity filtering, CV subject detection, thumbnail
+        scoring, or engagement prediction
+      - never modify/delete the inspected artifact or any prior-phase
+        output
+      - packaging must refuse to overwrite an existing destination
+      - one Draft PR targeting feat/initial-engine, not main
+      - check exact-head CI once, no recurring/background polling
+      - do not run a real Windows smoke automatically in this phase
+      - do not merge, do not deploy
+    next_action: >-
+      Implementation in progress this session - see HANDOFF.md for the
+      current state.
 
 # Other branches observed on origin at the time this registry was created
 # that are NOT yet registered as tasks (owner/scope unknown to this agent —
