@@ -33,9 +33,11 @@ from .highlight_features import (
 from .highlight_scoring import score_windows
 from .models import HighlightCandidateResult, HighlightScanResult
 from .pipeline import ContentEngine
+from .publishing import PublishingError, dry_run, execute_private_upload
 from .quality_gate import PackagingError, package_short, run_quality_gate
 from .scene_detector import SceneBoundary, SceneDetectionError, detect_scenes
 from .transcription import FasterWhisperRecognizer, TranscriptionError
+from .uploader import YouTubeUploader
 from .vertical_reframe import VerticalReframeError, reframe_to_vertical
 from .youtube_auth import AuthState, YouTubeAuth, YouTubeAuthError
 from .youtube_sync import YouTubeChannelSync, YouTubeSyncError
@@ -849,6 +851,112 @@ def short_package(
     typer.echo(f"Packaged artifact: {result.packaged_video_path}")
     typer.echo(f"Manifest: {result.manifest_path}")
     typer.echo(f"SHA-256: {result.manifest['sha256']}")
+
+
+@app.command("youtube-publish-package")
+def youtube_publish_package(
+    package_dir: Annotated[
+        Path, typer.Argument(help="A Phase 8D work/ready/<package>/ directory to publish.")
+    ],
+    title: Annotated[
+        str,
+        typer.Option(
+            "--title", help="Video title. Manual, operator-supplied - never LLM-generated."
+        ),
+    ],
+    description: Annotated[
+        str,
+        typer.Option(
+            "--description",
+            help="Video description. Manual, operator-supplied - never LLM-generated.",
+        ),
+    ],
+    tags: Annotated[
+        list[str] | None,
+        typer.Option("--tag", help="Video tag (repeatable). Manual, operator-supplied."),
+    ] = None,
+    execute_upload: Annotated[
+        bool,
+        typer.Option(
+            "--execute-private-upload",
+            help=(
+                "Actually perform the upload (PRIVATE ONLY - hard-coded, not configurable "
+                "here). Without this flag the command only validates and never touches "
+                "YouTube."
+            ),
+        ),
+    ] = False,
+) -> None:
+    """Publish one validated Phase 8D package to YouTube as a PRIVATE video.
+
+    privacy_status is hard-coded to "private" - there is no option on this
+    command capable of selecting public or unlisted.
+
+    DEFAULT BEHAVIOR IS DRY RUN: validates package integrity (manifest,
+    byte size, SHA-256, path-traversal-safe artifact resolution), re-runs
+    the Phase 8D quality gate fresh, and validates title/description/tags
+    - all with zero network I/O. It never constructs YouTubeAuth or
+    YouTubeUploader, never loads an OAuth token, and never calls YouTube.
+    Exit code 0 on a passing dry run; non-zero with an explicit reason on
+    any validation failure.
+
+    Only with --execute-private-upload does this command touch YouTube:
+    it revalidates the package, requires youtube_expected_channel_id to be
+    configured, loads existing OAuth credentials non-interactively (no
+    browser - if missing, it fails and tells the operator to run
+    `robin-engine youtube-auth` separately) and verifies the authenticated
+    channel exactly matches the expected channel ID before ever
+    constructing an uploader. A local upload_attempt.json /
+    upload_receipt.json pair in the package directory guards against a
+    duplicate upload (no --force option); if the uploader raises after
+    upload execution has begun, the attempt marker is intentionally left
+    in place for operator reconciliation rather than being auto-cleared
+    for a retry, since the remote upload may have already succeeded.
+
+    Never claims a queue job, never touches JobRepository/rights/job
+    status, never calls pipeline.run_once() or ContentEngine.
+    """
+    clean_tags = tags or []
+
+    if not execute_upload:
+        try:
+            result = dry_run(package_dir, title, description, clean_tags)
+        except PublishingError as exc:
+            raise typer.BadParameter(str(exc)) from exc
+
+        media = result.validation.quality_gate.media
+        typer.echo("DRY RUN PASS")
+        typer.echo(f"Package SHA-256: {result.validation.manifest.get('sha256')}")
+        typer.echo(
+            f"Media: duration={media.duration_seconds}s, {media.width}x{media.height}, "
+            f"fps={media.fps}, audio={media.has_audio}"
+        )
+        typer.echo(f"Title: {result.metadata.title}")
+        typer.echo(f"Tag count: {len(result.metadata.tags)}")
+        typer.echo("Privacy: private")
+        return
+
+    settings = Settings()  # type: ignore[call-arg]
+    auth = YouTubeAuth(settings.youtube_client_secret_file, settings.youtube_token_file)
+
+    def _uploader_factory() -> YouTubeUploader:
+        return YouTubeUploader(
+            client_secret_file=settings.youtube_client_secret_file,
+            token_file=settings.youtube_token_file,
+            privacy_status="private",
+            category_id=settings.youtube_category_id,
+        )
+
+    try:
+        upload_result = execute_private_upload(
+            package_dir, title, description, clean_tags, settings, auth, _uploader_factory
+        )
+    except PublishingError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+
+    typer.echo("UPLOAD SUCCESS")
+    typer.echo(f"YouTube video ID: {upload_result.youtube_id}")
+    typer.echo(f"Privacy: {upload_result.privacy_status}")
 
 
 @app.command()
