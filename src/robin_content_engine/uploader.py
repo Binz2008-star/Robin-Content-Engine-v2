@@ -1,18 +1,44 @@
 import json
 import random
 import time
+from collections.abc import Sequence
 from pathlib import Path
+from typing import Protocol
 
 import httplib2  # type: ignore[import-untyped]
 from googleapiclient.discovery import build  # type: ignore[import-untyped]
 from googleapiclient.errors import HttpError  # type: ignore[import-untyped]
 from googleapiclient.http import MediaFileUpload  # type: ignore[import-untyped]
 
-from .models import GeneratedContent, UploadResult
+from .models import UploadResult
 from .youtube_auth import YouTubeAuth, YouTubeAuthError
 
 RETRIABLE_STATUS_CODES = {500, 502, 503, 504}
 RETRIABLE_EXCEPTIONS = (httplib2.HttpLib2Error, OSError, TimeoutError)
+
+
+class UploadableContent(Protocol):
+    """Structural type for anything uploadable: only title/description/tags
+    are ever read by YouTubeUploader.upload() - this is intentionally
+    narrower than the full GeneratedContent model (which also carries a
+    `script` field this module never uses) so callers that don't run the
+    generation pipeline (e.g. a manual/operator-authored publish path)
+    aren't forced to fabricate an unused field just to satisfy this type.
+    GeneratedContent already satisfies this Protocol structurally, with no
+    change needed to models.py or any existing caller.
+
+    Declared as read-only properties (not plain attributes) so mypy checks
+    structural compatibility covariantly - a plain attribute would demand
+    an exact, settable type match, rejecting a frozen dataclass or a
+    `list[str]` field matching a `Sequence[str]` declaration even though
+    both are perfectly fine for this module's read-only use."""
+
+    @property
+    def title(self) -> str: ...
+    @property
+    def description(self) -> str: ...
+    @property
+    def tags(self) -> Sequence[str]: ...
 
 
 class UploadNotAuthenticatedError(RuntimeError):
@@ -33,7 +59,7 @@ class YouTubeUploader:
         self.category_id = category_id
         self._auth = YouTubeAuth(client_secret_file, token_file)
 
-    def upload(self, video_path: Path, content: GeneratedContent) -> UploadResult:
+    def upload(self, video_path: Path, content: UploadableContent) -> UploadResult:
         if not video_path.is_file():
             raise FileNotFoundError(f"Rendered video not found: {video_path}")
 
