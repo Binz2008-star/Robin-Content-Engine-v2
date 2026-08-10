@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import subprocess
 import sys
 from contextlib import contextmanager
@@ -18,22 +19,31 @@ import pytest  # noqa: E402
 from robin_content_engine import production_runner as pr_module  # noqa: E402
 from robin_content_engine.production_runner import (  # noqa: E402
     ProductionRunError,
+    build_automatic_metadata,
+    local_upload_state,
+    production_status,
     run_production,
+    run_production_once,
 )
 from robin_content_engine.quality_gate import QualityGateConfig  # noqa: E402
 from robin_content_engine.transcription import TranscriptSegment  # noqa: E402
 
 
 class FakeRepository:
-    """Only implements `running()` and `get_job()` - the only two calls
-    run_production() is allowed to make. Any attempt to call a mutating
-    method (approve_rights, claim_job, mark_*, ...) raises AttributeError,
-    which fails a test relying on it - that absence is itself the proof
-    of read-only, no-job-state-mutation behavior."""
+    """Only implements running()/get_job()/list_jobs()/enqueue_api_job() -
+    the only calls run_production()/run_production_once()/
+    production_status() are allowed to make. Any attempt to call a
+    status/attempts/rights-mutating method raises AttributeError, which
+    fails a test relying on it - that absence is itself the proof of
+    read-only (beyond capture registration), no-job-state-mutation
+    behavior."""
 
     def __init__(self) -> None:
         self.jobs: dict[int, dict[str, Any]] = {}
+        self._next_id = 1
         self.get_job_calls: list[int] = []
+        self.list_jobs_calls = 0
+        self.enqueue_calls: list[dict[str, Any]] = []
 
     @contextmanager
     def running(self):
@@ -53,11 +63,31 @@ class FakeRepository:
             "source_title": source_title,
             "rights_confirmed": rights_confirmed,
         }
+        self._next_id = max(self._next_id, job_id + 1)
 
     def get_job(self, job_id: int) -> dict[str, Any] | None:
         self.get_job_calls.append(job_id)
         job = self.jobs.get(job_id)
         return dict(job) if job else None
+
+    def list_jobs(self) -> list[dict[str, Any]]:
+        self.list_jobs_calls += 1
+        return [dict(j) for j in self.jobs.values()]
+
+    def enqueue_api_job(
+        self, *, source_path: str, source_title: str, rights_confirmed: bool, rights_note: str
+    ) -> int:
+        job_id = self._next_id
+        self._next_id += 1
+        self.jobs[job_id] = {
+            "id": job_id,
+            "source_path": source_path,
+            "source_title": source_title,
+            "rights_confirmed": rights_confirmed,
+            "rights_note": rights_note,
+        }
+        self.enqueue_calls.append(dict(self.jobs[job_id]))
+        return job_id
 
 
 class FakeRecognizer:
@@ -81,8 +111,12 @@ class FakeRecognizer:
         return list(FakeRecognizer.segments)
 
 
-def _fake_settings(work_dir: Path) -> SimpleNamespace:
-    return SimpleNamespace(work_dir=work_dir)
+def _fake_settings(work_dir: Path, capture_dir: Path | None = None) -> SimpleNamespace:
+    return SimpleNamespace(
+        work_dir=work_dir,
+        capture_source_dir=capture_dir or (work_dir / "captures"),
+        capture_stability_wait_seconds=0.0,
+    )
 
 
 def _make_video(
@@ -98,12 +132,11 @@ def _make_video(
     most of a 20s clip, so the video itself must never go black or the
     reframed output would legitimately fail quality_gate's black-frame
     checks) with 10s of silence then 10s of (optionally) a 440Hz tone as
-    the audio track, giving highlight scoring a real audio-activity
-    signal to peak on without needing any visual scene cut. with_speech=
-    False keeps a genuine silent (anullsrc) audio STREAM throughout -
-    present but with no signal, so it still satisfies quality_gate's
-    audio_present check (stream existence, not content) while faster-
-    whisper legitimately returns no transcribable speech."""
+    the audio track. with_speech=False keeps a genuine silent (anullsrc)
+    audio STREAM throughout - present but with no signal, so it still
+    satisfies quality_gate's audio_present check (stream existence, not
+    content) while faster-whisper legitimately returns no transcribable
+    speech."""
     ffmpeg = imageio_ffmpeg.get_ffmpeg_exe()
     second_audio_src = "sine=f=440:r=16000:d=10" if with_speech else "anullsrc=r=16000:cl=mono:d=10"
     cmd = [
@@ -139,6 +172,18 @@ def _make_video(
     return path
 
 
+@pytest.fixture(autouse=True)
+def _isolate_cwd(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """run_production()'s packaging step defaults to the literal relative
+    "work/ready/" root (deliberately not Settings.work_dir-relative,
+    matching short-package's own design) - every test must run from its
+    own isolated cwd, or repeated runs (and, worse, different test
+    files reusing the same small job ids) collide on the same real
+    work/ready/ directory and its upload_attempt.json/upload_receipt.json
+    markers. autouse so no test can forget this."""
+    monkeypatch.chdir(tmp_path)
+
+
 @pytest.fixture(scope="module")
 def speech_video(tmp_path_factory: pytest.TempPathFactory) -> Path:
     out = tmp_path_factory.mktemp("prod_runner_speech") / "speech.mp4"
@@ -154,12 +199,23 @@ def silent_video(tmp_path_factory: pytest.TempPathFactory) -> Path:
 @pytest.fixture(autouse=True)
 def _reset_fake_recognizer_instances() -> None:
     FakeRecognizer.instances.clear()
+    FakeRecognizer.segments = [
+        TranscriptSegment(start_seconds=0.0, end_seconds=2.0, text="hello there"),
+        TranscriptSegment(start_seconds=2.0, end_seconds=4.0, text="general kenobi"),
+    ]
 
 
 @pytest.fixture
 def patched_recognizer(monkeypatch: pytest.MonkeyPatch) -> type[FakeRecognizer]:
     monkeypatch.setattr(pr_module, "FasterWhisperRecognizer", FakeRecognizer)
     return FakeRecognizer
+
+
+def _write_marker(
+    package_dir: Path, filename: str, payload: dict[str, Any] | None = None
+) -> None:
+    text = json.dumps(payload or {"status": "started"})
+    (package_dir / filename).write_text(text, encoding="utf-8")
 
 
 # ---------------------------------------------------------------------------
@@ -184,6 +240,7 @@ def test_run_production_happy_path_with_captions(
     assert result.package is not None
     assert result.package.package_dir.is_dir()
     assert result.package.manifest["quality_gate_passed"] is True
+    assert result.package.quality_gate.passed is True
     assert repo.get_job_calls == [1]
 
 
@@ -200,13 +257,7 @@ def test_run_production_no_speech_falls_back_to_uncaptioned(
     repo.seed(job_id=2, source_path=str(silent_video), rights_confirmed=True)
     settings = _fake_settings(tmp_path / "work")
 
-    try:
-        result = run_production(2, 1, repo, settings)
-    finally:
-        FakeRecognizer.segments = [
-            TranscriptSegment(start_seconds=0.0, end_seconds=2.0, text="hello there"),
-            TranscriptSegment(start_seconds=2.0, end_seconds=4.0, text="general kenobi"),
-        ]
+    result = run_production(2, 1, repo, settings)
 
     assert result.has_captions is False
     assert result.caption_segment_count == 0
@@ -283,8 +334,6 @@ def test_run_production_quality_gate_failure_yields_no_package(
     repo = FakeRepository()
     repo.seed(job_id=7, source_path=str(speech_video), rights_confirmed=True)
     settings = _fake_settings(tmp_path / "work")
-    # A config whose bounds the real produced clip cannot satisfy - forces
-    # a genuine, deterministic QC failure rather than an exception.
     strict_config = QualityGateConfig(min_clip_seconds=100.0, max_clip_seconds=200.0)
 
     result = run_production(7, 1, repo, settings, quality_gate_config=strict_config)
@@ -323,7 +372,6 @@ def test_run_production_second_run_reuses_reframe_and_caption(
     finally:
         pr_module.reframe_to_vertical = original_reframe  # type: ignore[assignment]
 
-    # neither the reframe nor a new recognizer/transcription happened again
     assert reframe_calls["n"] == 1
     assert len(FakeRecognizer.instances) == 1
 
@@ -333,7 +381,7 @@ def test_run_production_second_run_reuses_reframe_and_caption(
     assert second.package.manifest == first.package.manifest
 
 
-def test_run_production_second_run_reuses_package(
+def test_run_production_second_run_reuses_and_revalidates_package(
     speech_video: Path, tmp_path: Path, patched_recognizer: type[FakeRecognizer]
 ) -> None:
     repo = FakeRepository()
@@ -347,11 +395,53 @@ def test_run_production_second_run_reuses_package(
     second = run_production(9, 1, repo, settings)
 
     assert second.package is not None
-    # package was not recreated - same manifest, same mtime (package_short
-    # was never called again, since it would have refused an overwrite
-    # and raised had it been attempted against an existing directory)
+    # package_short() was never called again on the second run (it would
+    # have refused to overwrite and raised) - the manifest is untouched
     assert second.package.manifest_path.stat().st_mtime == manifest_mtime_before
     assert second.package.package_dir == first.package.package_dir
+    # but it WAS re-validated (quality_gate re-run fresh, per the Phase 9
+    # contract) rather than blindly trusted
+    assert second.package.quality_gate.passed is True
+
+
+# ---------------------------------------------------------------------------
+# Corrupt/stale package is rejected, not blindly reused
+# ---------------------------------------------------------------------------
+
+
+def test_run_production_rejects_corrupt_existing_package(
+    speech_video: Path, tmp_path: Path, patched_recognizer: type[FakeRecognizer]
+) -> None:
+    repo = FakeRepository()
+    repo.seed(job_id=10, source_path=str(speech_video), rights_confirmed=True)
+    settings = _fake_settings(tmp_path / "work")
+
+    first = run_production(10, 1, repo, settings)
+    assert first.package is not None
+
+    # Tamper with the packaged bytes after the fact - simulates disk
+    # corruption or an out-of-band edit. SHA-256 not matching the
+    # manifest must be caught, not silently reused.
+    with first.package.packaged_video_path.open("ab") as handle:
+        handle.write(b"\x00" * 16)
+
+    with pytest.raises(ProductionRunError, match="failed validation"):
+        run_production(10, 1, repo, settings)
+
+
+def test_run_production_rejects_package_with_deleted_manifest(
+    speech_video: Path, tmp_path: Path, patched_recognizer: type[FakeRecognizer]
+) -> None:
+    repo = FakeRepository()
+    repo.seed(job_id=11, source_path=str(speech_video), rights_confirmed=True)
+    settings = _fake_settings(tmp_path / "work")
+
+    first = run_production(11, 1, repo, settings)
+    assert first.package is not None
+    first.package.manifest_path.unlink()
+
+    with pytest.raises(ProductionRunError, match="failed validation"):
+        run_production(11, 1, repo, settings)
 
 
 # ---------------------------------------------------------------------------
@@ -366,10 +456,284 @@ def test_run_production_does_not_modify_source(
     original_mtime = speech_video.stat().st_mtime
 
     repo = FakeRepository()
-    repo.seed(job_id=10, source_path=str(speech_video), rights_confirmed=True)
+    repo.seed(job_id=12, source_path=str(speech_video), rights_confirmed=True)
     settings = _fake_settings(tmp_path / "work")
 
-    run_production(10, 1, repo, settings)
+    run_production(12, 1, repo, settings)
 
     assert speech_video.stat().st_size == original_size
     assert speech_video.stat().st_mtime == original_mtime
+
+
+# ---------------------------------------------------------------------------
+# local_upload_state()
+# ---------------------------------------------------------------------------
+
+
+def test_local_upload_state_none(tmp_path: Path) -> None:
+    package_dir = tmp_path / "pkg"
+    package_dir.mkdir()
+    assert local_upload_state(package_dir) == "none"
+
+
+def test_local_upload_state_ambiguous(tmp_path: Path) -> None:
+    package_dir = tmp_path / "pkg"
+    package_dir.mkdir()
+    _write_marker(package_dir, "upload_attempt.json")
+    assert local_upload_state(package_dir) == "ambiguous"
+
+
+def test_local_upload_state_published(tmp_path: Path) -> None:
+    package_dir = tmp_path / "pkg"
+    package_dir.mkdir()
+    _write_marker(package_dir, "upload_receipt.json")
+    assert local_upload_state(package_dir) == "published"
+
+
+def test_local_upload_state_receipt_wins_over_attempt(tmp_path: Path) -> None:
+    package_dir = tmp_path / "pkg"
+    package_dir.mkdir()
+    _write_marker(package_dir, "upload_attempt.json")
+    _write_marker(package_dir, "upload_receipt.json")
+    assert local_upload_state(package_dir) == "published"
+
+
+# ---------------------------------------------------------------------------
+# build_automatic_metadata()
+# ---------------------------------------------------------------------------
+
+
+def test_build_automatic_metadata_is_deterministic_and_truthful() -> None:
+    title, description = build_automatic_metadata("Fortnite 2026-08-08 16-03-14")
+
+    assert title == "Fortnite 2026-08-08 16-03-14 — Highlight"
+    assert description == (
+        "Automatically processed from operator-owned gameplay by Robin Content Engine."
+    )
+    # deterministic: same input always yields the same output
+    assert build_automatic_metadata("Fortnite 2026-08-08 16-03-14") == (title, description)
+
+
+# ---------------------------------------------------------------------------
+# run_production_once(): capture scan + automatic selection
+# ---------------------------------------------------------------------------
+
+
+def test_run_production_once_no_eligible_job(tmp_path: Path) -> None:
+    repo = FakeRepository()
+    capture_dir = tmp_path / "captures"
+    capture_dir.mkdir()
+    settings = _fake_settings(tmp_path / "work", capture_dir)
+
+    result = run_production_once(repo, settings)
+
+    assert result.selected_job_id is None
+    assert result.run is None
+    assert result.capture_scan.videos_discovered == 0
+
+
+def test_run_production_once_new_capture_discovered_never_auto_approved(
+    speech_video: Path, tmp_path: Path
+) -> None:
+    import shutil
+
+    repo = FakeRepository()
+    capture_dir = tmp_path / "captures"
+    capture_dir.mkdir()
+    shutil.copy(speech_video, capture_dir / "new_capture.mp4")
+    settings = _fake_settings(tmp_path / "work", capture_dir)
+
+    result = run_production_once(repo, settings)
+
+    assert result.capture_scan.new_registered == 1
+    assert len(repo.enqueue_calls) == 1
+    assert repo.enqueue_calls[0]["rights_confirmed"] is False
+    # the newly (unconfirmed) discovered job is not eligible for automatic
+    # processing - rights were never auto-approved
+    assert result.selected_job_id is None
+
+
+def test_run_production_once_rejected_rights_job_never_processed(tmp_path: Path) -> None:
+    repo = FakeRepository()
+    repo.seed(job_id=1, source_path="/tmp/whatever.mp4", rights_confirmed=False)
+    capture_dir = tmp_path / "captures"
+    capture_dir.mkdir()
+    settings = _fake_settings(tmp_path / "work", capture_dir)
+
+    result = run_production_once(repo, settings)
+
+    assert result.selected_job_id is None
+    assert repo.get_job_calls == []
+
+
+def test_run_production_once_selects_exactly_one_deterministic_job(
+    speech_video: Path, tmp_path: Path, patched_recognizer: type[FakeRecognizer]
+) -> None:
+    repo = FakeRepository()
+    repo.seed(job_id=5, source_path=str(speech_video), rights_confirmed=True)
+    repo.seed(job_id=3, source_path=str(speech_video), rights_confirmed=True)
+    capture_dir = tmp_path / "captures"
+    capture_dir.mkdir()
+    settings = _fake_settings(tmp_path / "work", capture_dir)
+
+    result = run_production_once(repo, settings)
+
+    # lowest job id wins (deterministic FIFO), never both
+    assert result.selected_job_id == 3
+    assert result.run is not None
+    assert result.run.job_id == 3
+
+
+def test_run_production_once_skips_already_published_job(
+    speech_video: Path, tmp_path: Path, patched_recognizer: type[FakeRecognizer]
+) -> None:
+    repo = FakeRepository()
+    repo.seed(job_id=1, source_path=str(speech_video), rights_confirmed=True)
+    capture_dir = tmp_path / "captures"
+    capture_dir.mkdir()
+    settings = _fake_settings(tmp_path / "work", capture_dir)
+
+    # process it once and mark it published
+    first = run_production_once(repo, settings)
+    assert first.selected_job_id == 1
+    assert first.run is not None and first.run.package is not None
+    _write_marker(first.run.package.package_dir, "upload_receipt.json")
+
+    second = run_production_once(repo, settings)
+
+    assert second.selected_job_id is None
+    assert any(s.job_id == 1 and "published" in s.reason for s in second.skipped)
+
+
+def test_run_production_once_ambiguous_job_stopped_not_reselected(
+    speech_video: Path, tmp_path: Path, patched_recognizer: type[FakeRecognizer]
+) -> None:
+    repo = FakeRepository()
+    repo.seed(job_id=1, source_path=str(speech_video), rights_confirmed=True)
+    capture_dir = tmp_path / "captures"
+    capture_dir.mkdir()
+    settings = _fake_settings(tmp_path / "work", capture_dir)
+
+    first = run_production_once(repo, settings)
+    assert first.run is not None and first.run.package is not None
+    _write_marker(first.run.package.package_dir, "upload_attempt.json")
+
+    second = run_production_once(repo, settings)
+
+    assert second.selected_job_id is None
+    assert any(s.job_id == 1 and "ambiguous" in s.reason for s in second.skipped)
+
+
+def test_run_production_once_falls_through_to_second_eligible_job(
+    speech_video: Path, tmp_path: Path, patched_recognizer: type[FakeRecognizer]
+) -> None:
+    repo = FakeRepository()
+    repo.seed(job_id=1, source_path=str(speech_video), rights_confirmed=True)
+    repo.seed(job_id=2, source_path=str(speech_video), rights_confirmed=True)
+    capture_dir = tmp_path / "captures"
+    capture_dir.mkdir()
+    settings = _fake_settings(tmp_path / "work", capture_dir)
+
+    first = run_production_once(repo, settings)
+    assert first.selected_job_id == 1
+    assert first.run is not None and first.run.package is not None
+    _write_marker(first.run.package.package_dir, "upload_receipt.json")
+
+    second = run_production_once(repo, settings)
+
+    assert second.selected_job_id == 2
+
+
+def test_run_production_once_no_db_mutation_beyond_capture_registration(
+    speech_video: Path, tmp_path: Path, patched_recognizer: type[FakeRecognizer]
+) -> None:
+    repo = FakeRepository()
+    repo.seed(job_id=1, source_path=str(speech_video), rights_confirmed=True)
+    capture_dir = tmp_path / "captures"
+    capture_dir.mkdir()
+    settings = _fake_settings(tmp_path / "work", capture_dir)
+
+    run_production_once(repo, settings)
+
+    # FakeRepository defines no status/attempts/rights-mutating method at
+    # all - if run_production_once() had called one, this test would
+    # already have raised AttributeError above.
+    assert repo.jobs[1]["rights_confirmed"] is True
+
+
+# ---------------------------------------------------------------------------
+# production_status()
+# ---------------------------------------------------------------------------
+
+
+def test_production_status_counts_every_state(
+    speech_video: Path, tmp_path: Path, patched_recognizer: type[FakeRecognizer]
+) -> None:
+    repo = FakeRepository()
+    settings = _fake_settings(tmp_path / "work")
+
+    # 1: awaiting rights
+    repo.seed(job_id=1, source_path=str(speech_video), rights_confirmed=False)
+    # 2: rights-approved, nothing produced yet
+    repo.seed(job_id=2, source_path=str(speech_video), rights_confirmed=True)
+    # 3: will be fully packaged (not published)
+    repo.seed(job_id=3, source_path=str(speech_video), rights_confirmed=True)
+    # 4: will be published
+    repo.seed(job_id=4, source_path=str(speech_video), rights_confirmed=True)
+    # 5: will be ambiguous
+    repo.seed(job_id=5, source_path=str(speech_video), rights_confirmed=True)
+
+    packaged = run_production(3, 1, repo, settings)
+    published = run_production(4, 1, repo, settings)
+    ambiguous = run_production(5, 1, repo, settings)
+    assert packaged.package is not None
+    assert published.package is not None
+    assert ambiguous.package is not None
+    _write_marker(published.package.package_dir, "upload_receipt.json")
+    _write_marker(ambiguous.package.package_dir, "upload_attempt.json")
+
+    status = production_status(repo, settings)
+
+    assert status.awaiting_rights == 1
+    assert status.rights_approved_eligible == 1
+    assert status.packaged == 1
+    assert status.uploaded_private == 1
+    assert status.ambiguous == 1
+    assert {j.job_id for j in status.jobs} == {1, 2, 3, 4, 5}
+
+
+def test_production_status_processing_state(
+    speech_video: Path, tmp_path: Path, patched_recognizer: type[FakeRecognizer]
+) -> None:
+    """A job with a reframed/captioned file in work/highlights/ but no
+    package yet (e.g. an interrupted run before QC/packaging) reports as
+    "processing", not "rights_approved_eligible"."""
+    repo = FakeRepository()
+    repo.seed(job_id=1, source_path=str(speech_video), rights_confirmed=True)
+    settings = _fake_settings(tmp_path / "work")
+
+    result = run_production(1, 1, repo, settings)
+    assert result.package is not None
+    # simulate "not yet packaged" by removing only the package directory,
+    # leaving the reframed/captioned artifact behind in work/highlights/
+    import shutil
+
+    shutil.rmtree(result.package.package_dir)
+
+    status = production_status(repo, settings)
+
+    assert status.processing == 1
+    assert status.packaged == 0
+
+
+def test_production_status_is_read_only_no_mutation(
+    speech_video: Path, tmp_path: Path, patched_recognizer: type[FakeRecognizer]
+) -> None:
+    repo = FakeRepository()
+    repo.seed(job_id=1, source_path=str(speech_video), rights_confirmed=True)
+    settings = _fake_settings(tmp_path / "work")
+
+    production_status(repo, settings)
+
+    assert repo.list_jobs_calls >= 1
+    assert repo.get_job_calls == []  # never opens individual jobs

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+import shutil
 import subprocess
 import sys
 from contextlib import contextmanager
@@ -20,18 +22,22 @@ from robin_content_engine import production_runner as pr_module  # noqa: E402
 from robin_content_engine.cli import app as cli_app  # noqa: E402
 from robin_content_engine.models import UploadResult  # noqa: E402
 from robin_content_engine.production_runner import ProductionRunResult  # noqa: E402
-from robin_content_engine.quality_gate import QualityGateResult  # noqa: E402
+from robin_content_engine.quality_gate import (  # noqa: E402
+    MediaMetadata,
+    QualityCheck,
+    QualityGateResult,
+)
 from robin_content_engine.transcription import TranscriptSegment  # noqa: E402
 from robin_content_engine.youtube_auth import ChannelIdentity  # noqa: E402
 
 
 class FakeRepository:
-    """Only implements `running()` and `get_job()` - the only two calls
-    production-run is allowed to make."""
-
     def __init__(self) -> None:
         self.jobs: dict[int, dict[str, Any]] = {}
+        self._next_id = 1
         self.get_job_calls: list[int] = []
+        self.list_jobs_calls = 0
+        self.enqueue_calls: list[dict[str, Any]] = []
 
     @contextmanager
     def running(self):
@@ -46,11 +52,31 @@ class FakeRepository:
             "source_title": "clip",
             "rights_confirmed": rights_confirmed,
         }
+        self._next_id = max(self._next_id, job_id + 1)
 
     def get_job(self, job_id: int) -> dict[str, Any] | None:
         self.get_job_calls.append(job_id)
         job = self.jobs.get(job_id)
         return dict(job) if job else None
+
+    def list_jobs(self) -> list[dict[str, Any]]:
+        self.list_jobs_calls += 1
+        return [dict(j) for j in self.jobs.values()]
+
+    def enqueue_api_job(
+        self, *, source_path: str, source_title: str, rights_confirmed: bool, rights_note: str
+    ) -> int:
+        job_id = self._next_id
+        self._next_id += 1
+        self.jobs[job_id] = {
+            "id": job_id,
+            "source_path": source_path,
+            "source_title": source_title,
+            "rights_confirmed": rights_confirmed,
+            "rights_note": rights_note,
+        }
+        self.enqueue_calls.append(dict(self.jobs[job_id]))
+        return job_id
 
 
 class FakeRecognizer:
@@ -65,10 +91,17 @@ class FakeRecognizer:
 
 
 class FakeSettings:
-    def __init__(self, work_dir: Path, expected_channel_id: str | None = "UC_expected") -> None:
+    def __init__(
+        self,
+        work_dir: Path,
+        capture_dir: Path,
+        expected_channel_id: str | None = "UC_expected",
+    ) -> None:
         self.database_url = "postgresql://user:pw@fake-host/db"
         self.max_job_attempts = 3
         self.work_dir = work_dir
+        self.capture_source_dir = capture_dir
+        self.capture_stability_wait_seconds = 0.0
         self.youtube_client_secret_file = Path("client_secret.json")
         self.youtube_token_file = Path("token.json")
         self.youtube_category_id = "20"
@@ -98,18 +131,22 @@ class FakeUploader:
 
 
 def _explode(*args: Any, **kwargs: Any) -> Any:
-    raise AssertionError("this must never be constructed by production-run in this test.")
+    raise AssertionError("this must never be constructed in this test.")
 
 
 def _patch(monkeypatch: pytest.MonkeyPatch, repo: FakeRepository, tmp_path: Path) -> None:
-    # production-run's package step defaults to the same literal relative
-    # "work/ready/" root as short-package (deliberately not
-    # Settings.work_dir-relative - see cli.py/production_runner.py), so
-    # each test must run from its own isolated cwd or repeated runs
-    # collide on the same real work/ready/ directory (and, worse, on
-    # already-written upload_attempt.json/upload_receipt.json markers).
+    # production-run/-once's package step defaults to the same literal
+    # relative "work/ready/" root as short-package (deliberately not
+    # Settings.work_dir-relative), so each test must run from its own
+    # isolated cwd or repeated runs collide on the same real work/ready/
+    # directory (and, worse, on already-written upload_attempt.json/
+    # upload_receipt.json markers).
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr(cli_module, "Settings", lambda: FakeSettings(tmp_path / "work"))
+    capture_dir = tmp_path / "captures"
+    capture_dir.mkdir(exist_ok=True)
+    monkeypatch.setattr(
+        cli_module, "Settings", lambda: FakeSettings(tmp_path / "work", capture_dir)
+    )
     monkeypatch.setattr(cli_module, "JobRepository", lambda *a, **kw: repo)
     monkeypatch.setattr(pr_module, "FasterWhisperRecognizer", FakeRecognizer)
     monkeypatch.setattr(cli_module, "ContentEngine", _explode)
@@ -123,12 +160,15 @@ def _patch_youtube(monkeypatch: pytest.MonkeyPatch) -> None:
     FakeUploader.upload_calls = []
 
 
+def _write_marker(package_dir: Path, filename: str) -> None:
+    (package_dir / filename).write_text(json.dumps({"status": "started"}), encoding="utf-8")
+
+
 @pytest.fixture(scope="module")
 def analyzable_video(tmp_path_factory: pytest.TempPathFactory) -> Path:
     """~20s continuous bright pattern (never black) + 10s silence then
-    10s tone - same design as test_production_runner.py's fixture, so
-    the reframed output never fails a black-frame check regardless of
-    which >=15s window highlight-scan selects."""
+    10s tone - the reframed output never fails a black-frame check
+    regardless of which >=15s window highlight-scan selects."""
     out = tmp_path_factory.mktemp("production_run_cli") / "analyzable.mp4"
     ffmpeg = imageio_ffmpeg.get_ffmpeg_exe()
     cmd = [
@@ -164,8 +204,18 @@ def analyzable_video(tmp_path_factory: pytest.TempPathFactory) -> Path:
     return out
 
 
+def _fake_qc_result(passed: bool) -> QualityGateResult:
+    return QualityGateResult(
+        passed=passed,
+        checks=[QualityCheck(name="duration_within_bounds", passed=passed, detail="x")],
+        media=MediaMetadata(None, None, None, None, None),
+    )
+
+
 # ---------------------------------------------------------------------------
-# Success without publishing
+# production-run: success without publish, rights rejection, metadata
+# validation, publish dry-run/execute wiring, QC-failure routing.
+# (see PR history for original coverage design notes)
 # ---------------------------------------------------------------------------
 
 
@@ -198,11 +248,6 @@ def test_production_run_rejects_unconfirmed_rights(
     assert "rights" in result.output.lower()
 
 
-# ---------------------------------------------------------------------------
-# Metadata validation
-# ---------------------------------------------------------------------------
-
-
 def test_production_run_title_without_description_fails(
     analyzable_video: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -210,12 +255,16 @@ def test_production_run_title_without_description_fails(
     repo.seed(job_id=3, source_path=str(analyzable_video))
     _patch(monkeypatch, repo, tmp_path)
 
-    result = CliRunner().invoke(
-        cli_app, ["production-run", "3", "--title", "Only Title"]
-    )
+    result = CliRunner().invoke(cli_app, ["production-run", "3", "--title", "Only Title"])
 
     assert result.exit_code != 0
-    assert "--description" in result.output
+    # not "--description": Typer/Rich's error-panel text wrapping breaks
+    # words after hyphens by default, and on a narrower detected terminal
+    # width (observed on Linux CI, not reproduced locally on Windows)
+    # "--description" wraps exactly at the "--"/"description" boundary,
+    # so the literal hyphenated substring is not always contiguous in
+    # result.output. The plain word survives regardless of wrap width.
+    assert "description" in result.output
     assert repo.get_job_calls == []
 
 
@@ -226,17 +275,10 @@ def test_production_run_execute_upload_without_title_fails(
     repo.seed(job_id=4, source_path=str(analyzable_video))
     _patch(monkeypatch, repo, tmp_path)
 
-    result = CliRunner().invoke(
-        cli_app, ["production-run", "4", "--execute-private-upload"]
-    )
+    result = CliRunner().invoke(cli_app, ["production-run", "4", "--execute-private-upload"])
 
     assert result.exit_code != 0
     assert repo.get_job_calls == []
-
-
-# ---------------------------------------------------------------------------
-# Publish dry-run wiring
-# ---------------------------------------------------------------------------
 
 
 def test_production_run_publish_dry_run_never_touches_youtube(
@@ -250,25 +292,12 @@ def test_production_run_publish_dry_run_never_touches_youtube(
 
     result = CliRunner().invoke(
         cli_app,
-        [
-            "production-run",
-            "5",
-            "--title",
-            "A Title",
-            "--description",
-            "A description.",
-        ],
+        ["production-run", "5", "--title", "A Title", "--description", "A description."],
     )
 
     assert result.exit_code == 0, result.output
     assert "PUBLISH DRY RUN PASS" in result.output
     assert "Privacy: private" in result.output
-
-
-# ---------------------------------------------------------------------------
-# Real (fake) upload wiring: privacy hard-coded, exactly one call, no
-# real network access
-# ---------------------------------------------------------------------------
 
 
 def test_production_run_execute_upload_hardcodes_private(
@@ -331,11 +360,6 @@ def test_production_run_execute_upload_canary_no_real_google_api_client(
     assert result.exit_code == 0, result.output
 
 
-# ---------------------------------------------------------------------------
-# QC failure routing (exit 1, no package line, publish never attempted)
-# ---------------------------------------------------------------------------
-
-
 def test_production_run_quality_gate_failure_exits_nonzero_and_skips_publish(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -343,8 +367,6 @@ def test_production_run_quality_gate_failure_exits_nonzero_and_skips_publish(
     repo.seed(job_id=8, source_path="/tmp/whatever.mp4")
     _patch(monkeypatch, repo, tmp_path)
     _patch_youtube(monkeypatch)
-
-    from robin_content_engine.quality_gate import MediaMetadata, QualityCheck
 
     fake_result = ProductionRunResult(
         job_id=8,
@@ -357,11 +379,7 @@ def test_production_run_quality_gate_failure_exits_nonzero_and_skips_publish(
         has_captions=True,
         caption_segment_count=1,
         final_video_path=tmp_path / "final.mp4",
-        quality_gate=QualityGateResult(
-            passed=False,
-            checks=[QualityCheck(name="duration_within_bounds", passed=False, detail="too short")],
-            media=MediaMetadata(None, None, None, None, None),
-        ),
+        quality_gate=_fake_qc_result(False),
         package=None,
     )
     monkeypatch.setattr(cli_module, "run_production", lambda *a, **kw: fake_result)
@@ -383,3 +401,211 @@ def test_production_run_quality_gate_failure_exits_nonzero_and_skips_publish(
     assert "Quality gate: FAIL" in result.output
     assert "Package:" not in result.output
     assert FakeUploader.upload_calls == []
+
+
+# ---------------------------------------------------------------------------
+# production-run-once
+# ---------------------------------------------------------------------------
+
+
+def test_production_run_once_no_eligible_job_prints_exact_phrase(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = FakeRepository()
+    _patch(monkeypatch, repo, tmp_path)
+
+    result = CliRunner().invoke(cli_app, ["production-run-once"])
+
+    assert result.exit_code == 0, result.output
+    assert "NO ELIGIBLE JOB" in result.output
+
+
+def test_production_run_once_discovers_new_capture_without_auto_approving(
+    analyzable_video: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = FakeRepository()
+    _patch(monkeypatch, repo, tmp_path)
+    shutil.copy(analyzable_video, tmp_path / "captures" / "new_capture.mp4")
+
+    result = CliRunner().invoke(cli_app, ["production-run-once"])
+
+    assert result.exit_code == 0, result.output
+    assert "New captures registered: 1" in result.output
+    assert "NO ELIGIBLE JOB" in result.output
+    assert len(repo.enqueue_calls) == 1
+    assert repo.enqueue_calls[0]["rights_confirmed"] is False
+
+
+def test_production_run_once_selects_and_publishes_dry_run_with_deterministic_metadata(
+    analyzable_video: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = FakeRepository()
+    repo.seed(job_id=1, source_path=str(analyzable_video))
+    _patch(monkeypatch, repo, tmp_path)
+    monkeypatch.setattr(cli_module, "YouTubeAuth", _explode)
+    monkeypatch.setattr(cli_module, "YouTubeUploader", _explode)
+
+    result = CliRunner().invoke(cli_app, ["production-run-once"])
+
+    assert result.exit_code == 0, result.output
+    assert "Job 1: clip" in result.output
+    assert "Title: clip — Highlight" in result.output
+    assert "PUBLISH DRY RUN PASS" in result.output
+    assert "Privacy: private" in result.output
+
+
+def test_production_run_once_execute_upload_exactly_one_call_private(
+    analyzable_video: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = FakeRepository()
+    repo.seed(job_id=1, source_path=str(analyzable_video))
+    _patch(monkeypatch, repo, tmp_path)
+    _patch_youtube(monkeypatch)
+
+    result = CliRunner().invoke(cli_app, ["production-run-once", "--execute-private-upload"])
+
+    assert result.exit_code == 0, result.output
+    assert "UPLOAD SUCCESS" in result.output
+    assert len(FakeUploader.upload_calls) == 1
+    assert FakeUploader.captured_kwargs["privacy_status"] == "private"
+
+
+def test_production_run_once_execute_upload_canary_no_real_google_api_client(
+    analyzable_video: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from robin_content_engine import uploader as uploader_module
+    from robin_content_engine import youtube_auth as youtube_auth_module
+
+    def exploding_build(*args: Any, **kwargs: Any) -> Any:
+        raise AssertionError("real googleapiclient.discovery.build must never be called in tests.")
+
+    monkeypatch.setattr(uploader_module, "build", exploding_build)
+    monkeypatch.setattr(youtube_auth_module, "build", exploding_build)
+
+    repo = FakeRepository()
+    repo.seed(job_id=1, source_path=str(analyzable_video))
+    _patch(monkeypatch, repo, tmp_path)
+    _patch_youtube(monkeypatch)
+
+    result = CliRunner().invoke(cli_app, ["production-run-once", "--execute-private-upload"])
+
+    assert result.exit_code == 0, result.output
+
+
+def test_production_run_once_skips_already_published_job(
+    analyzable_video: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = FakeRepository()
+    repo.seed(job_id=1, source_path=str(analyzable_video))
+    _patch(monkeypatch, repo, tmp_path)
+    monkeypatch.setattr(cli_module, "YouTubeAuth", _explode)
+    monkeypatch.setattr(cli_module, "YouTubeUploader", _explode)
+
+    first = CliRunner().invoke(cli_app, ["production-run-once"])
+    assert first.exit_code == 0, first.output
+    ready_root = tmp_path / "work" / "ready"
+    package_dirs = list(ready_root.glob("job-1-highlight-*"))
+    assert len(package_dirs) == 1
+    _write_marker(package_dirs[0], "upload_receipt.json")
+
+    second = CliRunner().invoke(cli_app, ["production-run-once"])
+
+    assert second.exit_code == 0, second.output
+    assert "NO ELIGIBLE JOB" in second.output
+    assert "already published" in second.output.lower()
+
+
+def test_production_run_once_ambiguous_attempt_stops_job_no_retry(
+    analyzable_video: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = FakeRepository()
+    repo.seed(job_id=1, source_path=str(analyzable_video))
+    _patch(monkeypatch, repo, tmp_path)
+    monkeypatch.setattr(cli_module, "YouTubeAuth", _explode)
+    monkeypatch.setattr(cli_module, "YouTubeUploader", _explode)
+
+    first = CliRunner().invoke(cli_app, ["production-run-once"])
+    assert first.exit_code == 0, first.output
+    ready_root = tmp_path / "work" / "ready"
+    package_dirs = list(ready_root.glob("job-1-highlight-*"))
+    _write_marker(package_dirs[0], "upload_attempt.json")
+
+    second = CliRunner().invoke(cli_app, ["production-run-once"])
+
+    assert second.exit_code == 0, second.output
+    assert "NO ELIGIBLE JOB" in second.output
+    assert "ambiguous" in second.output.lower()
+
+
+def test_production_run_once_never_constructs_content_engine(
+    analyzable_video: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = FakeRepository()
+    repo.seed(job_id=1, source_path=str(analyzable_video))
+    _patch(monkeypatch, repo, tmp_path)
+    monkeypatch.setattr(cli_module, "YouTubeAuth", _explode)
+    monkeypatch.setattr(cli_module, "YouTubeUploader", _explode)
+
+    result = CliRunner().invoke(cli_app, ["production-run-once"])
+
+    assert result.exit_code == 0, result.output
+
+
+def test_production_run_once_no_privacy_cli_option_exists() -> None:
+    help_result = CliRunner().invoke(cli_app, ["production-run-once", "--help"])
+    assert help_result.exit_code == 0, help_result.output
+    assert "--privacy" not in help_result.output
+    assert "--public" not in help_result.output
+    assert "--unlisted" not in help_result.output
+    # no --title/--description option either - metadata is fully automatic
+    assert "--title" not in help_result.output
+    assert "--description" not in help_result.output
+
+
+# ---------------------------------------------------------------------------
+# production-status
+# ---------------------------------------------------------------------------
+
+
+def test_production_status_text_output(
+    analyzable_video: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = FakeRepository()
+    repo.seed(job_id=1, source_path=str(analyzable_video), rights_confirmed=False)
+    repo.seed(job_id=2, source_path=str(analyzable_video), rights_confirmed=True)
+    _patch(monkeypatch, repo, tmp_path)
+
+    result = CliRunner().invoke(cli_app, ["production-status"])
+
+    assert result.exit_code == 0, result.output
+    assert "Awaiting rights: 1" in result.output
+    assert "Rights-approved eligible: 1" in result.output
+    assert repo.get_job_calls == []  # status uses list_jobs(), not get_job()
+
+
+def test_production_status_json_output(
+    analyzable_video: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = FakeRepository()
+    repo.seed(job_id=1, source_path=str(analyzable_video), rights_confirmed=False)
+    _patch(monkeypatch, repo, tmp_path)
+
+    result = CliRunner().invoke(cli_app, ["production-status", "--json"])
+
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    assert payload["awaiting_rights"] == 1
+    assert payload["jobs"][0]["state"] == "awaiting_rights"
+
+
+def test_production_status_never_touches_youtube_or_content_engine(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = FakeRepository()
+    _patch(monkeypatch, repo, tmp_path)
+    monkeypatch.setattr(cli_module, "YouTubeAuth", _explode)
+    monkeypatch.setattr(cli_module, "YouTubeUploader", _explode)
+
+    result = CliRunner().invoke(cli_app, ["production-status"])
+
+    assert result.exit_code == 0, result.output
