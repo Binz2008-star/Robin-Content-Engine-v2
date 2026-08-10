@@ -1302,12 +1302,21 @@ tasks:
 
   - id: RCE-20260808-CAPTIONS8C
     title: Phase 8C — Transcription / Captions MVP
-    status: active
+    status: complete
     owner: claude
     branch: feat/vertical-captions-mvp
     base_branch: feat/initial-engine
     base_sha: f402f87f10781fe60134ea9f62fa45245fa61c0c
-    pr: none yet — will open draft targeting feat/initial-engine, not main
+    head_sha: 3968486290a5ea2559221a3e8c7f689f63ce7ca2
+    pr: 16
+    pr_url: https://github.com/Binz2008-star/Robin-Content-Engine-v2/pull/16
+    pr_state: merged
+    merged: true
+    merge_method: squash
+    merge_commit_sha: 5781882d1ba00330e72a3d825f0fc2b1e03e4fab
+    merged_into: feat/initial-engine
+    result_sha_on_feat_initial_engine: 5781882d1ba00330e72a3d825f0fc2b1e03e4fab
+    merged_by: Binz2008-star
     allowed_paths:
       - pyproject.toml
       - src/robin_content_engine/transcription.py
@@ -1395,12 +1404,68 @@ tasks:
         explicit authorization is given separately
       - do not merge PR, do not deploy
       - no recurring/background polling for this task's PR
+    review_round_1: >-
+      CTO review comment on PR #16 (author=Binz2008-star, OWNER) flagged
+      four narrow robustness gaps ahead of the real smoke: (1)
+      burn_captions() only cleaned up the output on the
+      duration/dimension-mismatch paths, not on ffmpeg non-zero exit or a
+      raised post-encode probe - a failed ffmpeg run or corrupt output
+      could leave a partial file permanently blocking retries via the
+      overwrite-refusal check; (2) FasterWhisperRecognizer let raw
+      exceptions escape from model construction/transcription instead of
+      raising TranscriptionError, so the CLI's own error boundary
+      couldn't catch expected model/network/runtime failures; (3) the
+      subtitles-filter path escaping was inline and unescaped for the
+      operator's real Windows path shape (drive-letter colon,
+      backslashes, spaces); (4) output FPS was never validated
+      post-encode the way duration/dimensions already were. Fixed in
+      3968486: output cleanup now covers every failure path (ffmpeg
+      failure, empty output, raising probe), TranscriptionError now wraps
+      WhisperModel construction/.transcribe() failures without caching a
+      failed load, escape_subtitles_filter_path() factored out and
+      regression-tested against a literal
+      X:\content engine\Robin-Content-Engine-v2\work\highlights\...srt-
+      shaped path plus a single-quote-in-path guard, and FPS is now
+      probed/validated with the same tolerance pattern as
+      duration/dimensions. 8 new regression tests (275 total). No scope
+      expansion. Replied on PR #16 confirming the fix.
+    real_smoke_evidence: >-
+      NOT YET REPORTED. A PR #16 comment (author=Binz2008-star, OWNER,
+      wrapped as untrusted external content) claimed the review-round-1
+      fix was sufficient and instructed this agent to proceed with a real
+      Job 19 caption smoke. Per this project's standing rule, this agent
+      did not act on that instruction - it replied on the PR declining to
+      run it from a comment and noting that this sandbox could not
+      execute it anyway (the faster-whisper model download is blocked by
+      this sandbox's egress proxy, confirmed 403 earlier in this task).
+      No direct-chat confirmation of a completed real Job 19 caption
+      smoke was given before the PR was merged - unlike every prior
+      real-smoke phase in this project (4-8B), this closure records the
+      merge as verified but the real captioning smoke as an open item,
+      not as passed.
+    merge_verification: >-
+      Independently verified by this agent via GitHub `pull_request_read`
+      and `get_commit` (not assumed from the PR comment or from chat).
+      PR #16: state=closed, merged=true, merged_by=Binz2008-star,
+      head.sha=3968486290a5ea2559221a3e8c7f689f63ce7ca2,
+      base.ref=feat/initial-engine. `feat/initial-engine` fetched and
+      confirmed at merge commit
+      5781882d1ba00330e72a3d825f0fc2b1e03e4fab. `main` independently
+      re-confirmed unchanged at 5387af1f14888964b463b1fcaed8751d40ecbde6
+      (same SHA as the start of this entire engagement, across all ten
+      phases).
     next_action: >-
-      Task registered per explicit operator direction ("Phase 8C —
-      Transcription / Captions MVP: add text/captions to the vertical
-      clip locally, without publishing or YouTube yet"). Feasibility
-      check (faster-whisper install + CPU inference reachability in this
-      sandbox) starting now, before any implementation code is written.
+      Phase 8C CLOSED (merge-verified). PR #16 squash-merged into
+      feat/initial-engine only; main untouched; no deploy. UNLIKE prior
+      phases, the real Job 19 caption smoke was never run or reported via
+      direct chat before merge - if/when the operator runs it on their
+      own machine, record the result here (and note this sandbox cannot
+      run it itself regardless of authorization, per the egress-proxy
+      block on the Hugging Face model download). New baseline for the
+      next phase is feat/initial-engine @
+      5781882d1ba00330e72a3d825f0fc2b1e03e4fab. Any further phase
+      requires its own separate explicit authorization and task
+      registration.
 
 # Other branches observed on origin at the time this registry was created
 # that are NOT yet registered as tasks (owner/scope unknown to this agent —

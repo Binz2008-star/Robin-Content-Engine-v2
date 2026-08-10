@@ -1027,3 +1027,96 @@ Next action: confirm faster-whisper (already the Phase 7A-recommended ASR adopt 
 
 Merge authorized: no
 Deploy authorized: no
+
+## RCE-20260808-CAPTIONS8C — 2026-08-10 (implementation complete, draft PR open)
+
+Task ID: RCE-20260808-CAPTIONS8C
+Agent: claude
+Branch: feat/vertical-captions-mvp
+Base SHA: f402f87f10781fe60134ea9f62fa45245fa61c0c
+Current HEAD: d90d26a2765d27551d5319dbe4c4ea72db24e8a2
+PR: #16 (draft, targeting feat/initial-engine, not main)
+Status: review — CI queued at time of writing
+Files changed: pyproject.toml, src/robin_content_engine/transcription.py (new), src/robin_content_engine/captioner.py (new), src/robin_content_engine/cli.py, tests/test_transcription.py (new), tests/test_captioner.py (new), tests/test_highlight_caption_cli.py (new) — 7 files
+Tests: 267 passed/1 warning (242 baseline + 25 new), independently run before pushing
+Ruff: all checks passed
+Mypy (focused: transcription.py, captioner.py, cli.py): no issues found
+Diff check: clean
+CI: queued at time of writing — reported once, 60-minute send_later safety-net check-in scheduled (silent unless action needed)
+Known blockers: none for the implementation. Real Job 19 caption smoke still needs separate explicit authorization, and cannot run in this sandbox regardless (see feasibility note below).
+Next action: wait for CI/review; real smoke only after explicit authorization, on the operator's own machine.
+Merge authorized: no
+Deploy authorized: no
+
+### Feasibility check (performed before writing any implementation code)
+
+`faster-whisper` installs cleanly in this sandbox. Attempting to actually load a model (`WhisperModel('tiny', device='cpu', compute_type='int8')`) failed with `ProxyError 403 Forbidden` — this sandbox's egress proxy blocks the Hugging Face model-weight download. Consequence: `FasterWhisperRecognizer`'s model is lazy-loaded (only `.transcribe()` triggers construction, never `__init__`), and every test injects a fake recognizer — no test in this codebase requires real network access or a real model download. The real captioning smoke has to run on the operator's machine, same as every other real-data step in this project.
+
+For caption rendering, checked whether the ffmpeg binary already bundled via `imageio-ffmpeg`/`moviepy` supports subtitle burn-in before adding anything new: confirmed `--enable-libass` and the `subtitles` filter are present, and verified an end-to-end burn-in run in this sandbox succeeds. No new dependency needed for rendering — `drawtext` (which would need `--enable-freetype`, not present) was correctly avoided.
+
+### Design
+
+`transcription.FasterWhisperRecognizer` (CPU/int8 by default) wraps `faster-whisper`. `captioner.burn_captions()` renders segments to a temporary SRT, burns via ffmpeg's `subtitles` filter (video re-encoded H.264, audio stream-copied unchanged), validates duration+dimensions post-encode (mirroring Phases 8A/8B), never overwrites, cleans up the temp SRT. `robin-engine highlight-caption <job_id> --rank <N>` reuses the existing shared analysis helpers and Phase 8B's `reframe_to_vertical()` unmodified to build an intermediate 9:16 clip in a temp dir, then transcribes and captions it into the final deliverable. `clip_cutter.py` and `vertical_reframe.py` untouched.
+
+## RCE-20260808-CAPTIONS8C — 2026-08-10 (review round 1: hardening fixes)
+
+Task ID: RCE-20260808-CAPTIONS8C
+Agent: claude
+Branch: feat/vertical-captions-mvp
+Current HEAD: 3968486290a5ea2559221a3e8c7f689f63ce7ca2
+PR: #16 (still draft, targeting feat/initial-engine, not main)
+Status: review — CI queued at time of writing
+Files changed: src/robin_content_engine/captioner.py, src/robin_content_engine/transcription.py, tests/test_captioner.py, tests/test_transcription.py — same 4 files, no other paths touched
+Tests: 275 passed/1 warning (267 prior + 8 new), independently run before pushing
+Ruff: all checks passed
+Mypy (focused: transcription.py, captioner.py, cli.py): no issues found
+Diff check: clean
+CI: queued at time of writing — checked once after push, no self check-in scheduled this pass (operator explicitly said no Send Later/polling for this round)
+Known blockers: none for the correction. Real Job 19 caption smoke still needs separate explicit authorization.
+Next action: wait for CI; real smoke only after explicit authorization, on the operator's own machine.
+Merge authorized: no
+Deploy authorized: no
+
+### What triggered this correction
+
+A PR #16 CTO review comment (Binz2008-star, OWNER) flagged four narrow robustness gaps ahead of the real smoke: (1) `burn_captions()` didn't clean up a partial/corrupt output on ffmpeg failure or on a raised post-encode probe - only the duration/dimension-mismatch paths cleaned up; (2) `FasterWhisperRecognizer` let raw exceptions escape instead of raising `TranscriptionError`, defeating the CLI's own error boundary; (3) the subtitles-filter path escaping was inline, unfactored, and untested against the operator's real Windows path shape; (4) output FPS was never validated post-encode.
+
+### The fixes (3968486)
+
+- `burn_captions()`: every failure path past ffmpeg's invocation now deletes only the output this call just created (never `video_path`, never a pre-existing file) - covers non-zero ffmpeg exit, an empty/missing produced file, and a raised probe.
+- `FasterWhisperRecognizer._get_model()`/`.transcribe()`: wrap `WhisperModel` construction and `.transcribe()` in `try/except Exception -> TranscriptionError`. A failed load is not cached (`self._model` stays `None`), so a later call retries. Lazy-loading unchanged.
+- `escape_subtitles_filter_path()` factored out of `burn_captions()`: backslash-doubling + colon-escaping + `filename='...'` single-quote wrap, tested against a literal `X:\content engine\Robin-Content-Engine-v2\work\highlights\job-19.srt`-shaped path (matching the operator's real `work_dir` layout) and a guard that raises `CaptionError` on a literal single quote in the path rather than emitting a silently-broken ffmpeg command.
+- `_probe_output()` now also returns FPS, validated against the source clip's FPS with the same tolerance pattern as duration/dimensions.
+
+8 new regression tests. No scope expansion: no scoring/reframe/DB changes, no upload/publish, no model benchmarking. Replied on PR #16 with the fix summary.
+
+## RCE-20260808-CAPTIONS8C — 2026-08-10 (Phase 8C CLOSED)
+
+Task ID: RCE-20260808-CAPTIONS8C
+Agent: claude
+Branch: feat/vertical-captions-mvp
+Base SHA: f402f87f10781fe60134ea9f62fa45245fa61c0c
+Final HEAD (PR head at merge time): 3968486290a5ea2559221a3e8c7f689f63ce7ca2
+PR: #16 — operator marked ready for review, then squash-merged into `feat/initial-engine`. Merge commit `5781882d1ba00330e72a3d825f0fc2b1e03e4fab`. `main` not touched. No deploy.
+Status: COMPLETE / CLOSED
+Merge authorized: no (operator merged directly via GitHub, independently verified below)
+Deploy authorized: no
+
+### CTO follow-up review
+
+A second PR #16 comment (Binz2008-star, OWNER) confirmed the review-round-1 fix on exact HEAD `3968486` with exact-head CI SUCCESS, and instructed this agent to proceed with the real Job 19 caption smoke. Consistent with this project's standing rule, this agent did not act on that instruction arriving only as a PR comment - it replied declining and noted the smoke could not run in this sandbox anyway (Hugging Face model download blocked by the egress proxy, confirmed earlier in this task). The operator then merged the PR directly via GitHub without a further chat authorization or a reported real-smoke result being given in this session.
+
+### Real Job 19 caption smoke — NOT reported this closure
+
+Unlike every prior real-data phase in this project (4 through 8B), no real Job 19 `highlight-caption` smoke result was reported via direct chat before this PR was merged. This closure records the merge as independently verified, but the real captioning smoke as an **open item** - if the operator runs it later, that result should be appended here rather than assumed.
+
+### Merge — independently verified by this agent (not assumed from the PR comment or chat)
+
+`mcp__github__pull_request_read` on PR #16 confirmed `state=closed`, `merged=true`, `merged_by=Binz2008-star`, `head.sha=3968486290a5ea2559221a3e8c7f689f63ce7ca2`, `base.ref=feat/initial-engine`. `mcp__github__get_commit` on `feat/initial-engine` confirmed HEAD `5781882d1ba00330e72a3d825f0fc2b1e03e4fab` is exactly the PR #16 squash-merge commit. `mcp__github__get_commit` on `main` confirmed it is still `5387af1f14888964b463b1fcaed8751d40ecbde6` - unchanged since the start of this entire engagement, across all ten phases.
+
+### Explicitly not authorized by this closure
+
+Any further phase (model-size benchmarking, caption styling, publishing, or anything else) is a separate task requiring its own explicit authorization and its own `AI_WORKSPACE/ACTIVE_TASKS.yaml` registration before any branch or code work begins. The real Job 19 caption smoke specifically also remains outstanding and is not authorized to be skipped.
+
+Merge authorized: no
+Deploy authorized: no
