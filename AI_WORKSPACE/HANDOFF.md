@@ -1205,3 +1205,43 @@ Checked whether the existing dependency stack is sufficient before adding anythi
 
 Merge authorized: no
 Deploy authorized: no
+
+## RCE-20260810-QUALITY8D — 2026-08-10 (Phase 8D CLOSED — real smoke PASS, merged)
+
+Task ID: RCE-20260810-QUALITY8D
+Agent: claude
+Branch: feat/final-short-quality-gate
+Final HEAD (PR head at merge time): dceff7ef6bd2d345290e3c2929e1c8a427e7923c
+PR: #17 — moved from draft to ready, then squash-merged into `feat/initial-engine`. Merge commit `a909175ce98e6e28ce71e30875cb3718f2c4223f`. `main` not touched. No deploy.
+Status: COMPLETE / CLOSED
+Merge authorized: no (operator merged directly via GitHub, independently verified below)
+Deploy authorized: no
+
+### Exact-head CI re-confirmed
+
+GitHub check-runs API on exact head `dceff7ef6bd2d345290e3c2929e1c8a427e7923c`: check run "test", status=completed, conclusion=**SUCCESS**.
+
+### Real Windows QC + packaging smoke — executed directly by this agent (not operator-reported)
+
+Ran on the operator's Windows machine, exact head `dceff7ef6bd2d345290e3c2929e1c8a427e7923c`, against the already human-approved Phase 8C artifact `work\highlights\job-22-highlight-01-41000-56000-vertical-captioned.mp4` (recorded before any command: 8,833,903 bytes, SHA-256 `7036bf708a495e064b26a47801c202f038b0b514014a3f6a24bb539f114188c9`). This session's installed `robin-engine` console script still pointed at the older `feat/vertical-captions-mvp` source tree from the Phase 8C smoke (predates `short-qc`/`short-package`), so the CLI was invoked as `python -m robin_content_engine.cli` with `PYTHONPATH` pointed at this branch's `src/` for the duration of this smoke only — no code was changed, reinstalled, or committed.
+
+`short-qc` (text form, then `--json` once) returned **PASS**, all 12 checks individually PASS: `file_exists`, `file_non_empty`, `video_decodable` (duration=15.0s, 810x1440, fps=24.43, has_audio=True), `duration_within_bounds`, `aspect_ratio_9_16` (exact 0.5625), `valid_dimensions`, `valid_fps`, `audio_present`, `no_black_start_frame` (luma=54.89), `no_black_end_frame` (luma=64.51), `sampled_frame_decode_integrity` (5/5 sampled frames decoded), `metadata_no_nan`.
+
+`short-package` (run exactly once, per instruction) created `work\ready\job-22-highlight-01-41000-56000-vertical-captioned\` containing the packaged MP4 (8,833,903 bytes, SHA-256 identical to the source — byte-for-byte match) and `manifest.json` (`quality_gate_passed=true`, `sha256` matching the packaged MP4 exactly, `duration_seconds=15.0`, `width=810`, `height=1440`, `fps=24.43`, `audio_present=true`, `format_version="1"`, full 12-check list embedded, no secrets/tokens). A second `short-package` run was explicitly NOT attempted, per instruction.
+
+Source artifact independently re-verified unchanged after both commands: identical size, LastWriteTime, and SHA-256. No DB/job/rights access at any point. No upload, no deploy, no `pipeline.run_once()`.
+
+### Merge — independently verified by this agent (not assumed from chat alone)
+
+`gh pr view 17` confirmed `state=MERGED`, `closed=true`, `merged_by=Binz2008-star`, `headRefOid=dceff7ef6bd2d345290e3c2929e1c8a427e7923c` (exactly the head this agent ran the real smoke against), `mergeCommit.oid=a909175ce98e6e28ce71e30875cb3718f2c4223f`, `base.ref=feat/initial-engine`. `git fetch` confirmed `feat/initial-engine` at `a909175ce98e6e28ce71e30875cb3718f2c4223f`. `main` independently re-confirmed unchanged at `5387af1f14888964b463b1fcaed8751d40ecbde6` — same SHA as the start of this entire engagement, across all twelve phases.
+
+### Explicitly not authorized by this closure
+
+Operator has proposed Phase 9 (Publishing Integration — private-first, explicit-authorization-gated, no automatic/public-by-default publishing) as the next logical phase. This closure does **not** authorize it — any Phase 9 implementation requires its own separate explicit authorization and its own `AI_WORKSPACE/ACTIVE_TASKS.yaml` registration before any branch or code work begins, per this project's standing rule.
+
+### Governance self-correction note
+
+Editing this task's `ACTIVE_TASKS.yaml` entry for this closure initially left a duplicate `next_action:` key in place (the new closure summary plus a stale one from the original "implementation starting" registration, further down the same entry past `stop_conditions`). Caught via the IDE's YAML diagnostics and fixed before committing — the stale trailing `next_action` was removed since it belonged to this same session's own task entry, not a historical entry from another phase. Unrelated to this: a genuine pre-existing YAML syntax defect was found in the `RCE-20260808-HIGHLIGHT7B-QV` entry (~line 696–703, an unquoted multi-line `branch:` scalar) that predates this entire session (confirmed against the pristine pre-session file via `yaml.safe_load`) — left untouched per "do not rewrite prior entries," flagged for a separate cleanup task if wanted.
+
+Merge authorized: no
+Deploy authorized: no

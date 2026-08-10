@@ -1506,17 +1506,86 @@ tasks:
 
   - id: RCE-20260810-QUALITY8D
     title: Phase 8D — Final Short Quality Gate / Packaging MVP
-    status: review
+    status: complete
     owner: claude
     branch: feat/final-short-quality-gate
     base_branch: feat/initial-engine
     base_sha: 5781882d1ba00330e72a3d825f0fc2b1e03e4fab
-    current_sha: dceff7ef6bd2d345290e3c2929e1c8a427e7923c
+    head_sha: dceff7ef6bd2d345290e3c2929e1c8a427e7923c
     pr: 17
     pr_url: https://github.com/Binz2008-star/Robin-Content-Engine-v2/pull/17
-    pr_state: open (draft)
+    pr_state: merged
+    merged: true
+    merge_method: squash
+    merge_commit_sha: a909175ce98e6e28ce71e30875cb3718f2c4223f
+    merged_into: feat/initial-engine
+    result_sha_on_feat_initial_engine: a909175ce98e6e28ce71e30875cb3718f2c4223f
+    merged_by: Binz2008-star
     merge_allowed: false
     deploy_allowed: false
+    ci_at_exact_head: >-
+      Independently re-confirmed by this agent via the GitHub check-runs
+      API on exact head dceff7ef6bd2d345290e3c2929e1c8a427e7923c: check
+      run "test", status=completed, conclusion=SUCCESS.
+    real_smoke_evidence: >-
+      Executed directly by this agent on the operator's Windows machine,
+      exact head dceff7ef6bd2d345290e3c2929e1c8a427e7923c (this session's
+      installed `robin-engine` console script still pointed at the
+      older feat/vertical-captions-mvp source tree from the Phase 8C
+      smoke, so the CLI was invoked as `python -m
+      robin_content_engine.cli` with PYTHONPATH pointed at this
+      branch's src/ for the duration of this smoke only - no code was
+      changed, reinstalled, or committed), against the already
+      human-approved Phase 8C artifact
+      work\highlights\job-22-highlight-01-41000-56000-vertical-captioned.mp4
+      (source recorded before any command: 8,833,903 bytes, SHA-256
+      7036bf708a495e064b26a47801c202f038b0b514014a3f6a24bb539f114188c9).
+      `short-qc` (text and --json forms) returned PASS with all 12
+      checks individually PASS: file_exists, file_non_empty,
+      video_decodable (duration=15.0s, 810x1440, fps=24.43,
+      has_audio=True), duration_within_bounds, aspect_ratio_9_16
+      (exact 0.5625), valid_dimensions, valid_fps, audio_present,
+      no_black_start_frame (luma=54.89), no_black_end_frame
+      (luma=64.51), sampled_frame_decode_integrity (5/5),
+      metadata_no_nan. `short-package` (run exactly once) created
+      work\ready\job-22-highlight-01-41000-56000-vertical-captioned\
+      with the packaged MP4 (8,833,903 bytes, SHA-256 identical to the
+      source, byte-for-byte) and manifest.json
+      (quality_gate_passed=true, sha256 matching the packaged MP4
+      exactly, duration/width/height/fps/audio_present all correct,
+      full 12-check list embedded, no secrets/tokens). Source artifact
+      independently re-verified unchanged after both commands: same
+      size, same LastWriteTime, same SHA-256. No DB/job/rights access,
+      no upload, no deploy.
+    merge_verification: >-
+      Independently verified by this agent via `gh pr view 17` and
+      `git fetch` (not assumed from the operator's chat report alone).
+      PR #17: state=MERGED, closed=true, merged_by=Binz2008-star,
+      headRefOid=dceff7ef6bd2d345290e3c2929e1c8a427e7923c (exactly the
+      head this agent ran the real QC+packaging smoke against),
+      mergeCommit.oid=a909175ce98e6e28ce71e30875cb3718f2c4223f,
+      base.ref=feat/initial-engine. `feat/initial-engine` fetched and
+      confirmed at a909175ce98e6e28ce71e30875cb3718f2c4223f. `main`
+      independently re-confirmed unchanged at
+      5387af1f14888964b463b1fcaed8751d40ecbde6 (same SHA as the start
+      of this entire engagement, across all twelve phases).
+    next_action: >-
+      Phase 8D CLOSED (merge-verified + real smoke executed and
+      confirmed PASS by this agent directly). PR #17 squash-merged into
+      feat/initial-engine only; main untouched; no deploy; no upload;
+      no DB mutation. New baseline for the next phase is
+      feat/initial-engine @ a909175ce98e6e28ce71e30875cb3718f2c4223f.
+      Operator has proposed Phase 9 (Publishing Integration - private-
+      first, explicit-authorization-gated, no automatic/public-by-
+      default publishing) as the next logical phase, but this closure
+      does NOT authorize it - any Phase 9 implementation requires its
+      own separate explicit authorization and its own
+      AI_WORKSPACE/ACTIVE_TASKS.yaml registration before any branch or
+      code work begins, per this project's standing rule. Before the
+      next real smoke on a future branch, the editable install should
+      be refreshed from that branch's checkout so `robin-engine` points
+      at current code again (noted by the operator; not a blocker for
+      this closure).
     scope: >-
       Final LOCAL automated quality gate for an already-produced local
       short (Phase 8C's highlight-caption output, or equivalent), per
@@ -1581,9 +1650,6 @@ tasks:
       - check exact-head CI once, no recurring/background polling
       - do not run a real Windows smoke automatically in this phase
       - do not merge, do not deploy
-    next_action: >-
-      Implementation in progress this session - see HANDOFF.md for the
-      current state.
 
 # Other branches observed on origin at the time this registry was created
 # that are NOT yet registered as tasks (owner/scope unknown to this agent —
