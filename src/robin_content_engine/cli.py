@@ -33,6 +33,7 @@ from .highlight_features import (
 from .highlight_scoring import score_windows
 from .models import HighlightCandidateResult, HighlightScanResult
 from .pipeline import ContentEngine
+from .production_runner import ProductionRunError, run_production
 from .publishing import PublishingError, dry_run, execute_private_upload
 from .quality_gate import PackagingError, package_short, run_quality_gate
 from .scene_detector import SceneBoundary, SceneDetectionError, detect_scenes
@@ -851,6 +852,165 @@ def short_package(
     typer.echo(f"Packaged artifact: {result.packaged_video_path}")
     typer.echo(f"Manifest: {result.manifest_path}")
     typer.echo(f"SHA-256: {result.manifest['sha256']}")
+
+
+@app.command("production-run")
+def production_run(
+    job_id: Annotated[
+        int, typer.Argument(help="Job ID to run through the full local production pipeline.")
+    ],
+    rank: Annotated[
+        int,
+        typer.Option(
+            "--rank", help="Which ranked highlight-scan candidate to produce (1 = top-ranked)."
+        ),
+    ] = 1,
+    horizontal_offset: Annotated[
+        float,
+        typer.Option(
+            "--horizontal-offset",
+            help="Static horizontal crop position in [0.0, 1.0], same as highlight-reframe.",
+        ),
+    ] = 0.5,
+    model_size: Annotated[
+        str,
+        typer.Option(
+            "--model-size",
+            help="faster-whisper model size (e.g. tiny, base, small, medium). CPU/int8 only.",
+        ),
+    ] = "base",
+    title: Annotated[
+        str | None,
+        typer.Option(
+            "--title",
+            help=(
+                "Video title. Only needed if you also want to publish (dry-run by default) "
+                "after a passing quality gate + package. Manual, operator-supplied - never "
+                "LLM-generated."
+            ),
+        ),
+    ] = None,
+    description: Annotated[
+        str | None,
+        typer.Option(
+            "--description",
+            help="Video description. Required together with --title to publish.",
+        ),
+    ] = None,
+    tags: Annotated[
+        list[str] | None,
+        typer.Option("--tag", help="Video tag (repeatable). Manual, operator-supplied."),
+    ] = None,
+    execute_upload: Annotated[
+        bool,
+        typer.Option(
+            "--execute-private-upload",
+            help=(
+                "After a passing quality gate + package, also perform the real PRIVATE-ONLY "
+                "YouTube upload, exactly as youtube-publish-package does. Requires --title "
+                "and --description. Without this flag, providing --title/--description only "
+                "runs the zero-network-I/O publish dry-run validation."
+            ),
+        ),
+    ] = False,
+) -> None:
+    """Run one job/rank through every already-proven local production
+    stage in a single command: highlight analysis, 9:16 reframe, local
+    ASR + caption burn-in (falling back to an uncaptioned artifact if no
+    speech is detected - not a failure), the Phase 8D quality gate, and
+    Phase 8D packaging. Optionally, if --title/--description are given,
+    also validates (or, with --execute-private-upload, actually performs)
+    a Phase 9A PRIVATE-ONLY YouTube publish of the resulting package -
+    reusing publishing.py's dry_run()/execute_private_upload() exactly as
+    youtube-publish-package does, with no CLI option able to select
+    public/unlisted.
+
+    Resumable: re-running this command for the same job/rank reuses any
+    already-completed reframe/caption/package outputs rather than
+    redoing the (expensive) work.
+
+    Never claims the job, never increments attempts, never changes job
+    status or rights state, never calls an LLM. The only database
+    interaction is a single read via JobRepository.get_job(). The
+    original source file is never modified, moved, renamed, or deleted,
+    and no existing output is ever silently overwritten.
+    """
+    if title is not None and description is None:
+        raise typer.BadParameter("--description is required when --title is given.")
+    if description is not None and title is None:
+        raise typer.BadParameter("--title is required when --description is given.")
+    if execute_upload and title is None:
+        raise typer.BadParameter("--title and --description are required with "
+                                  "--execute-private-upload.")
+
+    settings = Settings()  # type: ignore[call-arg]
+    repository = JobRepository(settings.database_url, settings.max_job_attempts)
+
+    try:
+        result = run_production(
+            job_id,
+            rank,
+            repository,
+            settings,
+            horizontal_offset_ratio=horizontal_offset,
+            model_size=model_size,
+        )
+    except ProductionRunError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+
+    typer.echo(f"Job {result.job_id}: {result.source_title}")
+    typer.echo(f"Rank: {result.rank}")
+    typer.echo(
+        f"Window: {result.start_seconds:.1f}s - {result.end_seconds:.1f}s "
+        f"(score={result.candidate_score:.3f})"
+    )
+    if result.has_captions:
+        typer.echo(f"Captions: yes ({result.caption_segment_count} segments)")
+    else:
+        typer.echo("Captions: no speech detected - using uncaptioned vertical artifact")
+    typer.echo(f"Final artifact: {result.final_video_path}")
+    typer.echo("Quality gate: PASS" if result.quality_gate.passed else "Quality gate: FAIL")
+    _print_quality_checks(result.quality_gate.checks)
+
+    if not result.quality_gate.passed:
+        raise typer.Exit(code=1)
+
+    assert result.package is not None
+    typer.echo(f"Package: {result.package.package_dir}")
+
+    if title is None:
+        return
+
+    clean_tags = tags or []
+
+    if not execute_upload:
+        try:
+            dry_result = dry_run(result.package.package_dir, title, description or "", clean_tags)
+        except PublishingError as exc:
+            raise typer.BadParameter(str(exc)) from exc
+        typer.echo("PUBLISH DRY RUN PASS")
+        typer.echo(f"Title: {dry_result.metadata.title}")
+        typer.echo(f"Tag count: {len(dry_result.metadata.tags)}")
+        typer.echo("Privacy: private")
+        return
+
+    auth = YouTubeAuth(settings.youtube_client_secret_file, settings.youtube_token_file)
+    try:
+        upload_result = execute_private_upload(
+            result.package.package_dir,
+            title,
+            description or "",
+            clean_tags,
+            settings,
+            auth,
+            YouTubeUploader,
+        )
+    except PublishingError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+
+    typer.echo("UPLOAD SUCCESS")
+    typer.echo(f"YouTube video ID: {upload_result.youtube_id}")
+    typer.echo(f"Privacy: {upload_result.privacy_status}")
 
 
 @app.command("youtube-publish-package")
