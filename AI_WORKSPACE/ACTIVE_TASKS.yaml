@@ -1506,12 +1506,15 @@ tasks:
 
   - id: RCE-20260810-QUALITY8D
     title: Phase 8D — Final Short Quality Gate / Packaging MVP
-    status: active
+    status: review
     owner: claude
     branch: feat/final-short-quality-gate
     base_branch: feat/initial-engine
     base_sha: 5781882d1ba00330e72a3d825f0fc2b1e03e4fab
-    pr: pending
+    current_sha: dceff7ef6bd2d345290e3c2929e1c8a427e7923c
+    pr: 17
+    pr_url: https://github.com/Binz2008-star/Robin-Content-Engine-v2/pull/17
+    pr_state: open (draft)
     merge_allowed: false
     deploy_allowed: false
     scope: >-

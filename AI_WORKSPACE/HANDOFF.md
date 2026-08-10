@@ -1172,3 +1172,36 @@ Implementation details (Build-vs-Adopt decision, files changed, test counts, val
 
 Merge authorized: no
 Deploy authorized: no
+
+## RCE-20260810-QUALITY8D — 2026-08-10 (implementation complete, Draft PR opened)
+
+Task ID: RCE-20260810-QUALITY8D
+Agent: claude
+Branch: feat/final-short-quality-gate
+Base SHA: 5781882d1ba00330e72a3d825f0fc2b1e03e4fab
+Current HEAD: dceff7ef6bd2d345290e3c2929e1c8a427e7923c
+PR: #17 (draft, targeting feat/initial-engine, not main)
+Status: review — CI in_progress at time of writing (checked once, not polled to completion, per this task's own no-recurring-polling instruction)
+Files changed: src/robin_content_engine/quality_gate.py (new), src/robin_content_engine/cli.py (short-qc/short-package commands added) — exactly this task's allowed_paths, no other paths touched
+Tests: 303 passed/2414 warnings (275 prior baseline + 28 new), independently run before pushing; no network required (synthetic ffmpeg lavfi fixtures only)
+Ruff: all checks passed
+Mypy (focused: quality_gate.py, cli.py): no issues found, verified with a `--python-version 3.12` override to bypass a pre-existing numpy-stub/py3.11 mismatch in this session's local environment (confirmed to reproduce identically on already-merged baseline files such as youtube_sync.py/channel_repository.py under the same override — not something introduced by or in scope for this task; pyproject.toml's mypy config is outside this task's allowed_paths)
+Diff check: clean
+CI: in_progress at time of writing on exact head dceff7e, checked once via the GitHub check-runs API — no self check-in / recurring polling scheduled for this task, per explicit instruction
+Known blockers: none for the implementation. Real Windows smoke intentionally NOT run automatically this phase — needs separate explicit authorization, same convention as every prior phase.
+Next action: wait for CI/review; real smoke only after explicit authorization.
+Merge authorized: no
+Deploy authorized: no
+
+### Build vs Adopt (performed before writing any implementation code)
+
+Checked whether the existing dependency stack is sufficient before adding anything: `moviepy` (`VideoFileClip`) already provides duration/dimensions/fps/audio-track probing — same pattern already used by `vertical_reframe.py`/`captioner.py`. OpenCV (`cv2.VideoCapture`) already provides frame-indexed sampling and grayscale-luma computation — same pattern already used by `highlight_features.py`'s motion extraction. stdlib `hashlib`/`json`/`shutil` cover SHA-256, the manifest, and the artifact copy. Conclusion: no new dependency, no `pyproject.toml` change.
+
+### Design
+
+`quality_gate.run_quality_gate(path, config)` returns a `QualityGateResult` (`passed: bool`, `checks: list[QualityCheck]`, `media: MediaMetadata`) with exactly 12 named checks, always all 12 present regardless of outcome — a prerequisite failure (missing file, empty file, undecodable video) marks every dependent check as failed with an explicit "skipped" detail rather than omitting it, so a FAIL result never has to be inferred from a check's absence. Frame sampling (start/end black-frame check + N evenly spaced sampled-decode-integrity check) opens the file once via `cv2.VideoCapture`, using OpenCV's own `CAP_PROP_FRAME_COUNT` (not a cross-decoder duration*fps estimate) so seek indices are always in range for the same capture doing the seeking. The black-frame threshold (mean 0-255 grayscale luma, default 8.0) is deliberately conservative per this phase's brief — verified against a real-shaped "dark but not black" synthetic fixture (solid `0x101010` fill) that must NOT be falsely rejected, alongside separate black-start/black-end fixtures built by concatenating a genuine 1s black+silence segment with 3s of a bright pattern via ffmpeg's concat filter (same technique test_highlight_reframe_cli.py already uses). `quality_gate.package_short(source, dest_root, config)` reruns the identical gate; on any failure it raises `PackagingError` listing every failed check and creates nothing; on success it copies the artifact (via `shutil.copy2`, never modifies/moves/deletes the original) plus a `manifest.json` (format_version, original/packaged paths, SHA-256, byte size, duration/width/height/fps/audio-present, the full check list, an ISO timestamp — no secrets/tokens of any kind, verified by a dedicated regression test) into a new `dest_root/<source stem>/` directory, refusing to overwrite if that directory already exists.
+
+`robin-engine short-qc <PATH> [--json]` and `robin-engine short-package <PATH>` are added to `cli.py`. Neither constructs `Settings`, `JobRepository`, or `ContentEngine` — both are pure local-filesystem commands (verified by regression tests that replace those three names with an assertion-raising stub and confirm the command still succeeds), so a local artifact stays inspectable/packageable even when the queue database is completely unreachable, per this phase's explicit brief. `short-package`'s destination is the literal `work/ready/` path from the brief (not `Settings.work_dir`-relative, even though they resolve to the same default) specifically to keep this command's behavior independent of `Settings()` construction succeeding.
+
+Merge authorized: no
+Deploy authorized: no
