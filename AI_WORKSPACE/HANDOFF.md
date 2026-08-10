@@ -1459,3 +1459,37 @@ All six addressed in commit `e62a987`: (1) fixed a Typer/Rich hyphen-wrap text-m
 
 Merge authorized: no
 Deploy authorized: no
+
+## RCE-20260810-PRODUCTION10 — 2026-08-10 (CTO review round 2 corrections pushed)
+
+Task ID: RCE-20260810-PRODUCTION10
+Agent: claude
+Branch: feat/production-runner
+Previous HEAD: e62a987b7b0b8a586db0b9b45b64311f2e887570 (exact-head CI 31405151466 confirmed SUCCESS by the CTO)
+New HEAD: 62d46d1cc7f1da9f1e5376839a86406357c79945
+PR: #19 (still draft, targeting feat/initial-engine, not main)
+Status: review — CI in_progress at time of writing (checked once, not polled)
+Files changed: src/robin_content_engine/production_runner.py, src/robin_content_engine/cli.py, tests/test_production_run_cli.py, tests/test_production_runner.py — same allowed_paths, no other paths touched
+Tests: 416 passed (398 baseline + 18 new), independently run before pushing; no network required
+Ruff: all checks passed
+Mypy (focused: production_runner.py, cli.py): no issues found (same pre-existing, unrelated environment mismatch as every prior phase)
+Diff check: clean
+Known blockers: none for the implementation. Real Windows end-to-end production smoke (including any real upload) still intentionally NOT run - deferred to a separate CTO-approved pass.
+Next action: wait for CI and CTO re-review of this exact head.
+Merge authorized: no
+Deploy authorized: no
+
+### CTO review round 2 and this round's response
+
+With exact-head CI confirmed SUCCESS, the CTO flagged two remaining operational blockers before a real smoke, both addressed in commit `62d46d1` - full detail in `ACTIVE_TASKS.yaml`'s `cto_review_round2_2026-08-10` / `cto_review_round2_correction_2026-08-10`:
+
+1. **Eligibility must honor queue state, not just rights_confirmed.** A rights-confirmed row with DB status `uploaded`/`quarantined`/`processing`/`rendered`/`failed` could be processed again. Fixed: candidates now require `status == "pending"`, `rights_confirmed == True`, a local `source_path`, and no existing `youtube_id`. Regression coverage for every excluded status plus the youtube_id case.
+
+2. **One invocation must not process multiple jobs while searching.** The candidate loop called `run_production()` per candidate and only checked QC/publish-state afterward, so a first-candidate failure could fall through to a second candidate. Fixed: a new cheap, filesystem-only `_precheck_local_state()` (job-id package-dir glob + marker existence, no video decode/analysis) skips published/ambiguous candidates *before* selection; `run_production()` is then called exactly once for the selected job, with no fallthrough on any failure. Proven by a regression that forces candidate #1's QC to fail while candidate #2 remains eligible - the call count for `run_production()` stays at 1 and candidate #2 is never selected.
+
+Also corrected `production-status`: an explicitly rejected/quarantined unconfirmed job no longer counts as `awaiting_rights` - it's now a new `rejected` state, using the same reviewable-state predicate `list_pending_rights_review()` itself uses (the read-only `AUTO_QUARANTINE_REASON` constant imported from `database.py`, not duplicated - no schema change).
+
+18 new regression tests (416 total). No real YouTube write performed.
+
+Merge authorized: no
+Deploy authorized: no

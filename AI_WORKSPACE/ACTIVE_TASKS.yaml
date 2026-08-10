@@ -1851,7 +1851,7 @@ tasks:
     branch: feat/production-runner
     base_branch: feat/initial-engine
     base_sha: 5bdb6ad87a1e5ff73c1db95665fbc13a85826180
-    current_sha: e62a987b7b0b8a586db0b9b45b64311f2e887570
+    current_sha: 62d46d1cc7f1da9f1e5376839a86406357c79945
     pr: 19
     pr_url: https://github.com/Binz2008-star/Robin-Content-Engine-v2/pull/19
     pr_state: open (draft)
@@ -2018,12 +2018,52 @@ tasks:
       runs before proceeding. Stray untracked work/ready/ artifacts
       created during debugging were removed (gitignored, never staged
       or committed).
+    cto_review_round2_2026-08-10: >-
+      Binz2008-star (OWNER) confirmed exact-head CI 31405151466 SUCCESS
+      on the round-1 head and raised two further operational blockers
+      before a real production smoke: (1) run_production_once() built
+      candidates from only rights_confirmed + source_path, permitting a
+      rights-confirmed row with DB status uploaded/quarantined/
+      processing/rendered/failed to be processed again - restricted
+      eligibility to status=='pending' AND rights_confirmed AND
+      source_path AND no existing youtube_id; (2) the candidate loop
+      called run_production() per candidate and only checked QC/
+      publish-state afterward, so a first-candidate QC/package failure
+      could fall through to a second candidate in the same invocation -
+      replaced with a cheap filesystem-only precheck (job-id package-
+      dir glob + marker existence, no video decode/analysis) that skips
+      published/ambiguous candidates BEFORE selection, then calls
+      run_production() exactly once for the selected job with no
+      fallthrough on failure. Also corrected production-status: an
+      explicitly rejected/quarantined unconfirmed row must not count as
+      awaiting_rights - fixed via the same reviewable-state predicate
+      list_pending_rights_review() itself uses (AUTO_QUARANTINE_REASON
+      imported as a read-only constant, no schema change).
+    cto_review_round2_correction_2026-08-10: >-
+      Commit 62d46d1cc7f1da9f1e5376839a86406357c79945. New
+      _precheck_local_state() helper (pure glob + marker-file existence,
+      job-id-prefixed rank-1 package directory pattern). Eligibility
+      filter now status=='pending' AND rights_confirmed AND source_path
+      AND not youtube_id. run_production_once() calls run_production()
+      at most once per invocation, period - proven by a regression that
+      forces candidate #1's QC to fail (via an injected stricter
+      QualityGateConfig) while candidate #2 remains genuinely eligible,
+      asserting the run_production() call count is exactly 1 and
+      candidate #2's job id never appears as selected_job_id. A second
+      regression proves the precheck phase itself never triggers
+      highlight analysis (call-counted at 1, from the single selected
+      job's real run, not from scanning multiple candidates).
+      ProductionStatusReport gained a `rejected` field; a job with
+      status='quarantined' and last_error='Rights rejected by
+      operator.' now reports rejected, not awaiting_rights, while a job
+      auto-quarantined by quarantine_unconfirmed() (last_error==
+      AUTO_QUARANTINE_REASON) correctly remains awaiting_rights - both
+      proven by dedicated regression tests. 18 new regression tests
+      (416 total, up from 398).
     next_action: >-
-      CTO review round 1 corrections pushed (commit e62a987, exact HEAD
-      e62a987b7b0b8a586db0b9b45b64311f2e887570). CI for this exact head
-      had not yet registered a check run at time of writing (checked
-      via three methods - check-runs API, workflow-runs list, `gh pr
-      checks` - all consistently empty; not polled further, per this
+      CTO review round 2 corrections pushed (commit 62d46d1, exact HEAD
+      62d46d1cc7f1da9f1e5376839a86406357c79945). CI in_progress at
+      single check at time of writing (not polled further, per this
       task's own no-recurring-polling instruction). PR #19 remains
       draft, targeting feat/initial-engine (not main), not merged. Real
       end-to-end production smoke (including any real YouTube upload)
