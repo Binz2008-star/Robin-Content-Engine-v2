@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -106,33 +107,52 @@ def _sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
+_PATH_SEPARATOR_PATTERN = re.compile(r"[\\/]+")
+
+
+def _split_path_components(raw: str) -> list[str]:
+    """Splits raw on BOTH '\\' and '/' regardless of the host OS's own
+    path-separator convention. pathlib.Path's own parsing is host-OS-
+    dependent - PureWindowsPath treats both '/' and '\\' as separators,
+    but PurePosixPath treats '\\' as a literal character, not a
+    separator - so a manifest claiming a Windows-style
+    ('..\\..\\evil.mp4') traversal would be silently swallowed into a
+    single opaque component on Linux (e.g. Linux CI) while being
+    correctly split into ['..', '..', 'evil.mp4'] on Windows. Splitting
+    manually here makes traversal detection identical on every host OS."""
+    return [part for part in _PATH_SEPARATOR_PATTERN.split(raw) if part != ""]
+
+
 def _resolve_packaged_video_path(package_dir: Path, manifest: dict[str, Any]) -> Path:
     """Never trusts manifest paths blindly. quality_gate.package_short()
     stores packaged_artifact_path as str(package_dir / video_name) -
-    absolute or relative depending on the dest_root it was called with
-    (both are legitimate; the CLI's default dest_root is relative, but
-    package_short() is also called directly with an absolute dest_root
-    e.g. in tests), but it NEVER contains a parent-traversal ('..') or
-    current-directory ('.') path component, since it's built purely from
-    real directory/file names. Any such component is therefore EXPLICITLY
-    rejected outright as tampering, before any file lookup is attempted -
-    not merely silently reduced away. Only after that explicit rejection
-    is the FILENAME (basename) taken, joined under package_dir, and its
-    resolved location double-checked to still be inside package_dir as
-    defense in depth - nothing outside package_dir can ever be selected."""
+    absolute or relative, Windows- or POSIX-separated depending on the
+    dest_root and host OS it was called with (all legitimate; the CLI's
+    default dest_root is relative, but package_short() is also called
+    directly with an absolute dest_root e.g. in tests), but it NEVER
+    contains a parent-traversal ('..') or current-directory ('.') path
+    component under EITHER separator syntax, since it's built purely
+    from real directory/file names. Any such component is therefore
+    EXPLICITLY rejected outright as tampering, before any file lookup is
+    attempted - not merely silently reduced away, and identically
+    whether this runs on Windows or Linux (see _split_path_components).
+    Only after that explicit rejection is the FILENAME (last component)
+    taken, joined under package_dir, and its resolved location double-
+    checked to still be inside package_dir as defense in depth - nothing
+    outside package_dir can ever be selected."""
     raw = manifest.get("packaged_artifact_path")
     if not isinstance(raw, str) or not raw.strip():
         raise PublishingError("manifest.json packaged_artifact_path is missing or empty.")
 
-    raw_path = Path(raw)
-    if any(part in (".", "..") for part in raw_path.parts):
+    components = _split_path_components(raw)
+    if any(part in (".", "..") for part in components):
         raise PublishingError(
             "manifest.json packaged_artifact_path contains a parent-traversal or "
             "current-directory component, which is never valid for a legitimate Phase 8D "
             f"package (rejected as tampering): {raw!r}"
         )
 
-    name = raw_path.name
+    name = components[-1] if components else ""
     if not name:
         raise PublishingError(f"manifest.json packaged_artifact_path is invalid: {raw!r}")
 
@@ -247,6 +267,13 @@ def _write_json_atomic(path: Path, payload: dict[str, Any]) -> None:
 
 
 def _check_no_existing_upload_state(package_dir: Path) -> None:
+    """A fast, early fail-fast check only - NOT the actual race-safety
+    mechanism (see _create_upload_attempt_exclusive for that). Its only
+    purpose is to reject an obviously-already-attempted package before
+    wasting time on package re-validation and channel auth; two
+    concurrent calls can both pass this check before either has created
+    upload_attempt.json, which is exactly the check-then-write race
+    _create_upload_attempt_exclusive() closes."""
     receipt_path = package_dir / _RECEIPT_FILENAME
     if receipt_path.is_file():
         raise PublishingError(
@@ -260,6 +287,29 @@ def _check_no_existing_upload_state(package_dir: Path) -> None:
             f"its outcome unknown) - refusing a new attempt: {attempt_path}. Operator "
             "reconciliation is required before retrying; there is no --force option."
         )
+
+
+def _create_upload_attempt_exclusive(path: Path, payload: dict[str, Any]) -> None:
+    """The actual race-safety mechanism for upload_attempt.json: creates
+    it via exclusive-create (Python's open(path, "x") maps to
+    O_CREAT | O_EXCL identically on Windows and POSIX), so the
+    existence-check and the creation are a single atomic filesystem
+    operation rather than two separate steps. Even if two callers both
+    pass _check_no_existing_upload_state()'s early check at the same
+    moment (a genuine check-then-write race), only ONE of them can
+    actually create this file - the other gets FileExistsError here,
+    translated to PublishingError, and is refused before ever
+    constructing or calling an uploader. Never overwrites an existing
+    attempt marker."""
+    try:
+        with path.open("x", encoding="utf-8") as handle:
+            json.dump(payload, handle, indent=2)
+    except FileExistsError as exc:
+        raise PublishingError(
+            f"An upload attempt marker already exists (a prior attempt may be incomplete or "
+            f"its outcome unknown) - refusing a new attempt: {path}. Operator reconciliation "
+            "is required before retrying; there is no --force option."
+        ) from exc
 
 
 def execute_private_upload(
@@ -303,7 +353,10 @@ def execute_private_upload(
     6. Require the authenticated channel ID to exactly match the
        configured expected channel ID; abort before constructing
        YouTubeUploader on any mismatch.
-    7. Write an atomic upload_attempt.json (no secrets/tokens).
+    7. Exclusively CREATE upload_attempt.json (no secrets/tokens) via
+       _create_upload_attempt_exclusive() - not a plain write, so a
+       check-then-write race against a concurrent call cannot silently
+       overwrite an existing attempt.
     8. Call uploader_factory(client_secret_file=..., token_file=...,
        privacy_status="private", category_id=...) - this function's own
        hard-coded "private", regardless of settings.youtube_privacy_status
@@ -350,7 +403,7 @@ def execute_private_upload(
 
     attempt_path = package_dir / _ATTEMPT_FILENAME
     started_at = (now or datetime.now(UTC)).isoformat()
-    _write_json_atomic(
+    _create_upload_attempt_exclusive(
         attempt_path,
         {
             "format_version": _UPLOAD_STATE_FORMAT_VERSION,

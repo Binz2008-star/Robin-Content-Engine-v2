@@ -668,15 +668,19 @@ def test_execute_private_upload_supplies_private_itself_even_with_public_setting
 
 
 # ---------------------------------------------------------------------------
-# CTO review round 1, item 2: explicit path-traversal rejection, proven
-# against a decoy file that legitimately exists at the traversal target's
-# basename INSIDE package_dir - validation must fail because the manifest
-# path itself is rejected as tampering, not merely because nothing was
-# found.
+# CTO review round 1, item 2 / round 2, item 1: explicit path-traversal
+# rejection, proven against a decoy file that legitimately exists at the
+# traversal target's basename INSIDE package_dir - validation must fail
+# because the manifest path itself is rejected as tampering, not merely
+# because nothing was found. Round 2 adds: this must be IDENTICAL on both
+# Windows-style ('\') and POSIX-style ('/') separators, regardless of the
+# host OS actually running the test (see _split_path_components -
+# pathlib.Path's own parsing is host-OS-dependent and would otherwise let
+# a backslash-style traversal slip through unnoticed on Linux CI).
 # ---------------------------------------------------------------------------
 
 
-def test_validate_package_rejects_traversal_even_with_matching_decoy_in_package_dir(
+def test_validate_package_rejects_windows_style_traversal_even_with_matching_decoy(
     package_dir: Path,
 ) -> None:
     # A file with the SAME basename the traversal targets, placed exactly
@@ -693,6 +697,24 @@ def test_validate_package_rejects_traversal_even_with_matching_decoy_in_package_
         validate_package(package_dir, quality_gate_config=TEST_CONFIG)
 
     # the decoy was never touched/selected
+    assert decoy.read_bytes() == b"decoy content that must never be selected"
+
+
+def test_validate_package_rejects_posix_style_traversal_even_with_matching_decoy(
+    package_dir: Path,
+) -> None:
+    # Same attack, POSIX ('/') separator syntax - must be rejected
+    # identically to the Windows-separator case above, on any host OS.
+    decoy = package_dir / "evil.mp4"
+    decoy.write_bytes(b"decoy content that must never be selected")
+
+    manifest = _read_manifest(package_dir)
+    manifest["packaged_artifact_path"] = "../../evil.mp4"
+    _write_manifest(package_dir, manifest)
+
+    with pytest.raises(PublishingError, match="traversal"):
+        validate_package(package_dir, quality_gate_config=TEST_CONFIG)
+
     assert decoy.read_bytes() == b"decoy content that must never be selected"
 
 
@@ -719,13 +741,30 @@ def test_validate_package_absolute_path_to_elsewhere_is_still_contained(
         validate_package(package_dir, quality_gate_config=TEST_CONFIG)
 
 
-def test_validate_package_accepts_legitimate_nested_manifest_path(package_dir: Path) -> None:
+def test_validate_package_accepts_legitimate_windows_style_nested_manifest_path(
+    package_dir: Path,
+) -> None:
     # A real Phase 8D manifest's packaged_artifact_path is a multi-segment
     # relative path like "work\ready\<stem>\<stem>.mp4" - no '..'/'.'
     # component, just real subdirectory names - and must keep working.
     manifest = _read_manifest(package_dir)
     video_name = Path(manifest["packaged_artifact_path"]).name
     manifest["packaged_artifact_path"] = f"work\\ready\\{package_dir.name}\\{video_name}"
+    _write_manifest(package_dir, manifest)
+
+    validation = validate_package(package_dir, quality_gate_config=TEST_CONFIG)
+
+    assert validation.packaged_video_path == (package_dir / video_name).resolve()
+
+
+def test_validate_package_accepts_legitimate_posix_style_nested_manifest_path(
+    package_dir: Path,
+) -> None:
+    # Same legitimate multi-segment path, POSIX ('/') separator syntax -
+    # must keep working identically to the Windows-separator case above.
+    manifest = _read_manifest(package_dir)
+    video_name = Path(manifest["packaged_artifact_path"]).name
+    manifest["packaged_artifact_path"] = f"work/ready/{package_dir.name}/{video_name}"
     _write_manifest(package_dir, manifest)
 
     validation = validate_package(package_dir, quality_gate_config=TEST_CONFIG)
@@ -796,3 +835,64 @@ def test_execute_receipt_write_failure_after_successful_upload_preserves_attempt
     # the blocked retry did not call the uploader again
     assert len(recorder.calls) == 1
     assert len(uploader.upload_calls) == 1
+
+
+# ---------------------------------------------------------------------------
+# CTO review round 2, item 2: exclusive atomic upload claim. The early
+# _check_no_existing_upload_state() is only a fast fail-fast check, not the
+# actual race-safety mechanism - _create_upload_attempt_exclusive() is.
+# This test neutralizes the early check (simulating two concurrent calls
+# both passing it before either creates the marker) and proves the
+# exclusive-create itself still refuses to overwrite a pre-existing
+# attempt, with the uploader never constructed or called.
+# ---------------------------------------------------------------------------
+
+
+def test_execute_exclusive_claim_prevents_overwrite_even_if_early_check_bypassed(
+    package_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from robin_content_engine import publishing as publishing_module
+
+    monkeypatch.setattr(
+        publishing_module, "_check_no_existing_upload_state", lambda package_dir: None
+    )
+
+    original_attempt_bytes = json.dumps(
+        {"sentinel": "pre-existing-attempt-must-not-be-overwritten"}
+    ).encode("utf-8")
+    attempt_path = package_dir / "upload_attempt.json"
+    attempt_path.write_bytes(original_attempt_bytes)
+
+    uploader = FakeUploader()
+    recorder = RecordingUploaderFactory(uploader)
+
+    with pytest.raises(PublishingError, match="attempt marker already exists"):
+        execute_private_upload(
+            package_dir,
+            "Title",
+            "Description.",
+            [],
+            _fake_settings(),
+            FakeAuth(),
+            recorder,
+            quality_gate_config=TEST_CONFIG,
+        )
+
+    # never overwritten - byte-for-byte identical to what was there before
+    assert attempt_path.read_bytes() == original_attempt_bytes
+    # uploader never constructed or called
+    assert recorder.calls == []
+    assert uploader.upload_calls == []
+
+
+def test_create_upload_attempt_exclusive_never_overwrites(tmp_path: Path) -> None:
+    from robin_content_engine.publishing import _create_upload_attempt_exclusive
+
+    path = tmp_path / "upload_attempt.json"
+    original_bytes = b'{"status": "started", "sentinel": "first-writer"}'
+    path.write_bytes(original_bytes)
+
+    with pytest.raises(PublishingError, match="already exists"):
+        _create_upload_attempt_exclusive(path, {"status": "started", "sentinel": "second-writer"})
+
+    assert path.read_bytes() == original_bytes
