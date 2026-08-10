@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import tempfile
 from pathlib import Path
 from typing import Annotated, Any
 
@@ -7,6 +8,7 @@ import structlog
 import typer
 
 from . import __version__
+from .captioner import CaptionError, burn_captions
 from .capture_scan import CaptureScanError, scan_captures
 from .channel_repository import ChannelRepository
 from .clip_cutter import ClipCutError, cut_clip
@@ -30,6 +32,7 @@ from .highlight_scoring import score_windows
 from .models import HighlightCandidateResult, HighlightScanResult
 from .pipeline import ContentEngine
 from .scene_detector import SceneBoundary, SceneDetectionError, detect_scenes
+from .transcription import FasterWhisperRecognizer, TranscriptionError
 from .vertical_reframe import VerticalReframeError, reframe_to_vertical
 from .youtube_auth import AuthState, YouTubeAuth, YouTubeAuthError
 from .youtube_sync import YouTubeChannelSync, YouTubeSyncError
@@ -651,6 +654,124 @@ def highlight_reframe(
     typer.echo(f"Score: {candidate.score:.3f}")
     typer.echo(f"Crop: {result.crop_width}x{result.crop_height} at x={result.crop_x1}")
     typer.echo(f"Output path: {result.output_path}")
+
+
+def _highlight_caption_filename(
+    job_id: int, rank: int, start_seconds: float, end_seconds: float
+) -> str:
+    start_ms = round(start_seconds * 1000)
+    end_ms = round(end_seconds * 1000)
+    return f"job-{job_id}-highlight-{rank:02d}-{start_ms}-{end_ms}-vertical-captioned.mp4"
+
+
+@app.command("highlight-caption")
+def highlight_caption(
+    job_id: Annotated[int, typer.Argument(help="Job ID to caption a clip from.")],
+    rank: Annotated[
+        int,
+        typer.Option(
+            "--rank", help="Which ranked highlight-scan candidate to caption (1 = top-ranked)."
+        ),
+    ] = 1,
+    horizontal_offset: Annotated[
+        float,
+        typer.Option(
+            "--horizontal-offset",
+            help=(
+                "Static horizontal crop position in [0.0, 1.0] "
+                "(0.0=left edge, 0.5=centered, 1.0=right edge), same as highlight-reframe."
+            ),
+        ),
+    ] = 0.5,
+    model_size: Annotated[
+        str,
+        typer.Option(
+            "--model-size",
+            help="faster-whisper model size (e.g. tiny, base, small, medium). CPU/int8 only.",
+        ),
+    ] = "base",
+) -> None:
+    """Cut one ranked highlight candidate from a job's local source video,
+    crop it to a static 9:16 vertical frame (same as highlight-reframe),
+    transcribe its audio locally with faster-whisper (CPU/int8, no cloud
+    ASR), and burn the transcribed words as readable captions onto a new
+    local MP4. Captions are the ASR's own words, only segmented for
+    readability - never rewritten, translated, or summarized.
+
+    This never claims the job, never increments attempts, never changes
+    job status, never touches rights state, never calls an LLM or
+    YouTube, never uploads, and never runs the render/publish pipeline.
+    The only database interaction is a single read via
+    JobRepository.get_job(). The original source file is never modified,
+    moved, renamed, or deleted, and an existing output file is never
+    overwritten.
+    """
+    if rank < 1:
+        raise typer.BadParameter("--rank must be >= 1.")
+
+    job, video_path = _load_rights_confirmed_local_job(job_id)
+
+    try:
+        _scenes, selected = _run_highlight_analysis(video_path, rank)
+    except (SceneDetectionError, FeatureExtractionError, ClipSelectionError) as exc:
+        raise typer.BadParameter(str(exc)) from exc
+
+    if len(selected) < rank:
+        raise typer.BadParameter(
+            f"Job {job_id} only has {len(selected)} candidate(s) after overlap "
+            f"suppression; --rank {rank} is out of range."
+        )
+    candidate = selected[rank - 1]
+
+    settings = Settings()  # type: ignore[call-arg]
+    output_dir = settings.work_dir / "highlights"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    captioned_filename = _highlight_caption_filename(
+        job_id, rank, candidate.start_seconds, candidate.end_seconds
+    )
+    captioned_output_path = output_dir / captioned_filename
+    if captioned_output_path.exists():
+        raise typer.BadParameter(
+            f"Output file already exists, refusing to overwrite: {captioned_output_path}"
+        )
+
+    with tempfile.TemporaryDirectory(dir=output_dir) as tmp_dir_name:
+        intermediate_path = Path(tmp_dir_name) / "reframed.mp4"
+        try:
+            reframe_result = reframe_to_vertical(
+                video_path,
+                intermediate_path,
+                candidate.start_seconds,
+                candidate.end_seconds,
+                horizontal_offset_ratio=horizontal_offset,
+            )
+        except VerticalReframeError as exc:
+            raise typer.BadParameter(str(exc)) from exc
+
+        try:
+            recognizer = FasterWhisperRecognizer(model_size=model_size)
+            segments = recognizer.transcribe(intermediate_path)
+        except TranscriptionError as exc:
+            raise typer.BadParameter(str(exc)) from exc
+
+        try:
+            caption_result = burn_captions(intermediate_path, captioned_output_path, segments)
+        except CaptionError as exc:
+            raise typer.BadParameter(str(exc)) from exc
+
+    typer.echo(f"Job {job_id}: {job['source_title']}")
+    typer.echo(f"Rank: {rank}")
+    typer.echo(f"Source path: {video_path}")
+    typer.echo(f"Start: {reframe_result.start_seconds:.1f}s")
+    typer.echo(f"End: {reframe_result.end_seconds:.1f}s")
+    typer.echo(f"Duration: {reframe_result.duration_seconds:.1f}s")
+    typer.echo(f"Score: {candidate.score:.3f}")
+    typer.echo(
+        f"Crop: {reframe_result.crop_width}x{reframe_result.crop_height} "
+        f"at x={reframe_result.crop_x1}"
+    )
+    typer.echo(f"Caption segments: {caption_result.segment_count}")
+    typer.echo(f"Output path: {caption_result.output_path}")
 
 
 @app.command()
