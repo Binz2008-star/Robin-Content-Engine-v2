@@ -1535,3 +1535,59 @@ Before reporting, this agent confirmed the crash had zero side effects: `product
 
 Merge authorized: no
 Deploy authorized: no
+
+## RCE-20260810-PRODUCTION10 — 2026-08-10 (Phase 10 CLOSED — real smoke PASS including first real upload, independent audit clean, merged)
+
+Task ID: RCE-20260810-PRODUCTION10
+Agent: claude
+Branch: feat/production-runner
+HEAD at close: d2bc6f40239cf41fa11e7da27c790f760e4cd967 (unchanged from the correction round — CI later confirmed SUCCESS on this exact head)
+PR: #19 — **MERGED** into `feat/initial-engine` (merge commit `c7fd99159c966123f51218e8f1ff22cc56b9cce5`, 2026-08-10T20:16:24Z)
+Status: **complete**
+`main`: unchanged at `5387af1f14888964b463b1fcaed8751d40ecbde6` — independently reconfirmed via a direct GitHub API ref read after the merge, not assumed
+
+### CI confirmation
+
+Checked once (no polling) via the check-runs API on exact HEAD `d2bc6f40239cf41fa11e7da27c790f760e4cd967`: check run "test" — `status=completed`, `conclusion=success`.
+
+### Real Windows production-run-once smoke retry — full PASS
+
+With the `PoolClosed` fix in place, the CTO authorized a retry of the real smoke against the corrected head. Result:
+
+- Capture scan: 17 videos discovered, 0 new (already-registered captures).
+- Exactly **one** job selected — job 8, the lower of two eligible candidates (job 8, job 14) under the deterministic FIFO rule. No `PoolClosed` error, no second repository lifecycle, no second candidate touched.
+- Full pipeline completed: highlight analysis → 9:16 reframe → local ASR → caption burn-in (1 segment) → quality gate (11/11 checks PASS) → packaging → automatic publish dry-run PASS.
+- Job 8's raw DB row read directly (`get_job()`) both before and after: `status=pending, rights_confirmed=true, youtube_id=null, attempts=0` in both reads — confirming zero JobRepository mutation, as documented.
+- Job 14 untouched, remains the next eligible candidate.
+
+### First real private YouTube upload of this phase — Job 8
+
+With separate, explicit operator approval obtained for this specific step (distinct from the general smoke authorization):
+
+1. **Standalone dry-run** (`youtube-publish-package` without `--execute-private-upload`) for job 8's package: PASS, zero network I/O, package SHA-256/media/title/tags all validated, privacy=private, zero filesystem side effects.
+2. **Real upload**, with a second explicit approval specific to the upload itself (`youtube-publish-package --execute-private-upload`): **UPLOAD SUCCESS** — YouTube video ID `8jOm0HvxNB4`, privacy=`private`.
+3. **Independent readback**: ran `youtube-sync` — a real, separate YouTube Data API read, not the same code path as the upload — and directly queried the resulting `youtube_videos` snapshot table: video `8jOm0HvxNB4` present on channel `UCIcvbGsmSwMDXxjWXq4QG8A`, `privacy_status='private'`, `is_current=true`.
+4. Job 8's DB row re-checked post-upload: still `status=pending, rights_confirmed=true, youtube_id=null, attempts=0` — `youtube-publish-package` never touches `JobRepository`, exactly as documented.
+5. **Duplicate-upload protection verified**: an immediate second `--execute-private-upload` attempt against the same package was rejected before any network call (`exit code 2`, `"A successful upload receipt already exists, refusing a duplicate upload"`) — no second real upload occurred.
+
+### Final independent audit before merge
+
+Rather than rely on this agent's own prior self-review, a 3-dimension independent adversarial audit of the full PR #19 diff (`5bdb6ad8...` → `d2bc6f40...`) was run via a separate multi-agent workflow:
+
+1. **Repository connection-pool lifecycle correctness** — every call path through `run_production()`, `run_production_once()`, `production_status()`, and the CLI wiring, including every error/empty-candidate branch.
+2. **Governance/safety-boundary compliance** — `allowed_paths` only, `forbidden_paths` untouched anywhere in the *full* diff (not just the four expected files), tests use fakes only (zero real network/DB calls), private-only publish constraint intact, no secrets present in the diff.
+3. **Docstring-claim accuracy** — every safety-relevant claim in `production_runner.py`'s docstrings (zero repository access, exactly-one `.running()` cycle, never calls the public `run_production()`) traced against the actual code, not trusted at face value.
+
+**Result: 0 findings across all three dimensions** (65 tool invocations, ~10.4 minutes of genuine analysis per the workflow's own telemetry — not a rubber-stamp). No adversarial verification pass was needed since nothing was raised to verify.
+
+### Merge
+
+With explicit operator approval, PR #19 was marked ready for review (`gh pr ready 19`) and merged via `gh pr merge 19 --merge` into `feat/initial-engine` — **not** `main`. Merge commit `c7fd99159c966123f51218e8f1ff22cc56b9cce5`. Independently re-verified post-merge via `gh pr view` (state=MERGED, matching merge commit SHA) and a direct GitHub API read of `main`'s ref (unchanged).
+
+`feat/production-runner` was left in place (not deleted) — no destructive git action was taken without explicit instruction.
+
+**Job 14** remains the next eligible candidate in the production queue, untouched, for whenever the operator next chooses to run `production-run-once`.
+
+Merge authorized: yes (explicit operator approval, this exact head, into feat/initial-engine only)
+Deploy authorized: no
+Main merge authorized: no — not requested, not performed
