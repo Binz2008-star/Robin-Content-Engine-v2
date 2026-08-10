@@ -697,7 +697,8 @@ tasks:
     title: Phase 7B-QV — Long Gameplay Qualitative Validation (operator-executed, no code)
     status: complete
     owner: claude (governance/report only) + operator (execution)
-    branch: none — no code changes, no new branch, no PR (this task's own
+    branch: >-
+      none — no code changes, no new branch, no PR (this task's own
       code corrections were tracked separately as RCE-20260808-
       HIGHLIGHT-DIVERSITY / PR #12 and RCE-20260808-HIGHLIGHT-
       CONTAINMENT / PR #13, both merged into feat/initial-engine)
@@ -803,7 +804,8 @@ tasks:
     merge_commit_sha: d2fe7474667491c83f0ea393e6e43fd6b199f15e
     merged_into: feat/initial-engine
     result_sha_on_feat_initial_engine: d2fe7474667491c83f0ea393e6e43fd6b199f15e
-    merged_by: claude (explicit operator authorization: "نعمله Ready ثم
+    merged_by: >-
+      claude (explicit operator authorization: "نعمله Ready ثم
       squash merge إلى feat/initial-engine فقط. لا main ولا deploy" -
       scoped exactly to feat/initial-engine, no main, no deploy)
     ci: >-
@@ -914,7 +916,8 @@ tasks:
     merge_commit_sha: 8a0ffa8ec6d8ff86edb42075adea9e7866cd64f5
     merged_into: feat/initial-engine
     result_sha_on_feat_initial_engine: 8a0ffa8ec6d8ff86edb42075adea9e7866cd64f5
-    merged_by: claude (explicit operator authorization scoped exactly to
+    merged_by: >-
+      claude (explicit operator authorization scoped exactly to
       "squash-merge PR #13 into feat/initial-engine, main untouched, no
       deploy" - independently verified afterward via git fetch and the
       GitHub API, matching exactly)
@@ -937,11 +940,12 @@ tasks:
     allowed_paths:
       - src/robin_content_engine/clip_selector.py
       - tests/test_clip_selector.py
-      - src/robin_content_engine/cli.py  # amended 2026-08-08: operator
-        found + explicitly authorized a narrow one-line wiring fix only
-        (pass selector_config.containment_threshold through to
-        suppress_overlaps() in the highlight_scan command) - not general
-        cli.py editing
+      - src/robin_content_engine/cli.py
+        # amended 2026-08-08: operator found + explicitly authorized a
+        # narrow one-line wiring fix only (pass
+        # selector_config.containment_threshold through to
+        # suppress_overlaps() in the highlight_scan command) - not
+        # general cli.py editing
     forbidden_paths:
       - studio/**
       - AGENTS.md
