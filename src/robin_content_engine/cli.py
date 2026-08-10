@@ -1,4 +1,6 @@
 import asyncio
+import dataclasses
+import json
 import logging
 import tempfile
 from pathlib import Path
@@ -31,6 +33,7 @@ from .highlight_features import (
 from .highlight_scoring import score_windows
 from .models import HighlightCandidateResult, HighlightScanResult
 from .pipeline import ContentEngine
+from .quality_gate import PackagingError, package_short, run_quality_gate
 from .scene_detector import SceneBoundary, SceneDetectionError, detect_scenes
 from .transcription import FasterWhisperRecognizer, TranscriptionError
 from .vertical_reframe import VerticalReframeError, reframe_to_vertical
@@ -772,6 +775,80 @@ def highlight_caption(
     )
     typer.echo(f"Caption segments: {caption_result.segment_count}")
     typer.echo(f"Output path: {caption_result.output_path}")
+
+
+# Literal path per this phase's brief - deliberately not Settings.work_dir
+# (which itself defaults to the same "work" directory), so this command
+# never constructs Settings()/JobRepository and stays usable even when the
+# queue database is completely unreachable.
+_DEFAULT_PACKAGE_ROOT = Path("work") / "ready"
+
+
+def _print_quality_checks(checks: list[Any]) -> None:
+    for check in checks:
+        status = "PASS" if check.passed else "FAIL"
+        typer.echo(f"  [{status}] {check.name}: {check.detail}")
+
+
+@app.command("short-qc")
+def short_qc(
+    path: Annotated[Path, typer.Argument(help="Local media file to quality-check.")],
+    as_json: Annotated[
+        bool, typer.Option("--json", help="Print machine-readable JSON instead of text.")
+    ] = False,
+) -> None:
+    """Inspect one local media artifact and decide PASS or FAIL with an
+    explicit reason per check (existence, decodability, duration bounds,
+    9:16 aspect ratio, dimensions, FPS, audio presence, black start/end
+    frames, sampled-frame decode integrity, metadata validity).
+
+    Read-only: never modifies or deletes the inspected file. Requires no
+    database connection - a local artifact must be inspectable even if
+    Neon is unavailable. Exit code 0 on PASS, non-zero on FAIL.
+    """
+    result = run_quality_gate(path)
+
+    if as_json:
+        payload = {
+            "path": str(path),
+            "passed": result.passed,
+            "checks": [dataclasses.asdict(c) for c in result.checks],
+            "media": dataclasses.asdict(result.media),
+        }
+        typer.echo(json.dumps(payload, indent=2))
+    else:
+        typer.echo(f"Path: {path}")
+        typer.echo("PASS" if result.passed else "FAIL")
+        _print_quality_checks(result.checks)
+
+    if not result.passed:
+        raise typer.Exit(code=1)
+
+
+@app.command("short-package")
+def short_package(
+    path: Annotated[Path, typer.Argument(help="Local media file to package as publish-ready.")],
+) -> None:
+    """Run the exact same quality gate as short-qc against a local media
+    artifact; if it fails, refuse to package and list every failed check.
+    If it passes, copy the artifact (never move/modify/delete the
+    original) plus a JSON manifest (SHA-256, byte size, media metadata,
+    quality-gate check results, package timestamp - no secrets, no OAuth
+    tokens) into a new directory under work/ready/. Fails safely (creates
+    nothing) rather than silently overwriting an existing package.
+
+    Requires no database connection and never uploads anything.
+    """
+    try:
+        result = package_short(path, _DEFAULT_PACKAGE_ROOT)
+    except PackagingError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+
+    typer.echo(f"Source path: {path}")
+    typer.echo(f"Package directory: {result.package_dir}")
+    typer.echo(f"Packaged artifact: {result.packaged_video_path}")
+    typer.echo(f"Manifest: {result.manifest_path}")
+    typer.echo(f"SHA-256: {result.manifest['sha256']}")
 
 
 @app.command()
