@@ -33,8 +33,9 @@ class ContentGenerator:
                     "content": (
                         "You create metadata and an original short Arabic voiceover "
                         "for gaming videos. Use clear Gulf/UAE-friendly Arabic without "
-                        "pretending to be a specific person. Do not copy lyrics, scripts, "
-                        "titles, or descriptions from other creators. Do not make "
+                        "pretending to be a specific person. The script should be engaging, "
+                        "enthusiastic, and suitable for gaming content. Do not copy lyrics, "
+                        "scripts, titles, or descriptions from other creators. Do not make "
                         "unverifiable claims. Return one JSON object only."
                     ),
                 },
@@ -45,10 +46,11 @@ class ContentGenerator:
                         f"{video_context}\n\n"
                         "Return exactly these fields:\n"
                         "{\n"
-                        '  "title": "8-100 characters",\n'
-                        '  "description": "useful Arabic description, up to 5000 characters",\n'
-                        '  "tags": ["up to 20 relevant tags without #"],\n'
-                        '  "script": "an original energetic voiceover, roughly 20-45 seconds"\n'
+                        '  "title": "8-100 characters in Arabic",\n'
+                        '  "description": "engaging Arabic description, up to 5000 characters",\n'
+                        '  "tags": ["up to 20 relevant Arabic tags without #"],\n'
+                        '  "script": "an original energetic Arabic voiceover, roughly 20-30 '
+                        'seconds, natural gaming commentary style"\n'
                         "}"
                     ),
                 },
