@@ -122,10 +122,17 @@ def reframe_to_vertical(
             str(output_path),
             codec="libx264",
             audio_codec="aac",
-            preset="medium",
+            preset="slow",  # Better quality encoding
             threads=4,
             pixel_format="yuv420p",
-            ffmpeg_params=["-movflags", "+faststart"],
+            ffmpeg_params=[
+                "-movflags",
+                "+faststart",
+                "-tune",
+                "film",
+                "-b:v",
+                "4000k",
+            ],
             logger=None,
         )
 
