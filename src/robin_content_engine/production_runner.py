@@ -48,7 +48,7 @@ _DEFAULT_PACKAGE_ROOT = Path("work") / "ready"
 _NO_SPEECH_MARKER = "No non-empty transcript segments"
 
 # Local upload-state marker filenames - identical literals to
-# publishing.py's own (private) _ATTEMPT_FILENAME/_RECEIPT_FILENAME
+# publishing.py's own _ATTEMPT_FILENAME/_RECEIPT_FILENAME
 # constants, duplicated here (not imported) for the same
 # already-proven-code-safety reason as the helpers below. These are pure
 # read-only filesystem checks - this module never creates or deletes
@@ -109,7 +109,7 @@ def _load_rights_confirmed_local_job(
     risk of regressing those already-proven, already-shipped commands
     via a shared-code refactor - the tradeoff of a small amount of
     duplicated glue against touching code that has already carried a
-    real production job through a real private YouTube upload. Never
+    real production job through a real YouTube upload. Never
     claims the job or mutates any state."""
     with repository.running():
         job = repository.get_job(job_id)
@@ -668,6 +668,15 @@ def _classify_job_state(job: dict[str, Any], settings: Settings, package_dest_ro
     if highlights_dir.is_dir() and any(highlights_dir.glob(f"{prefix}*")):
         return "processing"
 
+    # A rights-confirmed job that was taken out of the pipeline (operator-
+    # quarantined, e.g. a source that can never produce a valid highlight)
+    # or that previously failed is NOT eligible for automatic selection -
+    # mirror run_production_once()'s own contract (status == "pending"
+    # only) instead of reporting it as eligible. File-based markers above
+    # (receipt/attempt/package/highlight) still take precedence: a
+    # receipt-bearing job stays "uploaded_private" regardless of status.
+    if job.get("status") in ("quarantined", "failed"):
+        return "rejected"
     return "rights_approved_eligible"
 
 

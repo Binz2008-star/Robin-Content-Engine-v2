@@ -949,6 +949,31 @@ def test_production_status_auto_quarantined_unconfirmed_job_still_awaiting_right
     assert status.jobs[0].state == "awaiting_rights"
 
 
+def test_production_status_operator_quarantined_confirmed_job_is_not_eligible(
+    speech_video: Path, tmp_path: Path
+) -> None:
+    """A rights-confirmed job quarantined by an operator (e.g. a source
+    that can never produce a valid highlight) must NOT be reported as
+    "rights_approved_eligible" - it is out of the pipeline and would never
+    be auto-selected (run_production_once() requires status == "pending"),
+    so the status report must not promise it is eligible."""
+    repo = FakeRepository()
+    repo.seed(
+        job_id=1,
+        source_path=str(speech_video),
+        rights_confirmed=True,
+        status="quarantined",
+        last_error="Quarantined by operator.",
+    )
+    settings = _fake_settings(tmp_path / "work")
+
+    status = production_status(repo, settings)
+
+    assert status.rights_approved_eligible == 0
+    assert status.rejected == 1
+    assert status.jobs[0].state == "rejected"
+
+
 def test_production_status_processing_state(
     speech_video: Path, tmp_path: Path, patched_recognizer: type[FakeRecognizer]
 ) -> None:
