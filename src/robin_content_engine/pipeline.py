@@ -38,7 +38,7 @@ class ContentEngine:
         self.uploader = YouTubeUploader(
             client_secret_file=settings.youtube_client_secret_file,
             token_file=settings.youtube_token_file,
-            privacy_status=settings.youtube_privacy_status,
+            privacy_status="private",
             category_id=settings.youtube_category_id,
         )
 

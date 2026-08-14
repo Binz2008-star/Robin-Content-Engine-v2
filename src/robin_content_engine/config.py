@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any
 
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -25,7 +25,6 @@ class Settings(BaseSettings):
 
     youtube_client_secret_file: Path = Path("client_secret.json")
     youtube_token_file: Path = Path("token.json")
-    youtube_privacy_status: Literal["private", "unlisted", "public"] = "private"
     youtube_category_id: str = "20"
     youtube_expected_channel_id: str | None = None
 

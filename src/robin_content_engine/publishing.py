@@ -333,8 +333,8 @@ def execute_private_upload(
     uploader_factory is invoked BY this function with the exact
     construction arguments a YouTubeUploader needs, and privacy_status is
     always passed as the literal "private" from right here - never read
-    from settings.youtube_privacy_status, never left for the caller to
-    decide. A caller can inject a different uploader_factory for tests,
+    from configuration, never left for the caller to decide. A caller can
+    inject a different uploader_factory for tests,
     but cannot make this function request any privacy value other than
     "private", since the value is a literal in this function's own source,
     not a parameter. This closes the gap where a factory could otherwise
@@ -359,8 +359,8 @@ def execute_private_upload(
        overwrite an existing attempt.
     8. Call uploader_factory(client_secret_file=..., token_file=...,
        privacy_status="private", category_id=...) - this function's own
-       hard-coded "private", regardless of settings.youtube_privacy_status
-       - and upload exactly the validated packaged MP4.
+       hard-coded "private", never configurable - and upload exactly the
+       validated packaged MP4.
     9. If anything raises from step 8 through the upload call itself, the
        attempt marker is intentionally left in place (ambiguous state -
        the remote upload may have already succeeded even though this
