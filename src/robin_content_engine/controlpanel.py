@@ -69,6 +69,16 @@ _DASHBOARD_HTML = """<!doctype html>
   .corr { font-size:12px; padding:7px 0; border-bottom:1px solid var(--line); }
   .corr b { display:block; }
   .muted { color:var(--muted); font-size:12px; }
+  .help { display:none; grid-column:1 / -1; background:var(--card); border:1px solid var(--line); border-radius:12px; padding:16px;
+          margin-bottom:18px; font-size:13px; line-height:1.55; }
+  .help.open { display:block; }
+  .help h3 { margin:14px 0 6px; font-size:13px; color:var(--accent); }
+  .help ol, .help ul { margin:4px 0 10px; padding-left:20px; }
+  .help table { margin:6px 0 12px; }
+  .help code { background:var(--line); padding:1px 6px; border-radius:6px; font-size:12px; }
+  .helpbtn { margin-left:auto; background:var(--line); color:#e6edf3; border:0; border-radius:999px;
+             padding:6px 14px; font-size:12px; cursor:pointer; }
+  .helpbtn:hover { background:#2b3650; }
 </style>
 </head>
 <body>
@@ -78,8 +88,35 @@ _DASHBOARD_HTML = """<!doctype html>
   <span id="auth" class="pill">…</span>
   <span id="db" class="pill">…</span>
   <span id="lang" class="pill">…</span>
+  <button id="helpBtn" class="helpbtn" onclick="toggleHelp()">How to use</button>
 </header>
 <main>
+  <div id="help" class="help">
+    <h3>1. Open it</h3>
+    <p>Double-click the <b>Robin Content Engine</b> icon on your desktop. It starts the app and opens this page.</p>
+    <h3>2. Your normal routine (2 steps)</h3>
+    <ol>
+      <li>Record gameplay, then click <b>Scan captures folder</b> to add the new clip.</li>
+      <li>Click <b>Approve</b> next to the new clip (under <b>Awaiting rights</b>), then click <b>Process + upload next job</b>.</li>
+    </ol>
+    <h3>3. What each button does</h3>
+    <table>
+      <tr><th>Button</th><th>What it does</th></tr>
+      <tr><td><b>Scan captures folder</b></td><td>Finds new clips you recorded and adds them to the queue</td></tr>
+      <tr><td><b>Refresh channel snapshot</b></td><td>Re-checks your YouTube channel (do after uploads)</td></tr>
+      <tr><td><b>Process + upload next job</b></td><td>Makes the Short and uploads it (max 4/day for safety)</td></tr>
+      <tr><td><b>Process next job (no upload)</b></td><td>Just makes the Short, doesn't upload</td></tr>
+      <tr><td><b>Make all private uploads public</b></td><td>Publishes any private videos</td></tr>
+      <tr><td><b>Build metadata fix plan</b></td><td>Finds videos with wrong/missing titles</td></tr>
+      <tr><td><b>Apply metadata fixes</b></td><td>Writes the corrected titles (use after Build plan)</td></tr>
+      <tr><td><b>Import a channel video as Short</b></td><td>Paste a video ID (e.g. <code>Yn0uEqzUHJ8</code>), click Download + queue — cuts the best moment into a Short</td></tr>
+    </table>
+    <h3>4. The queue</h3>
+    <p><b>Awaiting rights</b> = new clips needing your OK (click <b>Approve</b>). <b>Eligible / Packaged</b> = ready to upload. <b>Uploaded</b> = done. The <b>Result</b> box shows what each action did — red text = the reason it failed.</p>
+    <h3>5. Pending corrections</h3>
+    <p>Shows fixes waiting to be written (e.g. mislabeled videos). They apply automatically when YouTube's daily quota resets, or use <b>Apply metadata fixes</b>.</p>
+    <p style="color:var(--muted)">Everything else runs automatically on schedule. You only need steps 1-2 to add new clips.</p>
+  </div>
   <div>
     <div class="card"><h2>Channel</h2>
       <div class="counts" id="counts"></div>
@@ -187,6 +224,8 @@ async function importVideo(upload){
   refresh();
 }
 function importThis(id){ document.getElementById('vid').value = id; importVideo(false); }
+function toggleHelp(){ const h = document.getElementById('help'); h.classList.toggle('open');
+  document.getElementById('helpBtn').textContent = h.classList.contains('open') ? 'Hide help' : 'How to use'; }
 setInterval(refresh, 30000); refresh();
 </script>
 </body>
