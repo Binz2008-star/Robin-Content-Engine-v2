@@ -1387,7 +1387,6 @@ def channel_import_command(
     Requires the optional yt-dlp dependency for downloading.
     """
     settings = Settings()  # type: ignore[call-arg]
-    repository = JobRepository(settings.database_url, settings.max_job_attempts)
     auth = YouTubeAuth(settings.youtube_client_secret_file, settings.youtube_token_file)
 
     selector_config = WindowSelectorConfig(
@@ -1400,7 +1399,6 @@ def channel_import_command(
         try:
             job_id, result = import_video_as_short(
                 video_id,
-                repository,
                 settings,
                 rank=rank,
                 model_size=model_size,

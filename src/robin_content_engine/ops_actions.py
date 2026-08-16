@@ -256,8 +256,7 @@ def metadata_plan_status(settings: Settings) -> dict[str, Any]:
 
 def import_video(settings: Settings, video_id: str, upload: bool = False) -> dict[str, Any]:
     def run() -> str:
-        repo = _repo(settings)
-        job_id, result = import_video_as_short(video_id, repo, settings, rank=1)
+        job_id, result = import_video_as_short(video_id, settings, rank=1)
         lines = [
             f"Imported {video_id} as job {job_id}.",
             f"Window: {result.start_seconds:.0f}s-{result.end_seconds:.0f}s | "

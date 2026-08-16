@@ -124,7 +124,6 @@ def list_long_videos(
 
 def import_video_as_short(
     video_id: str,
-    repository: JobRepository,
     settings: Settings,
     *,
     rank: int = 1,
@@ -143,6 +142,10 @@ def import_video_as_short(
     treats it exactly like an operator-confirmed local capture. Returns
     before any publishing - the caller decides whether/when to upload.
 
+    Uses its OWN fresh JobRepository instances internally (psycopg_pool
+    cannot reopen a closed pool), so this function is safe to call
+    repeatedly with different video IDs in one process.
+
     Idempotent: re-running for the same video_id reuses the existing
     pending job instead of registering a duplicate (and re-cutting with
     the current window config produces a fresh, longer artifact if the
@@ -160,14 +163,15 @@ def import_video_as_short(
             f"{video_id}. Robin owns this footage; it was published on the "
             "Robin Life & Gaming channel."
         )
-        with repository.running():
-            job_id = repository.enqueue_local(video_path, source_title, rights_note)
+        enqueue_repository = JobRepository(settings.database_url, settings.max_job_attempts)
+        with enqueue_repository.running():
+            job_id = enqueue_repository.enqueue_local(video_path, source_title, rights_note)
 
     try:
         # run_production() internally uses its own `with repository.running():`
         # block, and psycopg_pool cannot reopen a pool that was already
-        # opened AND closed - so it needs a FRESH JobRepository, never the
-        # one used for the enqueue above (its pool is now closed).
+        # opened AND closed - so it needs a FRESH JobRepository, never one
+        # whose pool has been used in this process before.
         pipeline_repository = JobRepository(settings.database_url, settings.max_job_attempts)
         result = run_production(
             job_id,
