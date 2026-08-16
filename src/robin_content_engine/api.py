@@ -319,4 +319,68 @@ def create_app(
             "demo_mode": False,
         }
 
+    # ------------------------------------------------------------------
+    # Production operations (shared with the ops dashboard via ops_actions)
+    # ------------------------------------------------------------------
+
+    from . import ops_actions
+
+    class ProductionRunRequest(BaseModel):
+        upload: bool = True
+
+    class ProductionApproveRequest(BaseModel):
+        job_id: int
+        note: str | None = None
+
+    class ProductionMetaFixRequest(BaseModel):
+        apply: bool = False
+        max_updates: int = 20
+
+    class ProductionImportRequest(BaseModel):
+        video_id: str
+        upload: bool = False
+
+    @app.get("/api/production/status")
+    def production_status_endpoint() -> dict[str, Any]:
+        return ops_actions.status(app_settings)
+
+    @app.get("/api/production/system")
+    def production_system_endpoint() -> dict[str, Any]:
+        return ops_actions.system_info(app_settings)
+
+    @app.post("/api/production/scan")
+    def production_scan() -> dict[str, Any]:
+        return ops_actions.scan(app_settings)
+
+    @app.post("/api/production/sync")
+    def production_sync() -> dict[str, Any]:
+        return ops_actions.sync(app_settings)
+
+    @app.post("/api/production/approve")
+    def production_approve(payload: ProductionApproveRequest) -> dict[str, Any]:
+        return ops_actions.approve(app_settings, payload.job_id, payload.note)
+
+    @app.post("/api/production/run-once")
+    def production_run_once(payload: ProductionRunRequest | None = None) -> dict[str, Any]:
+        upload = payload.upload if payload else True
+        return ops_actions.run_once(app_settings, upload=upload)
+
+    @app.post("/api/production/make-public")
+    def production_make_public() -> dict[str, Any]:
+        return ops_actions.make_public(app_settings)
+
+    @app.post("/api/production/metadata-fix")
+    def production_metadata_fix(payload: ProductionMetaFixRequest | None = None) -> dict[str, Any]:
+        apply_ = payload.apply if payload else False
+        max_updates = payload.max_updates if payload else 20
+        return ops_actions.metadata_fix(app_settings, apply=apply_, max_updates=max_updates)
+
+    @app.post("/api/production/import")
+    def production_import(payload: ProductionImportRequest) -> dict[str, Any]:
+        return ops_actions.import_video(app_settings, payload.video_id, upload=payload.upload)
+
+    @app.get("/api/production/long-videos")
+    def production_long_videos(limit: int = 30, min_seconds: int = 60) -> dict[str, Any]:
+        return ops_actions.long_videos(app_settings, limit=limit, min_seconds=min_seconds)
+
     return app
