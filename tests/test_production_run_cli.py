@@ -124,6 +124,8 @@ class FakeSettings:
         self.work_dir = work_dir
         self.capture_source_dir = capture_dir
         self.capture_stability_wait_seconds = 0.0
+        self.highlight_min_seconds = 15.0
+        self.highlight_max_seconds = 60.0
         self.youtube_client_secret_file = Path("client_secret.json")
         self.youtube_token_file = Path("token.json")
         self.youtube_category_id = "20"

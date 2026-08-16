@@ -6,6 +6,7 @@ from typing import Any
 import imageio_ffmpeg
 import psycopg
 
+from .clip_selector import WindowSelectorConfig
 from .config import Settings
 from .database import JobRepository
 from .production_runner import ProductionRunError, run_production
@@ -129,6 +130,7 @@ def import_video_as_short(
     model_size: str = "base",
     horizontal_offset_ratio: float = 0.5,
     package_dest_root: Path | None = None,
+    selector_config: WindowSelectorConfig | None = None,
 ) -> tuple[int, Any]:
     """Download one own-channel video, register it as a rights-confirmed
     local job (it is the channel's own upload), run it through the full
@@ -138,7 +140,12 @@ def import_video_as_short(
     The job is registered with rights_confirmed=TRUE and a rights note
     recording the source upload, so the existing production machinery
     treats it exactly like an operator-confirmed local capture. Returns
-    before any publishing - the caller decides whether/when to upload."""
+    before any publishing - the caller decides whether/when to upload.
+
+    Idempotent: re-running for the same video_id reuses the existing
+    pending job instead of registering a duplicate (and re-cutting with
+    the current window config produces a fresh, longer artifact if the
+    bounds changed)."""
     source_title = fetch_video_title(settings, video_id)
     if not source_title:
         source_title = f"Channel video {video_id}"
@@ -146,14 +153,16 @@ def import_video_as_short(
     downloads = settings.work_dir / "downloads"
     video_path = download_channel_video(video_id, downloads)
 
-    rights_note = (
-        f"Imported from the channel's own upload {video_id} on "
-        "https://www.youtube.com/watch?v="
-        f"{video_id}. Robin owns this footage; it was published on the "
-        "Robin Life & Gaming channel."
-    )
-    with repository.running():
-        job_id = repository.enqueue_local(video_path, source_title, rights_note)
+    job_id = _existing_pending_job_id(settings, video_id)
+    if job_id is None:
+        rights_note = (
+            f"Imported from the channel's own upload {video_id} on "
+            "https://www.youtube.com/watch?v="
+            f"{video_id}. Robin owns this footage; it was published on the "
+            "Robin Life & Gaming channel."
+        )
+        with repository.running():
+            job_id = repository.enqueue_local(video_path, source_title, rights_note)
 
     try:
         # run_production() internally uses its own `with repository.running():`
@@ -169,7 +178,26 @@ def import_video_as_short(
             horizontal_offset_ratio=horizontal_offset_ratio,
             model_size=model_size,
             package_dest_root=package_dest_root,
+            selector_config=selector_config,
         )
     except ProductionRunError as exc:
         raise ChannelImportError(f"production pipeline failed for job {job_id}: {exc}") from exc
     return job_id, result
+
+
+def _existing_pending_job_id(settings: Settings, video_id: str) -> int | None:
+    """Find a not-yet-uploaded queue job that already imports this video, so
+    a re-run never registers a duplicate."""
+    with psycopg.connect(settings.database_url) as conn:
+        row = conn.execute(
+            """
+            SELECT id FROM video_queue
+            WHERE rights_note LIKE %s
+              AND status IN ('pending', 'processing', 'rendered')
+              AND (youtube_id IS NULL OR youtube_id = '')
+            ORDER BY id
+            LIMIT 1
+            """,
+            (f"%{video_id}%",),
+        ).fetchone()
+    return int(row[0]) if row else None

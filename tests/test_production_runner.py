@@ -176,6 +176,8 @@ def _fake_settings(work_dir: Path, capture_dir: Path | None = None) -> SimpleNam
         work_dir=work_dir,
         capture_source_dir=capture_dir or (work_dir / "captures"),
         capture_stability_wait_seconds=0.0,
+        highlight_min_seconds=15.0,
+        highlight_max_seconds=60.0,
     )
 
 

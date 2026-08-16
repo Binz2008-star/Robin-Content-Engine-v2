@@ -62,6 +62,13 @@ class Settings(BaseSettings):
     original_audio_volume: float = Field(default=0.15, ge=0.0, le=1.0)
     log_level: str = "INFO"
 
+    # Highlight-window bounds for the SHORTS production path. The default
+    # selector minimum of 15s favours the shortest window around a hot bin
+    # (mean-per-bin scoring), which produces clips that feel too short.
+    # Raising the floor here makes produced Shorts carry more context.
+    highlight_min_seconds: float = Field(default=15.0, ge=5.0, le=60.0)
+    highlight_max_seconds: float = Field(default=60.0, ge=10.0, le=60.0)
+
     capture_source_dir: Path = Path(r"C:\Users\loyal\Videos\Captures")
     capture_stability_wait_seconds: float = Field(default=2.0, ge=0.0, le=60.0)
 

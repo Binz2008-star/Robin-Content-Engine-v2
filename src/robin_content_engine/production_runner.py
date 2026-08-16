@@ -170,6 +170,7 @@ def _run_highlight_analysis(
     top_n: int,
     *,
     analysis_cache_path: Path | None = None,
+    selector_config: WindowSelectorConfig | None = None,
 ) -> tuple[list[SceneBoundary], list[HighlightCandidate]]:
     """Mirrors cli.py's own helper of the same name field-for-field - see
     that docstring for the full rationale (deterministic scoring,
@@ -195,7 +196,7 @@ def _run_highlight_analysis(
             scenes, raw_rms, raw_flux, raw_motion, raw_scene = cached
             windows = generate_time_windows(scenes[-1].end_seconds, _HIGHLIGHT_WINDOW_SECONDS)
             return scenes, _select_candidates(
-                windows, raw_rms, raw_flux, raw_motion, raw_scene, top_n
+                windows, raw_rms, raw_flux, raw_motion, raw_scene, top_n, selector_config
             )
 
     scenes = detect_scenes(video_path)
@@ -206,7 +207,9 @@ def _run_highlight_analysis(
     raw_motion = extract_motion_activity(video_path, windows)
     raw_scene = compute_scene_density(scenes, windows)
 
-    selected = _select_candidates(windows, raw_rms, raw_flux, raw_motion, raw_scene, top_n)
+    selected = _select_candidates(
+        windows, raw_rms, raw_flux, raw_motion, raw_scene, top_n, selector_config
+    )
 
     if analysis_cache_path is not None:
         _store_analysis_cache(
@@ -228,13 +231,14 @@ def _select_candidates(
     raw_motion: Sequence[float],
     raw_scene: Sequence[float],
     top_n: int,
+    selector_config: WindowSelectorConfig | None = None,
 ) -> list[HighlightCandidate]:
     """The scoring + overlap-suppression tail of a highlight analysis -
     pure and deterministic, shared by the fresh-analysis and cached-
     analysis paths so both produce byte-identical selections."""
     window_scores = score_windows(windows, raw_rms, raw_flux, raw_motion, raw_scene)
 
-    selector_config = WindowSelectorConfig()
+    selector_config = selector_config or WindowSelectorConfig()
     ranked_candidates = generate_candidate_windows(window_scores, selector_config)
     return suppress_overlaps(
         ranked_candidates,
@@ -514,6 +518,7 @@ def _run_production_loaded_job(
     quality_gate_config: QualityGateConfig | None = None,
     package_dest_root: Path | None = None,
     analysis_cache_path: Path | None = None,
+    selector_config: WindowSelectorConfig | None = None,
 ) -> ProductionRunResult:
     """Orchestrate one already-loaded job/rank through every already-
     proven local stage - highlight analysis, 9:16 reframe, local ASR +
@@ -573,7 +578,8 @@ def _run_production_loaded_job(
 
     try:
         _scenes, selected = _run_highlight_analysis(
-            video_path, rank, analysis_cache_path=analysis_cache_path
+            video_path, rank, analysis_cache_path=analysis_cache_path,
+            selector_config=selector_config,
         )
     except (SceneDetectionError, FeatureExtractionError, ClipSelectionError) as exc:
         raise ProductionRunError(str(exc), retryable=False) from exc
@@ -728,6 +734,7 @@ def run_production(
     model_size: str = "base",
     quality_gate_config: QualityGateConfig | None = None,
     package_dest_root: Path | None = None,
+    selector_config: WindowSelectorConfig | None = None,
 ) -> ProductionRunResult:
     """Public manual-run entry point (used by the `production-run` CLI
     command). Enters repository.running() exactly once to look up and
@@ -738,11 +745,21 @@ def run_production(
 
     Never mutates JobRepository (read-only get_job() only, same as
     Phases 5-9), never touches YouTube, never uploads.
+
+    `selector_config` controls the highlight-window bounds used to cut the
+    Short. When omitted, it is built from settings.highlight_min_seconds /
+    highlight_max_seconds so the configured clip length applies everywhere
+    the production path runs (scheduled run-once included).
     """
     if rank < 1:
         raise ProductionRunError("rank must be >= 1.")
 
     job, video_path = _load_rights_confirmed_local_job(job_id, repository)
+
+    selector_config = selector_config or WindowSelectorConfig(
+        min_clip_seconds=settings.highlight_min_seconds,
+        max_clip_seconds=settings.highlight_max_seconds,
+    )
 
     return _run_production_loaded_job(
         job,
@@ -753,6 +770,7 @@ def run_production(
         model_size=model_size,
         quality_gate_config=quality_gate_config,
         package_dest_root=package_dest_root,
+        selector_config=selector_config,
     )
 
 
@@ -1152,6 +1170,10 @@ def run_production_once(
             quality_gate_config=quality_gate_config,
             package_dest_root=dest_root,
             analysis_cache_path=analysis_cache_path,
+            selector_config=WindowSelectorConfig(
+                min_clip_seconds=settings.highlight_min_seconds,
+                max_clip_seconds=settings.highlight_max_seconds,
+            ),
         )
     except ProductionRunError as exc:
         if exc.retryable:

@@ -1356,6 +1356,14 @@ def channel_import_command(
         str,
         typer.Option("--model-size", help="faster-whisper model size for captioning."),
     ] = "base",
+    min_seconds: Annotated[
+        float | None,
+        typer.Option("--min-seconds", help="Highlight window minimum length (s)."),
+    ] = None,
+    max_seconds: Annotated[
+        float | None,
+        typer.Option("--max-seconds", help="Highlight window maximum length (s)."),
+    ] = None,
     no_upload: Annotated[
         bool,
         typer.Option("--no-upload", help="Download + process but do not upload to YouTube."),
@@ -1367,11 +1375,19 @@ def channel_import_command(
     and YOUTUBE_AI_METADATA). The imported footage is registered as a
     rights-confirmed queue job because it is the channel's own upload.
 
+    Highlight length defaults to HIGHLIGHT_MIN_SECONDS/HIGHLIGHT_MAX_SECONDS
+    from configuration; override per run with --min-seconds/--max-seconds.
+
     Requires the optional yt-dlp dependency for downloading.
     """
     settings = Settings()  # type: ignore[call-arg]
     repository = JobRepository(settings.database_url, settings.max_job_attempts)
     auth = YouTubeAuth(settings.youtube_client_secret_file, settings.youtube_token_file)
+
+    selector_config = WindowSelectorConfig(
+        min_clip_seconds=min_seconds or settings.highlight_min_seconds,
+        max_clip_seconds=max_seconds or settings.highlight_max_seconds,
+    )
 
     for video_id in video_ids:
         typer.echo(f"=== Importing {video_id} ===")
@@ -1382,6 +1398,7 @@ def channel_import_command(
                 settings,
                 rank=rank,
                 model_size=model_size,
+                selector_config=selector_config,
             )
         except ChannelImportError as exc:
             raise typer.BadParameter(str(exc)) from exc
