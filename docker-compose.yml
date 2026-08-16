@@ -1,0 +1,38 @@
+version: '3.8'
+
+services:
+  robin-engine:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+      - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY}
+      - DEEPSEEK_BASE_URL=${DEEPSEEK_BASE_URL:-https://api.deepseek.com}
+      - DEEPSEEK_MODEL=${DEEPSEEK_MODEL:-deepseek-chat}
+      - TTS_VOICE=${TTS_VOICE:-ar-AE-HamdanNeural}
+      - TTS_RATE=${TTS_RATE:-+0%}
+      - TTS_VOLUME=${TTS_VOLUME:-+0%}
+      - TTS_PITCH=${TTS_PITCH:-+0Hz}
+      - YOUTUBE_CLIENT_SECRET_FILE=/app/secrets/client_secret.json
+      - YOUTUBE_TOKEN_FILE=/app/secrets/token.json
+      - YOUTUBE_PRIVACY_STATUS=${YOUTUBE_PRIVACY_STATUS:-private}
+      - YOUTUBE_CATEGORY_ID=${YOUTUBE_CATEGORY_ID:-20}
+      - YOUTUBE_EXPECTED_CHANNEL_ID=${YOUTUBE_EXPECTED_CHANNEL_ID}
+      - WORK_DIR=/app/work
+      - MAX_JOB_ATTEMPTS=${MAX_JOB_ATTEMPTS:-3}
+      - MAX_SHORT_SECONDS=${MAX_SHORT_SECONDS:-58}
+      - ORIGINAL_AUDIO_VOLUME=${ORIGINAL_AUDIO_VOLUME:-0.15}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - CAPTURE_SOURCE_DIR=${CAPTURE_SOURCE_DIR:-./captures}
+      - CAPTURE_STABILITY_WAIT_SECONDS=${CAPTURE_STABILITY_WAIT_SECONDS:-2.0}
+    volumes:
+      - ./work:/app/work
+      - ./captures:/app/captures
+      - ./secrets:/app/secrets:ro
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "from robin_content_engine.database import JobRepository; print('OK')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3

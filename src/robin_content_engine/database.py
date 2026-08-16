@@ -31,12 +31,12 @@ def _rows_to_dicts(rows: list[tuple[Any, ...]], description: Any) -> list[RowDic
 
 
 class JobRepository:
-    def __init__(self, database_url: str, max_attempts: int) -> None:
+    def __init__(self, database_url: str, max_attempts: int, pool_min_size: int = 1, pool_max_size: int = 5) -> None:
         self.max_attempts = max_attempts
         self.pool = ConnectionPool(
             conninfo=database_url,
-            min_size=1,
-            max_size=5,
+            min_size=pool_min_size,
+            max_size=pool_max_size,
             open=False,
         )
 

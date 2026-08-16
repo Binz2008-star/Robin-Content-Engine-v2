@@ -30,3 +30,9 @@ downloads/
 Thumbs.db
 .vscode/
 .idea/
+
+# Stray downloaded/exported artifacts and scratch files
+*.exe
+tmp_frames/
+tmp_inspect.py
+*output (fmkjqo).txt

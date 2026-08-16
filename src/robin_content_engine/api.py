@@ -1,16 +1,21 @@
 from __future__ import annotations
 
 import json
+import logging
 import shutil
 import sys
+import traceback
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Annotated, Any, Protocol, cast
 
-from fastapi import Depends, FastAPI, HTTPException, status
+import structlog
+from fastapi import Depends, FastAPI, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, field_validator
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
 
 from . import __version__
 from .config import Settings
@@ -152,6 +157,8 @@ def create_app(
     repo = repository or JobRepository(
         app_settings.database_url,
         app_settings.max_job_attempts,
+        app_settings.db_pool_min_size,
+        app_settings.db_pool_max_size,
     )
 
     @asynccontextmanager
@@ -165,6 +172,12 @@ def create_app(
                 repo.close()
 
     app = FastAPI(title="Robin Content Engine API", lifespan=lifespan)
+
+    # Rate limiting
+    limiter = Limiter(key_func=get_remote_address)
+    app.state.limiter = limiter
+    app.add_exception_handler(_rate_limit_exceeded_handler, status_code=status.HTTP_429_TOO_MANY_REQUESTS)
+
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["http://127.0.0.1:3000", "http://localhost:3000"],
@@ -172,6 +185,32 @@ def create_app(
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+    # Configure structured logging
+    structlog.configure(
+        processors=[
+            structlog.processors.TimeStamper(fmt="iso"),
+            structlog.processors.add_log_level,
+            structlog.processors.JSONRenderer(),
+        ],
+        wrapper_class=structlog.make_filtering_bound_logger(logging.INFO),
+    )
+    log = structlog.get_logger()
+
+    @app.exception_handler(Exception)
+    async def global_exception_handler(request: Request, exc: Exception) -> dict[str, Any]:
+        log.exception(
+            "unhandled_exception",
+            path=request.url.path,
+            method=request.method,
+            error_type=type(exc).__name__,
+            error_message=str(exc),
+        )
+        return {
+            "detail": "Internal server error",
+            "error_type": type(exc).__name__,
+            "path": request.url.path,
+        }
 
     app.state.repository = repo
     app.state.settings = app_settings
@@ -209,6 +248,7 @@ def create_app(
         )
 
     @app.get("/api/jobs")
+    @limiter.limit("10/minute")
     def list_jobs() -> dict[str, Any]:
         jobs = [_job_payload(job) for job in repo.list_jobs()]
         jobs.sort(
@@ -222,6 +262,7 @@ def create_app(
         return {"jobs": jobs, "counts": counts}
 
     @app.post("/api/jobs", response_model=dict[str, Any])
+    @limiter.limit("5/minute")
     def create_job(payload: JobCreateRequest) -> dict[str, Any]:
         if payload.rights_confirmed is not True:
             raise HTTPException(status_code=422, detail="rights_confirmed must be true")
@@ -248,29 +289,38 @@ def create_app(
         return _job_payload(job)
 
     @app.post("/api/jobs/{job_id}/run")
+    @limiter.limit("2/minute")
     async def run_job(
         job_id: int,
         payload: JobRunRequest | None = None,
         engine: Annotated[SupportsEngine, Depends(get_engine)] = Depends(get_engine),  # noqa: B008
     ) -> dict[str, Any]:
-        job = repo.get_job(job_id)
-        if job is None:
-            raise HTTPException(status_code=404, detail="job not found")
-        if job["status"] != "pending":
-            raise HTTPException(status_code=409, detail="job is not pending")
-        claimed = repo.claim_job(job_id)
-        if claimed is None:
-            raise HTTPException(status_code=409, detail="job could not be claimed")
-        render_only = payload.render_only if payload else False
-        await engine.run_job(job_id, upload=not render_only)
-        message = "Job queued for render only." if render_only else "Job started."
-        return {
-            "status": "success",
-            "message": message,
-            "job": _job_payload(repo.get_job(job_id) or claimed),
-        }
+        try:
+            job = repo.get_job(job_id)
+            if job is None:
+                raise HTTPException(status_code=404, detail="job not found")
+            if job["status"] != "pending":
+                raise HTTPException(status_code=409, detail="job is not pending")
+            claimed = repo.claim_job(job_id)
+            if claimed is None:
+                raise HTTPException(status_code=409, detail="job could not be claimed")
+            render_only = payload.render_only if payload else False
+            await engine.run_job(job_id, upload=not render_only)
+            message = "Job queued for render only." if render_only else "Job started."
+            log.info("job_started", job_id=job_id, render_only=render_only)
+            return {
+                "status": "success",
+                "message": message,
+                "job": _job_payload(repo.get_job(job_id) or claimed),
+            }
+        except HTTPException:
+            raise
+        except Exception as exc:
+            log.exception("job_run_failed", job_id=job_id)
+            raise HTTPException(status_code=500, detail=f"Job execution failed: {str(exc)}")
 
     @app.post("/api/jobs/{job_id}/actions")
+    @limiter.limit("10/minute")
     def job_action(job_id: int, payload: JobActionRequest) -> dict[str, Any]:
         job = repo.get_job(job_id)
         if job is None:
