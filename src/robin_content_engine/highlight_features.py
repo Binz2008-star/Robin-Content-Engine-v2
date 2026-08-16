@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
+from itertools import pairwise
 from pathlib import Path
 
 import cv2
@@ -161,10 +162,17 @@ def extract_motion_activity(
     config: MotionFeatureConfig | None = None,
 ) -> list[float]:
     """Samples frames at `config.sample_fps` (never every full-resolution
-    frame) and downscales before diffing. One seek per window to its start,
-    then strictly sequential reads within the window - repeated mid-window
-    seeking is avoided since OpenCV/ffmpeg seek accuracy on compressed
-    codecs is not frame-exact, which would make sampling non-deterministic.
+    frame) and downscales before diffing.
+
+    Reads the file in a SINGLE strictly sequential pass - one grab() per
+    frame and retrieve() only for the exact frames to sample - with no
+    mid-file seeking at all (not even one seek per window). OpenCV/ffmpeg
+    seek accuracy on compressed codecs is not frame-exact, so any seek
+    makes sampling non-deterministic (and a seek per window grows with
+    the window count); a single monotonic pass means the sampled frame
+    indices are always exactly
+    start_frame + k * round(fps / sample_fps) for every window,
+    identically on every run and every host.
     """
     config = config or MotionFeatureConfig()
     if not windows:
@@ -182,28 +190,42 @@ def extract_motion_activity(
         sample_fps = min(config.sample_fps, source_fps) if config.sample_fps > 0 else source_fps
         frame_interval = max(1, round(source_fps / sample_fps))
 
-        motion_values: list[float] = []
-        for w in windows:
+        # Exact absolute frame indices to sample per window, in strictly
+        # increasing order (windows are processed in order and each
+        # window's samples advance by frame_interval).
+        samples: list[tuple[int, int]] = []
+        for wi, w in enumerate(windows):
             start_frame = int(w.start_seconds * source_fps)
             end_frame = int(w.end_seconds * source_fps)
-            cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
-
-            prev_gray: np.ndarray | None = None
-            diffs: list[float] = []
-            offset = 0
             frame_idx = start_frame
             while frame_idx < end_frame:
-                ok, frame = cap.read()
-                if not ok:
-                    break
-                if offset % frame_interval == 0:
-                    gray = _downscale_gray(frame, config.downscale_width)
-                    if prev_gray is not None:
-                        diffs.append(compute_frame_motion(prev_gray, gray))
-                    prev_gray = gray
-                offset += 1
-                frame_idx += 1
+                samples.append((frame_idx, wi))
+                frame_idx += frame_interval
 
+        # Single sequential pass: grab() skips (and decodes) frames up to
+        # and INCLUDING each sample frame, retrieve() returns the frame
+        # just grabbed. A retrieve() without a preceding grab() fails on
+        # the ffmpeg backend ("Picture does not contain data"), so every
+        # sample is always preceded by at least one grab().
+        window_grays: list[list[np.ndarray]] = [[] for _ in windows]
+        frame_idx = 0
+        for sample_idx, wi in samples:
+            while frame_idx <= sample_idx:
+                if not cap.grab():
+                    break
+                frame_idx += 1
+            if frame_idx <= sample_idx:
+                break  # stream ended before this sample could be reached
+            ok, frame = cap.retrieve()
+            if not ok:
+                break
+            window_grays[wi].append(_downscale_gray(frame, config.downscale_width))
+
+        motion_values: list[float] = []
+        for grays in window_grays:
+            diffs = [
+                compute_frame_motion(prev, curr) for prev, curr in pairwise(grays)
+            ]
             motion_values.append(float(np.mean(diffs)) if diffs else 0.0)
 
         return motion_values

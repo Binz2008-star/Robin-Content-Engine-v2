@@ -277,3 +277,13 @@ def test_parse_duration_seconds() -> None:
     assert _parse_duration_seconds("P1DT2H") == 93600
     assert _parse_duration_seconds("not-a-duration") is None
     assert _parse_duration_seconds(None) is None
+
+
+def test_parse_duration_seconds_truncates_fractional_seconds() -> None:
+    """YouTube sometimes reports sub-second durations (e.g. "PT1.5S").
+    duration_seconds is stored in an INTEGER column - fractional seconds
+    are truncated (never rounded up, so the stored value never overstates
+    the video's length)."""
+    assert _parse_duration_seconds("PT1.5S") == 1
+    assert _parse_duration_seconds("PT0.9S") == 0
+    assert _parse_duration_seconds("PT1M2.7S") == 62

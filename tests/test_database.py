@@ -290,3 +290,122 @@ def test_quarantine_unconfirmed_sql_uses_auto_quarantine_reason_constant() -> No
     assert "last_error = %s" in normalized
     assert "WHERE status = 'pending' AND rights_confirmed = FALSE" in normalized
     assert params == (AUTO_QUARANTINE_REASON,)
+
+
+# ---------------------------------------------------------------------------
+# mark_deterministic_failure(): quarantines a still-pending job using its
+# OWN short-lived pool (the lookup pool is already closed by the time
+# run_production_once calls this, and psycopg_pool's ConnectionPool cannot
+# be reopened after close).
+# ---------------------------------------------------------------------------
+
+
+class FakeDetPool:
+    """Stand-in for the short-lived psycopg_pool.ConnectionPool that
+    mark_deterministic_failure() creates for exactly one UPDATE - supports
+    the open(wait=True)/close() lifecycle plus connection()."""
+
+    def __init__(
+        self,
+        conninfo: str,
+        min_size: int = 1,
+        max_size: int = 1,
+        open: bool = False,
+    ) -> None:
+        self.conninfo = conninfo
+        self.min_size = min_size
+        self.max_size = max_size
+        self.open_requested = open
+        self.opened = False
+        self.closed = False
+        self.result = FakeResult(description=None, rows=[], rowcount=0)
+        self.conn = FakeConnection(self.result)
+
+    def set_result(self, rowcount: int) -> None:
+        self.result.rowcount = rowcount
+
+    def open(self, wait: bool = True) -> None:
+        self.opened = True
+
+    def close(self) -> None:
+        self.closed = True
+
+    @contextmanager
+    def connection(self):
+        yield self.conn
+
+
+def test_mark_deterministic_failure_updates_pending_job_via_own_pool(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import robin_content_engine.database as db_module
+
+    pool = FakeDetPool("postgresql://deterministic")
+    pool.set_result(1)
+    pool_kwargs: list[dict[str, Any]] = []
+
+    def make_pool(**kwargs: Any) -> FakeDetPool:
+        pool_kwargs.append(kwargs)
+        return pool
+
+    monkeypatch.setattr(db_module, "ConnectionPool", make_pool)
+
+    repo = JobRepository("postgresql://deterministic", 3)
+
+    result = repo.mark_deterministic_failure(42, "source file is gone")
+
+    assert result is True
+    sql, params = pool.conn.executed[-1]
+    normalized = " ".join(sql.split())
+    assert "SET status = 'quarantined'" in normalized
+    assert "last_error = %s" in normalized
+    assert "claimed_at = NULL" in normalized
+    assert "WHERE id = %s AND status = 'pending'" in normalized
+    assert params == ("source file is gone", 42)
+    # the short-lived pool was spun up with the repository's own URL,
+    # opened for the write, and closed again - never reopened, never
+    # leaked (pool_kwargs[-1] is mark_deterministic_failure's pool;
+    # JobRepository.__init__ created the first one)
+    assert pool_kwargs[-1]["conninfo"] == "postgresql://deterministic"
+    assert pool_kwargs[-1]["min_size"] == 1 and pool_kwargs[-1]["max_size"] == 1
+    assert pool_kwargs[-1]["open"] is False
+    assert pool.opened is True
+    assert pool.closed is True
+
+
+def test_mark_deterministic_failure_truncates_reason_to_2000_chars(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import robin_content_engine.database as db_module
+
+    pool = FakeDetPool("ignored")
+    pool.set_result(1)
+    monkeypatch.setattr(db_module, "ConnectionPool", lambda **kwargs: pool)
+
+    repo = JobRepository("postgresql://deterministic", 3)
+    long_reason = "x" * 5000
+
+    result = repo.mark_deterministic_failure(42, long_reason)
+
+    assert result is True
+    _sql, params = pool.conn.executed[-1]
+    assert len(params[0]) == 2000
+    assert params[0] == "x" * 2000
+    assert params[1] == 42
+
+
+def test_mark_deterministic_failure_returns_false_when_job_not_pending(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A job that is no longer 'pending' (e.g. an operator quarantined it
+    concurrently) is never overwritten - the UPDATE affects zero rows."""
+    import robin_content_engine.database as db_module
+
+    pool = FakeDetPool("ignored")
+    pool.set_result(0)
+    monkeypatch.setattr(db_module, "ConnectionPool", lambda **kwargs: pool)
+
+    repo = JobRepository("postgresql://deterministic", 3)
+
+    assert repo.mark_deterministic_failure(42, "already handled") is False
+    assert pool.closed is True

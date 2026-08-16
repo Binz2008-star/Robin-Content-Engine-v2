@@ -54,10 +54,10 @@ class ShortsRenderer:
                 audio_codec="aac",
                 fps=fps,
                 preset="slow",  # Better quality encoding
-                bitrate="4000k",  # Higher bitrate for better quality
                 threads=4,
                 pixel_format="yuv420p",
-                ffmpeg_params=["-movflags", "+faststart", "-tune", "film"],  # Better quality tuning
+                # Better quality tuning
+                ffmpeg_params=["-movflags", "+faststart", "-tune", "film", "-b:v", "4000k"],
                 logger=None,
             )
 

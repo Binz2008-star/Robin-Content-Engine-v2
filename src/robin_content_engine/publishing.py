@@ -9,6 +9,9 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from googleapiclient.discovery import build  # type: ignore[import-untyped]
+from googleapiclient.errors import HttpError  # type: ignore[import-untyped]
+
 from .config import Settings
 from .models import UploadResult
 from .quality_gate import QualityGateConfig, QualityGateResult, run_quality_gate
@@ -266,6 +269,28 @@ def _write_json_atomic(path: Path, payload: dict[str, Any]) -> None:
     tmp_path.replace(path)
 
 
+def _set_video_public(auth: YouTubeAuth, youtube_id: str) -> None:
+    """Flip one already-uploaded video's privacy status to "public" via the
+    authenticated YouTube service. Requires the token to carry the
+    "youtube" manage scope (re-run `robin-engine youtube-auth` after adding
+    it). Never opens a browser. Only ever called AFTER the upload itself
+    has already succeeded."""
+    try:
+        credentials = auth.load_credentials()
+        youtube = build("youtube", "v3", credentials=credentials, cache_discovery=False)
+        youtube.videos().update(
+            part="status",
+            body={"id": youtube_id, "status": {"privacyStatus": "public"}},
+        ).execute()
+    except (HttpError, YouTubeAuthError, OSError, TimeoutError) as exc:
+        raise PublishingError(
+            f"The upload SUCCEEDED (video ID {youtube_id!r}) but making the video public "
+            f"failed, so it remains private on YouTube. The upload receipt is recorded as "
+            f"'private'. Flip it to public manually and retry the publication step. "
+            f"Original error: {exc}"
+        ) from exc
+
+
 def _check_no_existing_upload_state(package_dir: Path) -> None:
     """A fast, early fail-fast check only - NOT the actual race-safety
     mechanism (see _create_upload_attempt_exclusive for that). Its only
@@ -361,11 +386,15 @@ def execute_private_upload(
        privacy_status="private", category_id=...) - this function's own
        hard-coded "private", never configurable - and upload exactly the
        validated packaged MP4.
-    9. If anything raises from step 8 through the upload call itself, the
-       attempt marker is intentionally left in place (ambiguous state -
-       the remote upload may have already succeeded even though this
-       response was lost) and a PublishingError wrapping the original is
-       raised. No automatic cleanup, no retry.
+    9. If constructing the uploader itself raises (steps 0 network bytes
+       have moved - LOCAL preparation only), the attempt marker is
+       removed again and a PublishingError saying the retry is safe is
+       raised: nothing ambiguous happened remotely. Only if the actual
+       upload() call raises is the outcome genuinely unknown - the
+       attempt marker is then intentionally left in place (ambiguous
+       state - the remote upload may have already succeeded even though
+       this response was lost) and a PublishingError wrapping the
+       original is raised. No automatic cleanup, no retry in that case.
     10. On success, confirm privacy_status == "private", then attempt to
         write an atomic upload_receipt.json. If THAT write itself fails,
         the remote upload has already succeeded but this package has no
@@ -373,6 +402,13 @@ def execute_private_upload(
         removed) and a PublishingError demanding operator reconciliation
         is raised, distinct from a pre-upload failure. Only once the
         receipt is durably written is the attempt marker removed.
+    11. When settings.youtube_public_after_upload is True, flip the newly
+        uploaded video to "public" via videos().update (the upload itself
+        still went out private first) and record privacy_status="public"
+        on the receipt. If the flip fails, the receipt is still written
+        as "private" (the upload truly succeeded and the package is not
+        in an ambiguous state) and a PublishingError is raised after
+        cleanup telling the operator the video remains private.
     """
     validation = validate_package(package_dir, quality_gate_config=quality_gate_config)
     metadata = build_publish_metadata(title, description, tags)
@@ -423,6 +459,19 @@ def execute_private_upload(
             privacy_status="private",
             category_id=settings.youtube_category_id,
         )
+    except Exception as exc:
+        # Constructing the uploader is LOCAL work only - no network bytes
+        # have moved, no upload has begun, and the remote outcome is NOT
+        # ambiguous. The attempt marker is removed again so a retry is
+        # possible without operator reconciliation, and the error message
+        # says so explicitly rather than claiming upload had begun.
+        attempt_path.unlink(missing_ok=True)
+        raise PublishingError(
+            "Upload preparation failed before any upload began - the attempt marker at "
+            f"{attempt_path} was removed, and a retry is safe. Original error: {exc}"
+        ) from exc
+
+    try:
         result = uploader.upload(validation.packaged_video_path, metadata)
     except Exception as exc:
         raise PublishingError(
@@ -439,6 +488,15 @@ def execute_private_upload(
             f"Attempt marker preserved at {attempt_path} for operator review."
         )
 
+    final_privacy = "private"
+    flip_error: PublishingError | None = None
+    if getattr(settings, "youtube_public_after_upload", False):
+        try:
+            _set_video_public(auth, result.youtube_id)
+            final_privacy = "public"
+        except PublishingError as exc:
+            flip_error = exc
+
     receipt_path = package_dir / _RECEIPT_FILENAME
     try:
         _write_json_atomic(
@@ -448,7 +506,7 @@ def execute_private_upload(
                 "package_sha256": validation.manifest["sha256"],
                 "youtube_video_id": result.youtube_id,
                 "channel_id": identity.channel_id,
-                "privacy_status": "private",
+                "privacy_status": final_privacy,
                 "uploaded_at": (now or datetime.now(UTC)).isoformat(),
             },
         )
@@ -463,5 +521,8 @@ def execute_private_upload(
         ) from exc
 
     attempt_path.unlink(missing_ok=True)
+
+    if flip_error is not None:
+        raise flip_error
 
     return result

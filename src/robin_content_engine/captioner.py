@@ -18,6 +18,13 @@ _DURATION_TOLERANCE_SECONDS = 0.5
 # negligible container/codec rounding, not an actual frame-rate change.
 _FPS_TOLERANCE = 0.5
 
+# Upper bound on the ffmpeg burn-in subprocess itself. A hung or
+# infinitely-blocking ffmpeg must fail this stage (and clean up its
+# partial output) rather than blocking the production pipeline forever.
+# Generous - a real burn-in of a ~1-minute 1080p clip takes well under
+# a minute even at preset slow.
+_FFMPEG_TIMEOUT_SECONDS = 600
+
 
 class CaptionError(Exception):
     pass
@@ -175,10 +182,20 @@ def burn_captions(
             "film",
             str(output_path),
         ]
-        result = subprocess.run(cmd, capture_output=True, text=True, check=False)
+        result = subprocess.run(
+            cmd, capture_output=True, text=True, check=False, timeout=_FFMPEG_TIMEOUT_SECONDS
+        )
         if result.returncode != 0:
             _cleanup_bad_output()
             raise CaptionError(f"ffmpeg caption burn-in failed: {result.stderr[-2000:]}")
+    except subprocess.TimeoutExpired as exc:
+        # A hung ffmpeg must not block the pipeline forever - fail the
+        # stage (cleaning up the partial output) so a retry is possible.
+        _cleanup_bad_output()
+        raise CaptionError(
+            f"ffmpeg caption burn-in timed out after {_FFMPEG_TIMEOUT_SECONDS}s: "
+            f"{video_path}"
+        ) from exc
     finally:
         srt_path.unlink(missing_ok=True)
 

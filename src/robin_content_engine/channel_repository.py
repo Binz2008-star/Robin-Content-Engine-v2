@@ -171,3 +171,7 @@ class ChannelRepository:
                     continue
                 else:
                     raise
+
+        # Unreachable in practice (every iteration either returns or
+        # raises) - present so the function cannot fall off the end.
+        raise RuntimeError("save_snapshot completed without a result")

@@ -21,7 +21,7 @@ from .clip_selector import (
     generate_candidate_windows,
     suppress_overlaps,
 )
-from .config import Settings
+from .config import APP_ROOT, Settings
 from .database import JobRepository
 from .highlight_features import (
     FeatureExtractionError,
@@ -35,8 +35,10 @@ from .models import HighlightCandidateResult, HighlightScanResult
 from .pipeline import ContentEngine
 from .production_runner import (
     ProductionRunError,
-    build_automatic_metadata,
+    build_production_metadata,
+    find_ambiguous_packages,
     production_status,
+    reconcile_ambiguous_uploads,
     run_production,
     run_production_once,
 )
@@ -1080,7 +1082,14 @@ def production_run_once_command(
     than falling through to try another job.
 
     Prints "NO ELIGIBLE JOB" and exits 0 if there is nothing to do - an
-    empty queue is a normal outcome, not a failure.
+    empty queue is a normal outcome, not a failure. A selected job that
+    fails DETERMINISTICALLY (same source and analysis would fail
+    identically every time - missing source, analysis failure, quality-
+    gate failure, a package that fails validation after being freshly
+    rebuilt) is quarantined with the failure reason recorded and this
+    command prints the reason and exits non-zero; a transient failure
+    also exits non-zero (visible in the scheduled task's log) and the
+    job is simply retried on the next invocation.
 
     Publishing defaults to a zero-network-I/O dry run; only
     --execute-private-upload performs a real write, and it is always
@@ -1090,13 +1099,16 @@ def production_run_once_command(
     duplicate-upload guard makes a second upload attempt on the same
     package impossible regardless.
 
-    Never claims a job, never increments attempts, never changes job
-    status or rights state, never calls an LLM or TTS, never uses the
-    legacy ContentEngine/render-upload pipeline. The only database
-    interactions are the same reads capture-scan/highlight-scan already
-    make (list_jobs(), get_job()) plus capture-scan's own INSERT-only
-    registration of newly discovered captures with rights_confirmed=
-    false - never an UPDATE to any existing row.
+    Never claims a job, never increments attempts, never calls an LLM or
+    TTS, never uses the legacy ContentEngine/render-upload pipeline. The
+    only database interactions are the same reads capture-scan/highlight-
+    scan already make (list_jobs(), get_job()) plus capture-scan's own
+    INSERT-only registration of newly discovered captures with
+    rights_confirmed=false - and, on a deterministic failure of the
+    selected job only, the quarantine UPDATE that records the failure
+    reason and takes the job out of the automatic queue (see the failure
+    classification above). Never an UPDATE to any other row, and never
+    on the success path.
     """
     settings = Settings()  # type: ignore[call-arg]
     repository = JobRepository(settings.database_url, settings.max_job_attempts)
@@ -1124,6 +1136,16 @@ def production_run_once_command(
         typer.echo("NO ELIGIBLE JOB")
         return
 
+    if once_result.terminal_failure is not None:
+        failure = once_result.terminal_failure
+        if once_result.run is not None:
+            _echo_production_result(once_result.run)
+        typer.echo(
+            f"Job {failure.job_id} failed permanently (deterministic outcome) and was "
+            f"quarantined so it will not be retried automatically: {failure.reason}"
+        )
+        raise typer.Exit(code=1)
+
     result = once_result.run
     assert result is not None
     _echo_production_result(result)
@@ -1134,12 +1156,12 @@ def production_run_once_command(
     assert result.package is not None
     typer.echo(f"Package: {result.package.package_dir}")
 
-    title, description = build_automatic_metadata(result.source_title)
+    title, description, tags = build_production_metadata(result.source_title, settings)
     typer.echo(f"Title: {title}")
 
     if not execute_upload:
         try:
-            dry_result = dry_run(result.package.package_dir, title, description, [])
+            dry_result = dry_run(result.package.package_dir, title, description, tags)
         except PublishingError as exc:
             raise typer.BadParameter(str(exc)) from exc
         typer.echo("PUBLISH DRY RUN PASS")
@@ -1150,7 +1172,7 @@ def production_run_once_command(
     auth = YouTubeAuth(settings.youtube_client_secret_file, settings.youtube_token_file)
     try:
         upload_result = execute_private_upload(
-            result.package.package_dir, title, description, [], settings, auth, YouTubeUploader
+            result.package.package_dir, title, description, tags, settings, auth, YouTubeUploader
         )
     except PublishingError as exc:
         raise typer.BadParameter(str(exc)) from exc
@@ -1158,6 +1180,76 @@ def production_run_once_command(
     typer.echo("UPLOAD SUCCESS")
     typer.echo(f"YouTube video ID: {upload_result.youtube_id}")
     typer.echo(f"Privacy: {upload_result.privacy_status}")
+
+
+@app.command("production-config")
+def production_config_command() -> None:
+    """Print the resolved runtime configuration roots this installation
+    actually uses - the canonical application root, the .env file read,
+    the work directory, the capture source directory, and the Python
+    interpreter - so an operator (or the scheduled-task launcher) can
+    verify that Settings resolved against the intended production
+    repository and not whatever directory the process happened to start
+    from.
+
+    Pure reads. Never prints secrets (no database URL, no API keys, no
+    OAuth token paths or contents).
+    """
+    settings = Settings()  # type: ignore[call-arg]
+    import sys
+
+    typer.echo(f"Application root: {APP_ROOT}")
+    typer.echo(f"Config file: {APP_ROOT / '.env'}")
+    typer.echo(f"Work directory: {settings.work_dir}")
+    typer.echo(f"Capture source directory: {settings.capture_source_dir}")
+    typer.echo(f"Python executable: {sys.executable}")
+    typer.echo(f"Source root: {APP_ROOT / 'src'}")
+
+
+@app.command("production-reconcile")
+def production_reconcile_command() -> None:
+    """Resolve packages stuck in an ambiguous upload state by asking
+    YouTube itself.
+
+    A package is "ambiguous" when an upload_attempt.json marker exists
+    but no upload_receipt.json ever confirmed the outcome (the remote
+    upload may have succeeded even though the response was lost). This
+    command fetches the authenticated channel's current PRIVATE upload
+    inventory and, for each ambiguous package, looks for exactly one
+    video whose published_at matches the attempt marker's started_at
+    (within a 15-minute tolerance). An exactly-one match unambiguously
+    identifies the upload: the receipt is written from the marker + the
+    matched video's data (atomic, same as a confirmed upload) and the
+    attempt marker is removed, moving the package to "published".
+
+    Zero or multiple candidates are NOT resolvable from the inventory
+    alone - nothing is written, nothing is guessed, and the operator
+    must look at YouTube manually. Exit code 0 only when every
+    ambiguous package was resolved; non-zero when any remains.
+
+    Never touches the database, never uploads, never deletes anything
+    remotely.
+    """
+    settings = Settings()  # type: ignore[call-arg]
+    if not find_ambiguous_packages():
+        typer.echo("No ambiguous upload states found.")
+        return
+
+    auth = YouTubeAuth(settings.youtube_client_secret_file, settings.youtube_token_file)
+    sync = YouTubeChannelSync(auth, settings.youtube_expected_channel_id)
+
+    outcomes = reconcile_ambiguous_uploads(sync)
+
+    unresolved = 0
+    for outcome in outcomes:
+        marker = "RESOLVED" if outcome.resolved else "UNRESOLVED"
+        typer.echo(
+            f"{marker} {outcome.package_dir}: {outcome.detail}"
+        )
+        unresolved += 0 if outcome.resolved else 1
+
+    if unresolved:
+        raise typer.Exit(1)
 
 
 @app.command("production-status")
@@ -1193,6 +1285,7 @@ def production_status_command(
             "packaged": status.packaged,
             "uploaded_private": status.uploaded_private,
             "ambiguous": status.ambiguous,
+            "inactive": status.inactive,
             "jobs": [dataclasses.asdict(j) for j in status.jobs],
         }
         typer.echo(json.dumps(payload, indent=2))
@@ -1205,6 +1298,7 @@ def production_status_command(
     typer.echo(f"Packaged: {status.packaged}")
     typer.echo(f"Uploaded (private): {status.uploaded_private}")
     typer.echo(f"Ambiguous upload state: {status.ambiguous}")
+    typer.echo(f"Inactive: {status.inactive}")
 
 
 @app.command("youtube-publish-package")

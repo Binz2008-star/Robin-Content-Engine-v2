@@ -4,6 +4,7 @@ import re
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from datetime import datetime
+from functools import partial
 from typing import Any, cast
 
 from google.auth.exceptions import GoogleAuthError
@@ -12,8 +13,13 @@ from googleapiclient.errors import HttpError  # type: ignore[import-untyped]
 
 from .youtube_auth import YouTubeAuth
 
+# Fractional seconds (e.g. "PT1.5S") are accepted and truncated to whole
+# seconds below - the youtube_videos.duration_seconds column is INTEGER,
+# so a float can never be stored, and truncating (never rounding up)
+# never overstates a duration.
 _DURATION_RE = re.compile(
-    r"^P(?:(?P<days>\d+)D)?T(?:(?P<hours>\d+)H)?(?:(?P<minutes>\d+)M)?(?:(?P<seconds>\d+)S)?$"
+    r"^P(?:(?P<days>\d+)D)?T(?:(?P<hours>\d+)H)?(?:(?P<minutes>\d+)M)?"
+    r"(?:(?P<seconds>\d+(?:\.\d+)?)S)?$"
 )
 
 
@@ -106,16 +112,16 @@ class YouTubeChannelSync:
         seen: set[str] = set()
         page_token: str | None = None
         while True:
-            response = self._api_call(
-                lambda page_token=page_token: youtube.playlistItems()
-                .list(
-                    part="contentDetails",
-                    playlistId=uploads_playlist_id,
-                    maxResults=50,
-                    pageToken=page_token,
-                )
-                .execute()
+            request = youtube.playlistItems().list(
+                part="contentDetails",
+                playlistId=uploads_playlist_id,
+                maxResults=50,
+                pageToken=page_token,
             )
+            # partial binds the request object NOW, so no loop-variable
+            # closure capture (mypy-clean and ruff B023-clean); the
+            # request is executed immediately in the same iteration.
+            response = self._api_call(partial(request.execute))
             for item in self._items(response):
                 details = item.get("contentDetails") or {}
                 video_id = details.get("videoId")
@@ -136,15 +142,12 @@ class YouTubeChannelSync:
     ) -> list[YouTubeVideoSnapshot]:
         videos: list[YouTubeVideoSnapshot] = []
         for batch in _chunks(video_ids, 50):
-            response = self._api_call(
-                lambda batch=batch: youtube.videos()
-                .list(
-                    part="snippet,statistics,contentDetails,status",
-                    id=",".join(batch),
-                    maxResults=50,
-                )
-                .execute()
+            request = youtube.videos().list(
+                part="snippet,statistics,contentDetails,status",
+                id=",".join(batch),
+                maxResults=50,
             )
+            response = self._api_call(partial(request.execute))
             for item in self._items(response):
                 parsed = self._parse_video(item, channel_id)
                 if parsed is not None:
@@ -282,7 +285,8 @@ def _parse_duration_seconds(value: Any) -> int | None:
     days = int(match.group("days") or 0)
     hours = int(match.group("hours") or 0)
     minutes = int(match.group("minutes") or 0)
-    seconds = int(match.group("seconds") or 0)
+    seconds_raw = match.group("seconds")
+    seconds = int(float(seconds_raw)) if seconds_raw else 0
     return days * 86400 + hours * 3600 + minutes * 60 + seconds
 
 

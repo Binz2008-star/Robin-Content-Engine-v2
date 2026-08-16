@@ -250,6 +250,32 @@ def test_cleans_up_partial_output_on_ffmpeg_failure(
     assert source_video.is_file()
 
 
+def test_hung_ffmpeg_is_bounded_and_cleans_up_partial_output(
+    source_video: Path,
+    segments: list[TranscriptSegment],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A hung ffmpeg (subprocess.TimeoutExpired) must fail the stage with
+    a clear CaptionError - cleaning up any partial output so the retry
+    at the same deterministic path is possible - rather than blocking
+    the pipeline forever."""
+    output_path = tmp_path / "out.mp4"
+
+    def hung_run(cmd: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        Path(cmd[-1]).write_bytes(b"partial output before the hang")
+        raise subprocess.TimeoutExpired(cmd=cmd, timeout=600)
+
+    monkeypatch.setattr(captioner_module.subprocess, "run", hung_run)
+
+    with pytest.raises(CaptionError, match="timed out after"):
+        burn_captions(source_video, output_path, segments)
+
+    assert not output_path.exists()
+    assert not output_path.with_suffix(".srt").exists()
+    assert source_video.is_file()
+
+
 def test_cleans_up_output_when_post_encode_probe_raises(
     source_video: Path,
     segments: list[TranscriptSegment],

@@ -561,6 +561,42 @@ def test_execute_ambiguous_failure_preserves_attempt_marker(package_dir: Path) -
         )
 
 
+def test_execute_pre_upload_factory_failure_removes_attempt_marker_and_is_retryable(
+    package_dir: Path,
+) -> None:
+    """Constructing the uploader is LOCAL preparation only - no network
+    bytes have moved, so the outcome is NOT ambiguous: the attempt marker
+    is removed again (a retry is safe, no operator reconciliation needed)
+    and the error message says so explicitly."""
+    auth = FakeAuth()
+
+    def raising_factory(**kwargs: Any) -> Any:
+        raise RuntimeError("no valid client_secret.json found")
+
+    with pytest.raises(PublishingError, match="before any upload began") as exc_info:
+        execute_private_upload(
+            package_dir, "Title", "Description.", [], _fake_settings(), auth,
+            raising_factory,
+            quality_gate_config=TEST_CONFIG,
+        )
+
+    assert "retry is safe" in str(exc_info.value)
+    assert not (package_dir / "upload_attempt.json").exists()
+
+    # a retry with a working factory succeeds without any operator
+    # reconciliation - proof the marker was truly cleared
+    uploader = FakeUploader()
+    execute_private_upload(
+        package_dir, "Title", "Description.", [], _fake_settings(), auth,
+        _factory_for(uploader),
+        quality_gate_config=TEST_CONFIG,
+    )
+
+    assert uploader.upload_calls
+    assert (package_dir / "upload_receipt.json").is_file()
+    assert not (package_dir / "upload_attempt.json").exists()
+
+
 # ---------------------------------------------------------------------------
 # 24 / 25. Source packaged MP4 and manifest unchanged
 # ---------------------------------------------------------------------------

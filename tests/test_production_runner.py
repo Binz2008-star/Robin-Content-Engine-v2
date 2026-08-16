@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 from contextlib import contextmanager
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, ClassVar
@@ -22,21 +24,30 @@ from robin_content_engine.production_runner import (  # noqa: E402
     build_automatic_metadata,
     local_upload_state,
     production_status,
+    reconcile_ambiguous_uploads,
     run_production,
     run_production_once,
 )
 from robin_content_engine.quality_gate import QualityGateConfig  # noqa: E402
+from robin_content_engine.scene_detector import SceneDetectionError  # noqa: E402
 from robin_content_engine.transcription import TranscriptSegment  # noqa: E402
+from robin_content_engine.vertical_reframe import VerticalReframeError  # noqa: E402
+from robin_content_engine.youtube_sync import (  # noqa: E402
+    YouTubeChannelSnapshot,
+    YouTubeSyncSnapshot,
+    YouTubeVideoSnapshot,
+)
 
 
 class FakeRepository:
-    """Only implements running()/get_job()/list_jobs()/enqueue_api_job() -
-    the only calls run_production()/run_production_once()/
-    production_status() are allowed to make. Any attempt to call a
-    status/attempts/rights-mutating method raises AttributeError, which
-    fails a test relying on it - that absence is itself the proof of
-    read-only (beyond capture registration), no-job-state-mutation
-    behavior."""
+    """Only implements running()/get_job()/list_jobs()/enqueue_api_job()
+    plus mark_deterministic_failure() - the only calls
+    run_production()/run_production_once()/production_status() are
+    allowed to make. Any attempt to call any other status/attempts/
+    rights-mutating method raises AttributeError, which fails a test
+    relying on it - that absence is itself the proof of read-only
+    (beyond capture registration and deterministic-failure quarantine),
+    no-job-state-mutation behavior."""
 
     def __init__(self) -> None:
         self.jobs: dict[int, dict[str, Any]] = {}
@@ -44,10 +55,21 @@ class FakeRepository:
         self.get_job_calls: list[int] = []
         self.list_jobs_calls = 0
         self.enqueue_calls: list[dict[str, Any]] = []
+        self.terminal_failures: list[tuple[int, str]] = []
 
     @contextmanager
     def running(self):
         yield self
+
+    def mark_deterministic_failure(self, job_id: int, reason: str) -> bool:
+        """Mirrors the real JobRepository behavior tests rely on: the job
+        is quarantined so a later invocation no longer selects it."""
+        self.terminal_failures.append((job_id, reason))
+        if job_id in self.jobs:
+            self.jobs[job_id]["status"] = "quarantined"
+            self.jobs[job_id]["last_error"] = reason
+            return True
+        return False
 
     def seed(
         self,
@@ -443,11 +465,12 @@ def test_run_production_second_run_reuses_and_revalidates_package(
 
 
 # ---------------------------------------------------------------------------
-# Corrupt/stale package is rejected, not blindly reused
+# Corrupt/stale package is rebuilt, not blindly reused (and never reused
+# at all when an upload marker protects it)
 # ---------------------------------------------------------------------------
 
 
-def test_run_production_rejects_corrupt_existing_package(
+def test_run_production_rebuilds_corrupt_existing_package(
     speech_video: Path, tmp_path: Path, patched_recognizer: type[FakeRecognizer]
 ) -> None:
     repo = FakeRepository()
@@ -456,18 +479,28 @@ def test_run_production_rejects_corrupt_existing_package(
 
     first = run_production(10, 1, repo, settings)
     assert first.package is not None
+    original_size = first.package.manifest["byte_size"]
 
     # Tamper with the packaged bytes after the fact - simulates disk
     # corruption or an out-of-band edit. SHA-256 not matching the
-    # manifest must be caught, not silently reused.
+    # manifest must NOT be silently reused.
     with first.package.packaged_video_path.open("ab") as handle:
         handle.write(b"\x00" * 16)
+    tampered_size = first.package.packaged_video_path.stat().st_size
+    assert tampered_size == original_size + 16
 
-    with pytest.raises(ProductionRunError, match="failed validation"):
-        run_production(10, 1, repo, settings)
+    second = run_production(10, 1, repo, settings)
+
+    # the corrupt package was deleted and rebuilt from the fresh
+    # artifact - the tampered bytes are gone, so the package revalidates
+    # and matches the original byte size
+    assert second.package is not None
+    assert second.package.package_dir == first.package.package_dir
+    assert second.package.manifest["byte_size"] == original_size
+    assert second.package.packaged_video_path.stat().st_size == original_size
 
 
-def test_run_production_rejects_package_with_deleted_manifest(
+def test_run_production_rebuilds_package_with_deleted_manifest(
     speech_video: Path, tmp_path: Path, patched_recognizer: type[FakeRecognizer]
 ) -> None:
     repo = FakeRepository()
@@ -478,8 +511,49 @@ def test_run_production_rejects_package_with_deleted_manifest(
     assert first.package is not None
     first.package.manifest_path.unlink()
 
-    with pytest.raises(ProductionRunError, match="failed validation"):
-        run_production(11, 1, repo, settings)
+    second = run_production(11, 1, repo, settings)
+
+    assert second.package is not None
+    assert second.package.manifest_path.is_file()
+    assert second.package.package_dir == first.package.package_dir
+    assert second.package.manifest["quality_gate_passed"] is True
+
+
+def test_run_production_refuses_rebuild_of_package_with_upload_attempt_marker(
+    speech_video: Path, tmp_path: Path, patched_recognizer: type[FakeRecognizer]
+) -> None:
+    """A package that failed validation but carries an upload marker is
+    protected local state - rebuilding (or reusing) it must be refused,
+    not silently attempted."""
+    repo = FakeRepository()
+    repo.seed(job_id=13, source_path=str(speech_video), rights_confirmed=True)
+    settings = _fake_settings(tmp_path / "work")
+
+    first = run_production(13, 1, repo, settings)
+    assert first.package is not None
+    _write_marker(first.package.package_dir, "upload_attempt.json")
+    with first.package.packaged_video_path.open("ab") as handle:
+        handle.write(b"\x00" * 16)
+
+    with pytest.raises(ProductionRunError, match="upload marker"):
+        run_production(13, 1, repo, settings)
+
+
+def test_run_production_refuses_rebuild_of_package_with_receipt_marker(
+    speech_video: Path, tmp_path: Path, patched_recognizer: type[FakeRecognizer]
+) -> None:
+    repo = FakeRepository()
+    repo.seed(job_id=14, source_path=str(speech_video), rights_confirmed=True)
+    settings = _fake_settings(tmp_path / "work")
+
+    first = run_production(14, 1, repo, settings)
+    assert first.package is not None
+    _write_marker(first.package.package_dir, "upload_receipt.json")
+    with first.package.packaged_video_path.open("ab") as handle:
+        handle.write(b"\x00" * 16)
+
+    with pytest.raises(ProductionRunError, match="upload marker"):
+        run_production(14, 1, repo, settings)
 
 
 # ---------------------------------------------------------------------------
@@ -534,6 +608,200 @@ def test_local_upload_state_receipt_wins_over_attempt(tmp_path: Path) -> None:
     _write_marker(package_dir, "upload_attempt.json")
     _write_marker(package_dir, "upload_receipt.json")
     assert local_upload_state(package_dir) == "published"
+
+
+# ---------------------------------------------------------------------------
+# reconcile_ambiguous_uploads(): ambiguous -> published via the channel's
+# own private-upload inventory
+# ---------------------------------------------------------------------------
+
+
+def _channel_snapshot() -> YouTubeChannelSnapshot:
+    return YouTubeChannelSnapshot(
+        channel_id="UC_x",
+        title="Test Channel",
+        custom_url=None,
+        description="",
+        published_at=None,
+        uploads_playlist_id="UU_x",
+        view_count=None,
+        subscriber_count=None,
+        hidden_subscriber_count=False,
+        video_count=None,
+    )
+
+
+def _video(
+    video_id: str, *, published_at: datetime, privacy_status: str = "private"
+) -> YouTubeVideoSnapshot:
+    return YouTubeVideoSnapshot(
+        video_id=video_id,
+        channel_id="UC_x",
+        title="clip — Highlight",
+        description="",
+        published_at=published_at,
+        duration_seconds=58,
+        privacy_status=privacy_status,
+        made_for_kids=False,
+        self_declared_made_for_kids=False,
+        category_id="20",
+        license="youtube",
+        tags=(),
+        thumbnail_url=None,
+        view_count=None,
+        like_count=None,
+        comment_count=None,
+    )
+
+
+class FakeSync:
+    def __init__(self, videos: list[YouTubeVideoSnapshot]) -> None:
+        self.videos = videos
+        self.fetch_count = 0
+
+    def fetch_snapshot(self) -> YouTubeSyncSnapshot:
+        self.fetch_count += 1
+        return YouTubeSyncSnapshot(
+            channel=_channel_snapshot(),
+            videos=tuple(self.videos),
+            discovered_video_count=len(self.videos),
+        )
+
+
+def _attempt_marker_payload(*, started_at: datetime, sha: str = "sha256-abc") -> dict[str, Any]:
+    return {
+        "format_version": 1,
+        "package_sha256": sha,
+        "expected_channel_id": "UC_x",
+        "authenticated_channel_id": "UC_x",
+        "started_at": started_at.isoformat(),
+        "intended_privacy": "private",
+        "status": "started",
+    }
+
+
+def _ambiguous_package(tmp_path: Path, name: str, started_at: datetime) -> Path:
+    package_dir = tmp_path / name
+    package_dir.mkdir()
+    _write_marker(
+        package_dir,
+        "upload_attempt.json",
+        _attempt_marker_payload(started_at=started_at),
+    )
+    return package_dir
+
+
+def test_reconcile_no_ambiguous_packages_is_noop(tmp_path: Path) -> None:
+    sync = FakeSync([])
+    outcomes = reconcile_ambiguous_uploads(sync, package_dest_root=tmp_path)
+
+    assert outcomes == []
+    assert sync.fetch_count == 0  # never touches YouTube when nothing to resolve
+
+
+def test_reconcile_resolves_single_matching_private_upload(tmp_path: Path) -> None:
+    started = datetime.now(UTC) - timedelta(minutes=2)
+    package_dir = _ambiguous_package(tmp_path, "job-1-highlight-01-10.0-25.0", started)
+    published = started + timedelta(seconds=10)
+    sync = FakeSync([_video("videoID123", published_at=published)])
+
+    outcomes = reconcile_ambiguous_uploads(sync, package_dest_root=tmp_path)
+
+    assert len(outcomes) == 1
+    outcome = outcomes[0]
+    assert outcome.resolved is True
+    assert outcome.match_count == 1
+    assert "videoID123" in outcome.detail
+    # the receipt was written exactly as a confirmed upload's would be,
+    # and the attempt marker removed - the package is now "published"
+    assert local_upload_state(package_dir) == "published"
+    assert not (package_dir / "upload_attempt.json").exists()
+    receipt = json.loads((package_dir / "upload_receipt.json").read_text(encoding="utf-8"))
+    assert receipt["package_sha256"] == "sha256-abc"
+    assert receipt["youtube_video_id"] == "videoID123"
+    assert receipt["channel_id"] == "UC_x"
+    assert receipt["privacy_status"] == "private"
+    assert receipt["uploaded_at"] == published.isoformat()
+
+
+def test_reconcile_no_matching_upload_remains_unresolved(tmp_path: Path) -> None:
+    started = datetime.now(UTC) - timedelta(hours=5)
+    package_dir = _ambiguous_package(tmp_path, "pkg", started)
+    # an upload exists, but hours away from the attempt's started_at
+    sync = FakeSync([_video("otherVideo", published_at=datetime.now(UTC))])
+
+    outcomes = reconcile_ambiguous_uploads(sync, package_dest_root=tmp_path)
+
+    assert len(outcomes) == 1
+    assert outcomes[0].resolved is False
+    assert outcomes[0].match_count == 0
+    assert "not resolvable" in outcomes[0].detail
+    # nothing was written, the marker is preserved
+    assert local_upload_state(package_dir) == "ambiguous"
+    assert (package_dir / "upload_attempt.json").is_file()
+    assert not (package_dir / "upload_receipt.json").exists()
+
+
+def test_reconcile_multiple_matches_never_guess(tmp_path: Path) -> None:
+    started = datetime.now(UTC) - timedelta(minutes=1)
+    package_dir = _ambiguous_package(tmp_path, "pkg", started)
+    sync = FakeSync(
+        [
+            _video("videoA", published_at=started),
+            _video("videoB", published_at=started + timedelta(seconds=5)),
+        ]
+    )
+
+    outcomes = reconcile_ambiguous_uploads(sync, package_dest_root=tmp_path)
+
+    assert len(outcomes) == 1
+    assert outcomes[0].resolved is False
+    assert outcomes[0].match_count == 2
+    assert "not resolvable" in outcomes[0].detail
+    assert local_upload_state(package_dir) == "ambiguous"
+
+
+def test_reconcile_ignores_non_private_uploads(tmp_path: Path) -> None:
+    """A public/unlisted upload in the time window is NOT evidence the
+    package's intended PRIVATE upload happened."""
+    started = datetime.now(UTC) - timedelta(minutes=1)
+    package_dir = _ambiguous_package(tmp_path, "pkg", started)
+    sync = FakeSync([_video("publicVideo", published_at=started, privacy_status="public")])
+
+    outcomes = reconcile_ambiguous_uploads(sync, package_dest_root=tmp_path)
+
+    assert len(outcomes) == 1
+    assert outcomes[0].resolved is False
+    assert outcomes[0].match_count == 0
+    assert local_upload_state(package_dir) == "ambiguous"
+
+
+def test_reconcile_malformed_attempt_marker_is_reported_not_guessed(
+    tmp_path: Path,
+) -> None:
+    package_dir = tmp_path / "pkg"
+    package_dir.mkdir()
+    (package_dir / "upload_attempt.json").write_text("{ not json", encoding="utf-8")
+    sync = FakeSync([_video("videoID123", published_at=datetime.now(UTC))])
+
+    outcomes = reconcile_ambiguous_uploads(sync, package_dest_root=tmp_path)
+
+    assert len(outcomes) == 1
+    assert outcomes[0].resolved is False
+    assert "malformed" in outcomes[0].detail
+    assert local_upload_state(package_dir) == "ambiguous"
+
+
+def test_reconcile_naive_timestamps_are_treated_as_utc(tmp_path: Path) -> None:
+    started = datetime.now(UTC) - timedelta(minutes=1)
+    _ambiguous_package(tmp_path, "pkg", started)
+    # naive published_at (no tz) must be interpreted as UTC, not crash
+    sync = FakeSync([_video("videoID123", published_at=started.replace(tzinfo=None))])
+
+    outcomes = reconcile_ambiguous_uploads(sync, package_dest_root=tmp_path)
+
+    assert len(outcomes) == 1
+    assert outcomes[0].resolved is True
 
 
 # ---------------------------------------------------------------------------
@@ -722,6 +990,12 @@ def test_run_production_once_qc_failure_on_candidate_one_never_tries_candidate_t
     assert result.run.job_id == 1
     assert result.run.quality_gate.passed is False
     assert result.run.package is None
+    # the QC failure is a deterministic outcome: the job was quarantined
+    # so the queue is not blocked by it on the next invocation
+    assert result.terminal_failure is not None
+    assert result.terminal_failure.job_id == 1
+    assert "quality gate" in result.terminal_failure.reason.lower()
+    assert repo.terminal_failures == [(1, result.terminal_failure.reason)]
 
 
 def test_run_production_once_precheck_never_runs_highlight_analysis(
@@ -844,12 +1118,16 @@ def test_run_production_once_no_db_mutation_beyond_capture_registration(
     capture_dir.mkdir()
     settings = _fake_settings(tmp_path / "work", capture_dir)
 
-    run_production_once(repo, settings)
+    result = run_production_once(repo, settings)
 
     # FakeRepository defines no status/attempts/rights-mutating method at
-    # all - if run_production_once() had called one, this test would
-    # already have raised AttributeError above.
+    # all (except the deterministic-failure quarantine itself) - if
+    # run_production_once() had called one, this test would already have
+    # raised AttributeError above. On the SUCCESS path even the quarantine
+    # is never called.
     assert repo.jobs[1]["rights_confirmed"] is True
+    assert repo.terminal_failures == []
+    assert result.terminal_failure is None
 
 
 # ---------------------------------------------------------------------------
@@ -873,6 +1151,8 @@ def test_production_status_counts_every_state(
     repo.seed(job_id=4, source_path=str(speech_video), rights_confirmed=True)
     # 5: will be ambiguous
     repo.seed(job_id=5, source_path=str(speech_video), rights_confirmed=True)
+    # 6: rights confirmed but the row is not auto-eligible (rendered)
+    repo.seed(job_id=6, source_path=str(speech_video), rights_confirmed=True, status="rendered")
 
     packaged = run_production(3, 1, repo, settings)
     published = run_production(4, 1, repo, settings)
@@ -891,7 +1171,8 @@ def test_production_status_counts_every_state(
     assert status.packaged == 1
     assert status.uploaded_private == 1
     assert status.ambiguous == 1
-    assert {j.job_id for j in status.jobs} == {1, 2, 3, 4, 5}
+    assert status.inactive == 1
+    assert {j.job_id for j in status.jobs} == {1, 2, 3, 4, 5, 6}
 
 
 # ---------------------------------------------------------------------------
@@ -949,14 +1230,16 @@ def test_production_status_auto_quarantined_unconfirmed_job_still_awaiting_right
     assert status.jobs[0].state == "awaiting_rights"
 
 
-def test_production_status_operator_quarantined_confirmed_job_is_not_eligible(
+def test_production_status_operator_quarantined_confirmed_job_is_inactive(
     speech_video: Path, tmp_path: Path
 ) -> None:
     """A rights-confirmed job quarantined by an operator (e.g. a source
     that can never produce a valid highlight) must NOT be reported as
     "rights_approved_eligible" - it is out of the pipeline and would never
     be auto-selected (run_production_once() requires status == "pending"),
-    so the status report must not promise it is eligible."""
+    so the status report must not promise it is eligible. Nor is it
+    "rejected" - its rights were never rejected; it is inactive until an
+    operator deliberately restores it."""
     repo = FakeRepository()
     repo.seed(
         job_id=1,
@@ -970,8 +1253,9 @@ def test_production_status_operator_quarantined_confirmed_job_is_not_eligible(
     status = production_status(repo, settings)
 
     assert status.rights_approved_eligible == 0
-    assert status.rejected == 1
-    assert status.jobs[0].state == "rejected"
+    assert status.rejected == 0
+    assert status.inactive == 1
+    assert status.jobs[0].state == "inactive"
 
 
 def test_production_status_processing_state(
@@ -1100,3 +1384,481 @@ def test_run_production_once_never_calls_public_run_production(
     assert result.selected_job_id == 1
     assert repo.running_enter_count == 1
     assert repo.get_job_calls == []  # never opens individual jobs
+
+
+# ---------------------------------------------------------------------------
+# Deterministic-failure quarantine (run_production_once)
+# ---------------------------------------------------------------------------
+
+
+def test_run_production_once_deterministic_failure_quarantines_job(
+    speech_video: Path,
+    tmp_path: Path,
+    patched_recognizer: type[FakeRecognizer],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A deterministic analysis failure must be quarantined (never
+    retried, never blocking the queue), reported as a TerminalFailure,
+    and never fall through to another candidate."""
+    repo = FakeRepository()
+    repo.seed(job_id=1, source_path=str(speech_video), rights_confirmed=True)
+    repo.seed(job_id=2, source_path=str(speech_video), rights_confirmed=True)
+    capture_dir = tmp_path / "captures"
+    capture_dir.mkdir()
+    settings = _fake_settings(tmp_path / "work", capture_dir)
+
+    def failing_analysis(*args: Any, **kwargs: Any) -> Any:
+        raise SceneDetectionError("cannot open this video at all")
+
+    monkeypatch.setattr(pr_module, "detect_scenes", failing_analysis)
+
+    result = run_production_once(repo, settings)
+
+    assert result.selected_job_id == 1
+    assert result.run is None
+    assert result.terminal_failure is not None
+    assert result.terminal_failure.job_id == 1
+    assert "cannot open this video at all" in result.terminal_failure.reason
+    assert repo.terminal_failures == [(1, result.terminal_failure.reason)]
+    assert repo.jobs[1]["status"] == "quarantined"
+
+
+def test_run_production_once_deterministic_failure_then_next_invocation_takes_next_job(
+    speech_video: Path,
+    tmp_path: Path,
+    patched_recognizer: type[FakeRecognizer],
+) -> None:
+    """After a deterministic failure quarantines job 1 (missing source
+    file - cannot ever succeed), the NEXT invocation must select the
+    next eligible job instead of being blocked on job 1 forever."""
+    repo = FakeRepository()
+    repo.seed(job_id=1, source_path=str(tmp_path / "gone.mp4"), rights_confirmed=True)
+    repo.seed(job_id=2, source_path=str(speech_video), rights_confirmed=True)
+    capture_dir = tmp_path / "captures"
+    capture_dir.mkdir()
+    settings = _fake_settings(tmp_path / "work", capture_dir)
+
+    first = run_production_once(repo, settings)
+
+    assert first.selected_job_id == 1
+    assert first.run is None
+    assert first.terminal_failure is not None
+    assert "does not exist" in first.terminal_failure.reason
+    assert repo.jobs[1]["status"] == "quarantined"
+
+    second = run_production_once(repo, settings)
+
+    assert second.selected_job_id == 2
+    assert second.run is not None
+    assert second.run.job_id == 2
+    assert second.terminal_failure is None
+    assert repo.terminal_failures == [(1, first.terminal_failure.reason)]
+
+
+def test_run_production_once_retryable_failure_propagates_without_quarantine(
+    speech_video: Path,
+    tmp_path: Path,
+    patched_recognizer: type[FakeRecognizer],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A transient (retryable) failure - e.g. ffmpeg failing to reframe -
+    must propagate to the caller for the scheduled task's logs and be
+    retried on the next invocation: the job is NOT quarantined."""
+    repo = FakeRepository()
+    repo.seed(job_id=1, source_path=str(speech_video), rights_confirmed=True)
+    capture_dir = tmp_path / "captures"
+    capture_dir.mkdir()
+    settings = _fake_settings(tmp_path / "work", capture_dir)
+
+    def failing_reframe(*args: Any, **kwargs: Any) -> Any:
+        raise VerticalReframeError("ffmpeg crashed mid-reframe")
+
+    monkeypatch.setattr(pr_module, "reframe_to_vertical", failing_reframe)
+
+    with pytest.raises(ProductionRunError) as exc_info:
+        run_production_once(repo, settings)
+
+    assert exc_info.value.retryable is True
+    assert repo.terminal_failures == []
+    assert repo.jobs[1]["status"] == "pending"  # untouched, retried next time
+
+
+# ---------------------------------------------------------------------------
+# Duplicate-upload guard on the manual entry point
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "youtube_id,status",
+    [(None, "uploaded"), ("MMaVyYUt8XE", "pending"), ("MMaVyYUt8XE", "uploaded")],
+)
+def test_run_production_manual_path_refuses_already_uploaded_job(
+    speech_video: Path,
+    tmp_path: Path,
+    patched_recognizer: type[FakeRecognizer],
+    youtube_id: str | None,
+    status: str,
+) -> None:
+    """The authoritative duplicate-upload backstop: run_production() (the
+    manual path, whose caller does not go through the automatic
+    candidate filter) must refuse a job whose row says it was already
+    uploaded - deterministically, so a retry could never succeed."""
+    repo = FakeRepository()
+    repo.seed(
+        job_id=1,
+        source_path=str(speech_video),
+        rights_confirmed=True,
+        status=status,
+        youtube_id=youtube_id,
+    )
+    settings = _fake_settings(tmp_path / "work")
+
+    with pytest.raises(ProductionRunError, match="already been uploaded") as exc_info:
+        run_production(1, 1, repo, settings)
+
+    assert exc_info.value.retryable is False
+
+
+# ---------------------------------------------------------------------------
+# Highlight-analysis cache (resumability of the expensive stages)
+# ---------------------------------------------------------------------------
+
+
+def _count_analysis_calls(
+    monkeypatch: pytest.MonkeyPatch,
+) -> dict[str, int]:
+    counts = {
+        "detect_scenes": 0,
+        "extract_audio_activity": 0,
+        "extract_motion_activity": 0,
+        "compute_scene_density": 0,
+    }
+    for name in counts:
+        original = getattr(pr_module, name)
+
+        def counting(
+            *args: Any,
+            _name: str = name,
+            _original: Any = original,
+            **kwargs: Any,
+        ) -> Any:
+            counts[_name] += 1
+            return _original(*args, **kwargs)
+
+        monkeypatch.setattr(pr_module, name, counting)
+    return counts
+
+
+def test_run_production_once_analysis_cache_skips_expensive_stages_on_resume(
+    speech_video: Path,
+    tmp_path: Path,
+    patched_recognizer: type[FakeRecognizer],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repo = FakeRepository()
+    repo.seed(job_id=1, source_path=str(speech_video), rights_confirmed=True)
+    capture_dir = tmp_path / "captures"
+    capture_dir.mkdir()
+    settings = _fake_settings(tmp_path / "work", capture_dir)
+    counts = _count_analysis_calls(monkeypatch)
+
+    first = run_production_once(repo, settings)
+
+    assert first.selected_job_id == 1
+    assert first.run is not None
+    assert counts == {
+        "detect_scenes": 1,
+        "extract_audio_activity": 1,
+        "extract_motion_activity": 1,
+        "compute_scene_density": 1,
+    }
+    cache_path = tmp_path / "work" / "analysis" / "job-1-analysis.json"
+    assert cache_path.is_file()
+
+    second = run_production_once(repo, settings)
+
+    assert second.selected_job_id == 1
+    assert second.run is not None
+    # the second run hit the cache: no scene detection, no audio/motion
+    # extraction, no scene-density recomputation - the SAME deterministic
+    # selection code ran over the cached signals
+    assert counts == {
+        "detect_scenes": 1,
+        "extract_audio_activity": 1,
+        "extract_motion_activity": 1,
+        "compute_scene_density": 1,
+    }
+
+
+def test_run_production_once_analysis_cache_invalidated_on_source_change(
+    speech_video: Path,
+    tmp_path: Path,
+    patched_recognizer: type[FakeRecognizer],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repo = FakeRepository()
+    repo.seed(job_id=1, source_path=str(speech_video), rights_confirmed=True)
+    capture_dir = tmp_path / "captures"
+    capture_dir.mkdir()
+    settings = _fake_settings(tmp_path / "work", capture_dir)
+    counts = _count_analysis_calls(monkeypatch)
+
+    first = run_production_once(repo, settings)
+    assert first.run is not None
+    assert counts["detect_scenes"] == 1
+
+    # the source changed (out-of-band edit) - the cache is keyed on the
+    # source's identity (path + size + mtime) and must be treated as a
+    # miss, recomputing everything
+    st = speech_video.stat()
+    os.utime(speech_video, ns=(st.st_atime_ns, st.st_mtime_ns + 2_000_000_000))
+
+    second = run_production_once(repo, settings)
+
+    assert second.selected_job_id == 1
+    assert second.run is not None
+    assert counts == {
+        "detect_scenes": 2,
+        "extract_audio_activity": 2,
+        "extract_motion_activity": 2,
+        "compute_scene_density": 2,
+    }
+
+
+def test_run_production_once_analysis_cache_malformed_is_a_miss(
+    speech_video: Path,
+    tmp_path: Path,
+    patched_recognizer: type[FakeRecognizer],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repo = FakeRepository()
+    repo.seed(job_id=1, source_path=str(speech_video), rights_confirmed=True)
+    capture_dir = tmp_path / "captures"
+    capture_dir.mkdir()
+    settings = _fake_settings(tmp_path / "work", capture_dir)
+    counts = _count_analysis_calls(monkeypatch)
+
+    first = run_production_once(repo, settings)
+    assert first.run is not None
+    cache_path = tmp_path / "work" / "analysis" / "job-1-analysis.json"
+    assert cache_path.is_file()
+
+    # a partially-written (or otherwise malformed) cache must never be
+    # trusted - correctness never depends on the cache
+    cache_path.write_text("{ not valid json", encoding="utf-8")
+
+    second = run_production_once(repo, settings)
+
+    assert second.run is not None
+    assert counts == {
+        "detect_scenes": 2,
+        "extract_audio_activity": 2,
+        "extract_motion_activity": 2,
+        "compute_scene_density": 2,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Caption-segment-count sidecar: truthful resume accounting
+# ---------------------------------------------------------------------------
+
+
+def test_run_production_caption_segment_count_restored_from_sidecar_on_resume(
+    speech_video: Path, tmp_path: Path, patched_recognizer: type[FakeRecognizer]
+) -> None:
+    repo = FakeRepository()
+    repo.seed(job_id=1, source_path=str(speech_video), rights_confirmed=True)
+    settings = _fake_settings(tmp_path / "work")
+
+    first = run_production(1, 1, repo, settings)
+    assert first.has_captions is True
+    assert first.caption_segment_count == 2
+    sidecar = first.final_video_path.with_suffix(".segments.json")
+    assert sidecar.is_file()
+
+    second = run_production(1, 1, repo, settings)
+
+    # the captioned artifact was reused, and its caption segment count
+    # was restored from the durable sidecar - not re-derived, not None
+    assert second.has_captions is True
+    assert second.caption_segment_count == 2
+
+
+def test_run_production_caption_sidecar_missing_yields_honest_none(
+    speech_video: Path, tmp_path: Path, patched_recognizer: type[FakeRecognizer]
+) -> None:
+    repo = FakeRepository()
+    repo.seed(job_id=1, source_path=str(speech_video), rights_confirmed=True)
+    settings = _fake_settings(tmp_path / "work")
+
+    first = run_production(1, 1, repo, settings)
+    assert first.caption_segment_count == 2
+    sidecar = first.final_video_path.with_suffix(".segments.json")
+    sidecar.unlink()
+
+    second = run_production(1, 1, repo, settings)
+
+    # a resumed captioned artifact WITHOUT its sidecar reports None - an
+    # honest "unknown", never a guessed number
+    assert second.caption_segment_count is None
+    assert len(FakeRecognizer.instances) == 1  # captioned artifact reused
+
+
+def test_run_production_caption_sidecar_malformed_yields_honest_none(
+    speech_video: Path, tmp_path: Path, patched_recognizer: type[FakeRecognizer]
+) -> None:
+    repo = FakeRepository()
+    repo.seed(job_id=1, source_path=str(speech_video), rights_confirmed=True)
+    settings = _fake_settings(tmp_path / "work")
+
+    first = run_production(1, 1, repo, settings)
+    sidecar = first.final_video_path.with_suffix(".segments.json")
+    sidecar.write_text("{ broken", encoding="utf-8")
+
+    second = run_production(1, 1, repo, settings)
+
+    assert second.caption_segment_count is None
+
+
+def test_run_production_corrupt_captioned_artifact_is_rebuilt_not_reused(
+    speech_video: Path, tmp_path: Path, patched_recognizer: type[FakeRecognizer]
+) -> None:
+    repo = FakeRepository()
+    repo.seed(job_id=1, source_path=str(speech_video), rights_confirmed=True)
+    settings = _fake_settings(tmp_path / "work")
+
+    first = run_production(1, 1, repo, settings)
+    assert first.caption_segment_count == 2
+
+    # tamper with the captioned artifact - truncate it so the quality
+    # gate (which re-probes duration/size) fails and the stale artifact
+    # is deleted and rebuilt, never silently reused
+    with first.final_video_path.open("r+b") as handle:
+        handle.truncate(first.final_video_path.stat().st_size // 2)
+
+    second = run_production(1, 1, repo, settings)
+
+    assert second.has_captions is True
+    assert second.caption_segment_count == 2
+    assert second.final_video_path == first.final_video_path
+    # rebuilt: the recognizer ran again for the fresh transcription
+    assert len(FakeRecognizer.instances) == 2
+    assert len(FakeRecognizer.instances[1].transcribe_calls) == 1
+    # the rebuilt artifact's sidecar was durably rewritten
+    assert second.final_video_path.with_suffix(".segments.json").is_file()
+
+
+# ---------------------------------------------------------------------------
+# build_automatic_metadata(): 100-character title bound
+# ---------------------------------------------------------------------------
+
+
+def _title_of_length(n: int, char: str = "a") -> str:
+    return char * n
+
+
+def test_build_automatic_metadata_no_truncation_at_100_chars() -> None:
+    source = _title_of_length(88)  # 88 + 12 = 100 exactly
+    title, _ = build_automatic_metadata(source)
+
+    assert title == f"{source} — Highlight"
+    assert len(title) == 100
+
+
+def test_build_automatic_metadata_truncates_beyond_100_chars() -> None:
+    source = _title_of_length(89)  # 89 + 12 = 101 > 100
+    title, _ = build_automatic_metadata(source)
+
+    assert len(title) == 100
+    assert title.endswith(" — Highlight")
+    assert "..." in title
+    assert title.startswith("a" * 85)
+    # deterministic for the same input
+    assert build_automatic_metadata(source)[0] == title
+
+
+def test_build_automatic_metadata_truncation_strips_trailing_whitespace() -> None:
+    # the cut lands on trailing whitespace (positions 82-84 are spaces):
+    # rstrip() must remove them so the ellipsis never follows a gap
+    source = "a" * 82 + "   " + "b" * 4  # 89 chars total
+    title, _ = build_automatic_metadata(source)
+
+    assert title == "a" * 82 + "..." + " — Highlight"
+    assert len(title) == 97
+    assert "   " not in title
+
+
+def test_build_automatic_metadata_unicode_counts_characters_not_bytes() -> None:
+    source = "é" * 89
+    title, _ = build_automatic_metadata(source)
+
+    assert len(title) == 100
+    assert title.endswith(" — Highlight")
+
+
+# ---------------------------------------------------------------------------
+# _classify_job_state(): uploaded/rendered/processing DB rows without
+# filesystem markers
+# ---------------------------------------------------------------------------
+
+
+def test_production_status_uploaded_row_without_receipt_is_uploaded_private(
+    speech_video: Path, tmp_path: Path
+) -> None:
+    """A job whose DB row says status == "uploaded" is reported as
+    uploaded_private even when no local receipt marker exists - the DB
+    row itself is authoritative that the upload finished."""
+    repo = FakeRepository()
+    repo.seed(job_id=1, source_path=str(speech_video), rights_confirmed=True, status="uploaded")
+    settings = _fake_settings(tmp_path / "work")
+
+    status = production_status(repo, settings)
+
+    assert status.uploaded_private == 1
+    assert status.jobs[0].state == "uploaded_private"
+
+
+@pytest.mark.parametrize("excluded_status", ["rendered", "processing", "failed"])
+def test_production_status_non_eligible_row_without_artifacts_is_inactive(
+    excluded_status: str, speech_video: Path, tmp_path: Path
+) -> None:
+    """A rights-confirmed row in any non-pending status (rendered,
+    processing, failed) with no filesystem markers must NOT be reported
+    as rights_approved_eligible - run_production_once() would never
+    select it, so the status report must not promise it is eligible. It
+    is "inactive", not "rejected": its rights were never rejected."""
+    repo = FakeRepository()
+    repo.seed(
+        job_id=1,
+        source_path=str(speech_video),
+        rights_confirmed=True,
+        status=excluded_status,
+    )
+    settings = _fake_settings(tmp_path / "work")
+
+    status = production_status(repo, settings)
+
+    assert status.rights_approved_eligible == 0
+    assert status.rejected == 0
+    assert status.inactive == 1
+    assert status.jobs[0].state == "inactive"
+
+
+def test_production_status_receipt_marker_precedes_db_status(
+    speech_video: Path, tmp_path: Path, patched_recognizer: type[FakeRecognizer]
+) -> None:
+    """A receipt-bearing job stays "uploaded_private" regardless of what
+    its DB status says (file-based markers take precedence)."""
+    repo = FakeRepository()
+    repo.seed(job_id=1, source_path=str(speech_video), rights_confirmed=True, status="processing")
+    settings = _fake_settings(tmp_path / "work")
+
+    packaged = run_production(1, 1, repo, settings)
+    assert packaged.package is not None
+    _write_marker(packaged.package.package_dir, "upload_receipt.json")
+
+    status = production_status(repo, settings)
+
+    assert status.uploaded_private == 1
+    assert status.processing == 0
+    assert status.jobs[0].state == "uploaded_private"

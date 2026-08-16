@@ -263,7 +263,10 @@ def create_app(
             raise HTTPException(status_code=409, detail="job could not be claimed")
         render_only = payload.render_only if payload else False
         await engine.run_job(job_id, upload=not render_only)
-        message = "Job queued for render only." if render_only else "Job started."
+        # The job is processed synchronously inside this request - it is
+        # NOT queued for a background worker (the legacy run-once
+        # semantics), so the response must not claim otherwise.
+        message = "Job processed synchronously." if render_only else "Job processed and published."
         return {
             "status": "success",
             "message": message,

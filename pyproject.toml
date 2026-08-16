@@ -47,6 +47,13 @@ packages = ["src/robin_content_engine"]
 addopts = "-q"
 testpaths = ["tests"]
 asyncio_mode = "auto"
+# moviepy's bundled ffmpeg reader mutates a numpy array's .shape attribute,
+# which numpy 2.5 deprecated (and will eventually remove). It is a known,
+# benign library bug we cannot fix from here - silence exactly that
+# DeprecationWarning (by message) so genuinely NEW warnings stay visible.
+filterwarnings = [
+  "ignore:Setting the shape on a NumPy array has been deprecated in NumPy 2.5:DeprecationWarning",
+]
 
 [tool.ruff]
 target-version = "py311"
@@ -56,9 +63,16 @@ line-length = 100
 select = ["E", "F", "I", "B", "UP", "SIM", "RUF"]
 
 [tool.mypy]
-python_version = "3.11"
+# The deployed runtime interpreter is 3.12 (the shared .venv); the
+# installed numpy type stubs also require 3.12 syntax.
+python_version = "3.12"
 strict = true
 packages = ["robin_content_engine"]
+# Resolve the package from THIS repository's src/ layout, never from a
+# pip-installed copy in the active environment (the shared .venv has a
+# different (v2) build installed; without this, mypy follows the
+# installed package and fails with "missing py.typed marker").
+mypy_path = ["src"]
 
 [[tool.mypy.overrides]]
 module = ["scenedetect.*", "moviepy.*", "faster_whisper.*", "imageio_ffmpeg.*"]

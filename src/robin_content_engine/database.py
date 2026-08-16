@@ -33,6 +33,7 @@ def _rows_to_dicts(rows: list[tuple[Any, ...]], description: Any) -> list[RowDic
 class JobRepository:
     def __init__(self, database_url: str, max_attempts: int) -> None:
         self.max_attempts = max_attempts
+        self.database_url = database_url
         self.pool = ConnectionPool(
             conninfo=database_url,
             min_size=1,
@@ -165,13 +166,51 @@ class JobRepository:
             raise RuntimeError("Queue insert returned no job ID")
         return int(row[0])
 
+    def mark_deterministic_failure(self, job_id: int, reason: str) -> bool:
+        """Record a deterministic (never-retryable) processing failure by
+        quarantining the job with an explicit reason, and clear claimed_at
+        so the row does not look mid-flight.
+
+        MUST NOT use self.pool: the caller (run_production_once) has
+        already closed this repository's single connection pool, and
+        psycopg_pool's ConnectionPool cannot be reopened after close.
+        This method therefore spins up its own short-lived pool for
+        exactly this one UPDATE, opened and closed within the call - the
+        write is deliberately independent of the (already closed) pool
+        lifecycle, so a quarantine never crashes on a PoolClosed error
+        and never requires the caller to reopen anything.
+
+        Only mutates a job that is still 'pending' (the state
+        run_production_once selects from) - an operator decision made
+        concurrently (rejection, manual quarantine) is never overwritten.
+        """
+        safe_reason = reason[:2000]
+        pool = ConnectionPool(conninfo=self.database_url, min_size=1, max_size=1, open=False)
+        try:
+            pool.open(wait=True)
+            with pool.connection() as conn:
+                result = conn.execute(
+                    """
+                    UPDATE video_queue
+                    SET status = 'quarantined',
+                        last_error = %s,
+                        claimed_at = NULL
+                    WHERE id = %s AND status = 'pending'
+                    """,
+                    (safe_reason, job_id),
+                )
+                return bool(result.rowcount)
+        finally:
+            pool.close()
+
     def quarantine_unconfirmed(self) -> int:
         with self.pool.connection() as conn:
             result = conn.execute(
                 """
                 UPDATE video_queue
                 SET status = 'quarantined',
-                    last_error = %s
+                    last_error = %s,
+                    claimed_at = NULL
                 WHERE status = 'pending' AND rights_confirmed = FALSE
                 """,
                 (AUTO_QUARANTINE_REASON,),
@@ -261,7 +300,8 @@ class JobRepository:
                 """
                 UPDATE video_queue
                 SET status = 'quarantined',
-                    last_error = 'Quarantined by operator.'
+                    last_error = 'Quarantined by operator.',
+                    claimed_at = NULL
                 WHERE id = %s
                   AND status IN ('pending', 'processing', 'rendered', 'failed')
                 """,
@@ -324,7 +364,9 @@ class JobRepository:
                 SET rights_confirmed = TRUE,
                     status = 'pending',
                     last_error = NULL,
-                    rights_note = COALESCE(rights_note, '') || %s
+                    rights_note = COALESCE(rights_note, '') || %s,
+                    claimed_at = NULL,
+                    completed_at = NULL
                 WHERE id = %s
                   AND rights_confirmed = FALSE
                   AND (
@@ -362,7 +404,8 @@ class JobRepository:
                 UPDATE video_queue
                 SET status = 'quarantined',
                     last_error = 'Rights rejected by operator.',
-                    rights_note = COALESCE(rights_note, '') || %s
+                    rights_note = COALESCE(rights_note, '') || %s,
+                    claimed_at = NULL
                 WHERE id = %s
                   AND rights_confirmed = FALSE
                   AND (
@@ -413,7 +456,7 @@ class JobRepository:
             conn.execute(
                 """
                 UPDATE video_queue
-                SET status = 'uploaded', youtube_id = %s, completed_at = NOW()
+                SET status = 'uploaded', youtube_id = %s, completed_at = NOW(), claimed_at = NULL
                 WHERE id = %s AND status = 'rendered'
                 """,
                 (youtube_id, job_id),
@@ -426,8 +469,10 @@ class JobRepository:
                 """
                 UPDATE video_queue
                 SET status = CASE WHEN attempts >= %s THEN 'failed' ELSE 'pending' END,
-                    last_error = %s
+                    last_error = %s,
+                    claimed_at = NULL,
+                    completed_at = CASE WHEN attempts >= %s THEN NOW() ELSE NULL END
                 WHERE id = %s AND status IN ('processing', 'rendered')
                 """,
-                (self.max_attempts, safe_error, job_id),
+                (self.max_attempts, safe_error, self.max_attempts, job_id),
             )

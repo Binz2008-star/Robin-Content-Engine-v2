@@ -15,7 +15,8 @@ from googleapiclient.errors import HttpError  # type: ignore[import-untyped]
 
 YOUTUBE_UPLOAD_SCOPE = "https://www.googleapis.com/auth/youtube.upload"
 YOUTUBE_READONLY_SCOPE = "https://www.googleapis.com/auth/youtube.readonly"
-YOUTUBE_AUTH_SCOPES = [YOUTUBE_UPLOAD_SCOPE, YOUTUBE_READONLY_SCOPE]
+YOUTUBE_MANAGE_SCOPE = "https://www.googleapis.com/auth/youtube"
+YOUTUBE_AUTH_SCOPES = [YOUTUBE_UPLOAD_SCOPE, YOUTUBE_READONLY_SCOPE, YOUTUBE_MANAGE_SCOPE]
 
 
 class AuthState(StrEnum):

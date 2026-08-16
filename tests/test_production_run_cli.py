@@ -38,10 +38,19 @@ class FakeRepository:
         self.get_job_calls: list[int] = []
         self.list_jobs_calls = 0
         self.enqueue_calls: list[dict[str, Any]] = []
+        self.terminal_failures: list[tuple[int, str]] = []
 
     @contextmanager
     def running(self):
         yield self
+
+    def mark_deterministic_failure(self, job_id: int, reason: str) -> bool:
+        self.terminal_failures.append((job_id, reason))
+        if job_id in self.jobs:
+            self.jobs[job_id]["status"] = "quarantined"
+            self.jobs[job_id]["last_error"] = reason
+            return True
+        return False
 
     def seed(
         self,
@@ -173,8 +182,12 @@ def _patch_youtube(monkeypatch: pytest.MonkeyPatch) -> None:
     FakeUploader.upload_calls = []
 
 
-def _write_marker(package_dir: Path, filename: str) -> None:
-    (package_dir / filename).write_text(json.dumps({"status": "started"}), encoding="utf-8")
+def _write_marker(
+    package_dir: Path, filename: str, payload: dict[str, Any] | None = None
+) -> None:
+    (package_dir / filename).write_text(
+        json.dumps(payload or {"status": "started"}), encoding="utf-8"
+    )
 
 
 @pytest.fixture(scope="module")
@@ -479,7 +492,10 @@ def test_production_run_once_processes_at_most_one_job_on_qc_failure(
 
     assert result.exit_code != 0
     assert "Quality gate: FAIL" in result.output
+    assert "quarantined" in result.output.lower()
     assert call_count["n"] == 1  # candidate 2 was never attempted
+    assert len(repo.terminal_failures) == 1
+    assert repo.terminal_failures[0][0] == 1
 
 
 def test_production_run_once_discovers_new_capture_without_auto_approving(
@@ -691,3 +707,200 @@ def test_production_status_never_touches_youtube_or_content_engine(
     result = CliRunner().invoke(cli_app, ["production-status"])
 
     assert result.exit_code == 0, result.output
+
+
+# ---------------------------------------------------------------------------
+# production-reconcile
+# ---------------------------------------------------------------------------
+
+
+def _reconcile_snapshot(videos: list[dict[str, Any]]) -> Any:
+    from robin_content_engine.youtube_sync import (
+        YouTubeChannelSnapshot,
+        YouTubeSyncSnapshot,
+        YouTubeVideoSnapshot,
+    )
+
+    def to_video(raw: dict[str, Any]) -> YouTubeVideoSnapshot:
+        return YouTubeVideoSnapshot(
+            video_id=raw["video_id"],
+            channel_id="UC_expected",
+            title="clip — Highlight",
+            description="",
+            published_at=raw["published_at"],
+            duration_seconds=58,
+            privacy_status=raw.get("privacy_status", "private"),
+            made_for_kids=False,
+            self_declared_made_for_kids=False,
+            category_id="20",
+            license="youtube",
+            tags=(),
+            thumbnail_url=None,
+            view_count=None,
+            like_count=None,
+            comment_count=None,
+        )
+
+    return YouTubeSyncSnapshot(
+        channel=YouTubeChannelSnapshot(
+            channel_id="UC_expected",
+            title="Test Channel",
+            custom_url=None,
+            description="",
+            published_at=None,
+            uploads_playlist_id="UU_expected",
+            view_count=None,
+            subscriber_count=None,
+            hidden_subscriber_count=False,
+            video_count=None,
+        ),
+        videos=tuple(to_video(v) for v in videos),
+        discovered_video_count=len(videos),
+    )
+
+
+def test_production_reconcile_resolves_ambiguous_package(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from datetime import UTC, datetime, timedelta
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(
+        cli_module, "Settings", lambda: FakeSettings(tmp_path / "work", tmp_path / "captures")
+    )
+    monkeypatch.setattr(cli_module, "YouTubeAuth", FakeAuth)
+    started = datetime.now(UTC) - timedelta(minutes=1)
+
+    class _ReconcileSync:
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
+            pass
+
+        def fetch_snapshot(self) -> Any:
+            return _reconcile_snapshot(
+                [{"video_id": "videoID777", "published_at": started + timedelta(seconds=10)}]
+            )
+
+    monkeypatch.setattr(cli_module, "YouTubeChannelSync", _ReconcileSync)
+
+    package_dir = tmp_path / "work" / "ready" / "job-1-highlight-01-10.0-25.0"
+    package_dir.mkdir(parents=True)
+    _write_marker(
+        package_dir,
+        "upload_attempt.json",
+        {
+            "format_version": 1,
+            "package_sha256": "sha256-xyz",
+            "expected_channel_id": "UC_expected",
+            "authenticated_channel_id": "UC_expected",
+            "started_at": started.isoformat(),
+            "intended_privacy": "private",
+            "status": "started",
+        },
+    )
+
+    result = CliRunner().invoke(cli_app, ["production-reconcile"])
+
+    assert result.exit_code == 0, result.output
+    assert "RESOLVED" in result.output
+    assert "videoID777" in result.output
+    assert (package_dir / "upload_receipt.json").is_file()
+    assert not (package_dir / "upload_attempt.json").exists()
+
+
+def test_production_reconcile_unresolved_exits_nonzero(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from datetime import UTC, datetime, timedelta
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(
+        cli_module, "Settings", lambda: FakeSettings(tmp_path / "work", tmp_path / "captures")
+    )
+    monkeypatch.setattr(cli_module, "YouTubeAuth", FakeAuth)
+    started = datetime.now(UTC) - timedelta(hours=3)
+
+    class _EmptySync:
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
+            pass
+
+        def fetch_snapshot(self) -> Any:
+            return _reconcile_snapshot([])
+
+    monkeypatch.setattr(cli_module, "YouTubeChannelSync", _EmptySync)
+
+    package_dir = tmp_path / "work" / "ready" / "job-1-highlight-01-10.0-25.0"
+    package_dir.mkdir(parents=True)
+    _write_marker(
+        package_dir,
+        "upload_attempt.json",
+        {
+            "format_version": 1,
+            "package_sha256": "sha256-xyz",
+            "authenticated_channel_id": "UC_expected",
+            "started_at": started.isoformat(),
+            "intended_privacy": "private",
+            "status": "started",
+        },
+    )
+
+    result = CliRunner().invoke(cli_app, ["production-reconcile"])
+
+    assert result.exit_code == 1
+    assert "UNRESOLVED" in result.output
+    assert (package_dir / "upload_attempt.json").is_file()
+
+
+def test_production_reconcile_no_ambiguous_state_exits_zero(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(
+        cli_module, "Settings", lambda: FakeSettings(tmp_path / "work", tmp_path / "captures")
+    )
+    monkeypatch.setattr(cli_module, "YouTubeAuth", FakeAuth)
+
+    class _ExplodingSync:
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
+            raise AssertionError("YouTube must not be touched when nothing is ambiguous")
+
+        def fetch_snapshot(self) -> Any:
+            raise AssertionError("YouTube must not be touched when nothing is ambiguous")
+
+    monkeypatch.setattr(cli_module, "YouTubeChannelSync", _ExplodingSync)
+
+    result = CliRunner().invoke(cli_app, ["production-reconcile"])
+
+    assert result.exit_code == 0, result.output
+    assert "No ambiguous upload states found" in result.output
+
+
+# ---------------------------------------------------------------------------
+# production-config
+# ---------------------------------------------------------------------------
+
+
+def test_production_config_prints_resolved_roots_without_secrets(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The command must print the canonical roots Settings actually
+    resolved against (so a launcher can verify it ran in the intended
+    repository) and NEVER print secrets - no database URL, no API keys,
+    no OAuth token paths."""
+    work_dir = tmp_path / "work"
+    capture_dir = tmp_path / "captures"
+    monkeypatch.setattr(
+        cli_module, "Settings", lambda: FakeSettings(work_dir, capture_dir)
+    )
+    monkeypatch.setattr(cli_module, "APP_ROOT", tmp_path)
+
+    result = CliRunner().invoke(cli_app, ["production-config"])
+
+    assert result.exit_code == 0, result.output
+    assert f"Application root: {tmp_path}" in result.output
+    assert f"Config file: {tmp_path / '.env'}" in result.output
+    assert f"Work directory: {work_dir}" in result.output
+    assert f"Capture source directory: {capture_dir}" in result.output
+    assert "Python executable:" in result.output
+    assert f"Source root: {tmp_path / 'src'}" in result.output
+    for secret in ("postgresql://", "user:pw", "api_key", "client_secret", "token.json"):
+        assert secret not in result.output
