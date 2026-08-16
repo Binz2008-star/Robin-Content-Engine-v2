@@ -36,6 +36,10 @@ dev = [
   "pytest-asyncio>=0.25,<1",
   "ruff>=0.9,<1",
 ]
+# Optional: downloading own-channel videos for `robin-engine channel-import`.
+download = [
+  "yt-dlp>=2025.1.0",
+]
 
 [project.scripts]
 robin-engine = "robin_content_engine.cli:app"

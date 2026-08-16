@@ -10,8 +10,11 @@ import structlog
 import typer
 
 from . import __version__
+from .ai_logic import ContentGenerator
 from .captioner import CaptionError, burn_captions
 from .capture_scan import CaptureScanError, scan_captures
+from .channel_import import ChannelImportError, import_video_as_short, list_long_videos
+from .channel_metadata import ChannelMetadataError, ChannelMetadataFixer
 from .channel_repository import ChannelRepository
 from .clip_cutter import ClipCutError, cut_clip
 from .clip_selector import (
@@ -1299,6 +1302,226 @@ def production_status_command(
     typer.echo(f"Uploaded (private): {status.uploaded_private}")
     typer.echo(f"Ambiguous upload state: {status.ambiguous}")
     typer.echo(f"Inactive: {status.inactive}")
+
+
+@app.command("channel-long-videos")
+def channel_long_videos_command(
+    min_seconds: Annotated[
+        int, typer.Option("--min-seconds", help="Only list videos at least this long (s).")
+    ] = 60,
+    limit: Annotated[
+        int | None,
+        typer.Option("--limit", help="Maximum number of videos to list."),
+    ] = 20,
+    as_json: Annotated[
+        bool, typer.Option("--json", help="Print machine-readable JSON.")
+    ] = False,
+) -> None:
+    """List the channel's long-form (non-Short) videos from the stored
+    youtube-videos snapshot as candidates for `channel-import` Short
+    extraction. Pure read - no network I/O."""
+    settings = Settings()  # type: ignore[call-arg]
+    videos = list_long_videos(settings, min_seconds=min_seconds, limit=limit)
+
+    if as_json:
+        typer.echo(json.dumps(videos, ensure_ascii=False, indent=2))
+        return
+
+    if not videos:
+        typer.echo("No long videos found in the snapshot. Run 'robin-engine youtube-sync' first.")
+        return
+    typer.echo(f"Long videos (>= {min_seconds}s): {len(videos)}")
+    for video in videos:
+        minutes = video["duration_seconds"] // 60
+        seconds = video["duration_seconds"] % 60
+        typer.echo(
+            f"  {video['video_id']}  {minutes}:{seconds:02d}  "
+            f"{video['view_count'] or 0} views  {video['title'][:60]}"
+        )
+
+
+@app.command("channel-import")
+def channel_import_command(
+    video_ids: Annotated[
+        list[str],
+        typer.Argument(
+            help="One or more channel video IDs to download and turn into Shorts.",
+        ),
+    ],
+    rank: Annotated[
+        int,
+        typer.Option("--rank", help="Which ranked highlight candidate to produce (1 = top)."),
+    ] = 1,
+    model_size: Annotated[
+        str,
+        typer.Option("--model-size", help="faster-whisper model size for captioning."),
+    ] = "base",
+    no_upload: Annotated[
+        bool,
+        typer.Option("--no-upload", help="Download + process but do not upload to YouTube."),
+    ] = False,
+) -> None:
+    """Download own-channel long videos (via yt-dlp), cut each one's top
+    highlight into a 9:16 Short with captions, and - unless --no-upload -
+    publish it to the channel (privacy follows YOUTUBE_PUBLIC_AFTER_UPLOAD
+    and YOUTUBE_AI_METADATA). The imported footage is registered as a
+    rights-confirmed queue job because it is the channel's own upload.
+
+    Requires the optional yt-dlp dependency for downloading.
+    """
+    settings = Settings()  # type: ignore[call-arg]
+    repository = JobRepository(settings.database_url, settings.max_job_attempts)
+    auth = YouTubeAuth(settings.youtube_client_secret_file, settings.youtube_token_file)
+
+    for video_id in video_ids:
+        typer.echo(f"=== Importing {video_id} ===")
+        try:
+            job_id, result = import_video_as_short(
+                video_id,
+                repository,
+                settings,
+                rank=rank,
+                model_size=model_size,
+            )
+        except ChannelImportError as exc:
+            raise typer.BadParameter(str(exc)) from exc
+
+        _echo_production_result(result)
+        typer.echo(f"Queued/processed as job {job_id}.")
+
+        if no_upload or not result.quality_gate.passed or result.package is None:
+            continue
+
+        title, description, tags = build_production_metadata(result.source_title, settings)
+        typer.echo(f"Title: {title}")
+        try:
+            upload_result = execute_private_upload(
+                result.package.package_dir,
+                title,
+                description,
+                tags,
+                settings,
+                auth,
+                YouTubeUploader,
+            )
+        except PublishingError as exc:
+            raise typer.BadParameter(str(exc)) from exc
+
+        typer.echo("UPLOAD SUCCESS")
+        typer.echo(f"YouTube video ID: {upload_result.youtube_id}")
+        typer.echo(f"Privacy: {upload_result.privacy_status}")
+
+
+@app.command("channel-metadata-fix")
+def channel_metadata_fix_command(
+    apply: Annotated[
+        bool,
+        typer.Option("--apply", help="Actually write metadata to YouTube (default: plan only)."),
+    ] = False,
+    limit: Annotated[
+        int | None,
+        typer.Option("--limit", help="Maximum videos to add to the plan this run."),
+    ] = None,
+    max_updates: Annotated[
+        int | None,
+        typer.Option(
+            "--max-updates",
+            help="Maximum YouTube videos.update() calls this run (quota guard).",
+        ),
+    ] = None,
+    quota_budget: Annotated[
+        int | None,
+        typer.Option(
+            "--quota-budget",
+            help="Stop once this many YouTube quota units are consumed "
+            "(a videos.update costs 1600 units).",
+        ),
+    ] = None,
+    game_only: Annotated[
+        bool,
+        typer.Option("--game-only", help="Only fix videos whose game can be detected."),
+    ] = False,
+    video_id: Annotated[
+        list[str] | None,
+        typer.Option("--video-id", help="Restrict to specific video IDs (repeatable)."),
+    ] = None,
+    show_status: Annotated[
+        bool, typer.Option("--status", help="Print the persisted plan status and exit.")
+    ] = False,
+    reset: Annotated[
+        bool,
+        typer.Option("--reset", help="Clear the persisted metadata plan and exit."),
+    ] = False,
+) -> None:
+    """Fix titles/descriptions/tags across the channel's videos using the
+    AI Arabic metadata generator.
+
+    Resumable and quota-aware: discoveries, generated metadata and applied
+    state are persisted in work/metadata_plan.json, so an interrupted or
+    quota-limited run resumes where it left off instead of re-burning
+    DeepSeek calls and YouTube quota. Generated metadata passes a
+    deterministic safety validation (bounds + banned clickbait/claim
+    phrases) before it can reach YouTube.
+
+    Without --apply this only builds the plan (and prints it). With
+    --apply it performs videos.update() calls, bounded by --max-updates /
+    --quota-budget so a scheduled run can chip away at a large backlog
+    without exhausting the daily API quota.
+    """
+    settings = Settings()  # type: ignore[call-arg]
+    generator = ContentGenerator(
+        settings.deepseek_api_key, settings.deepseek_base_url, settings.deepseek_model
+    )
+    auth = YouTubeAuth(settings.youtube_client_secret_file, settings.youtube_token_file)
+    fixer = ChannelMetadataFixer(settings, auth, generator)
+
+    if reset:
+        fixer.plan.path.unlink(missing_ok=True)
+        typer.echo("Metadata plan cleared.")
+        return
+
+    if show_status:
+        pending = fixer.plan.pending()
+        typer.echo(f"Plan file: {fixer.plan.path}")
+        typer.echo(f"Pending: {len(pending)}")
+        typer.echo(f"Done: {fixer.plan.done_count()}")
+        for entry in pending:
+            state = "has-metadata" if entry.new_title else "needs-generation"
+            typer.echo(f"  {entry.video_id} [{state}] {entry.old_title[:50]}")
+        return
+
+    discovered = fixer.discover(video_ids=video_id)
+    if game_only:
+        discovered = [entry for entry in discovered if entry.game]
+    if limit is not None:
+        discovered = discovered[:limit]
+
+    typer.echo(f"Videos needing metadata fixes: {len(discovered)}")
+
+    generated = 0
+    failed_gen = 0
+    for entry in fixer.plan.pending():
+        if entry.new_title is not None:
+            typer.echo(f"  {entry.video_id}: {entry.old_title[:40]!r} -> {entry.new_title!r}")
+            continue
+        try:
+            fixer.generate_for(entry)
+            generated += 1
+            typer.echo(f"  {entry.video_id}: {entry.old_title[:40]!r} -> {entry.new_title!r}")
+        except ChannelMetadataError as exc:
+            failed_gen += 1
+            typer.echo(f"  generation failed for {entry.video_id}: {exc}")
+
+    typer.echo(f"Generated: {generated}, failed: {failed_gen}")
+
+    if not apply:
+        typer.echo("Plan built (not applied). Pass --apply to write to YouTube.")
+        return
+
+    applied, failed, failures = fixer.apply(max_updates=max_updates, quota_budget=quota_budget)
+    typer.echo(f"Applied: {applied}, failed: {failed}")
+    for video_id_, err in failures:
+        typer.echo(f"  {video_id_}: {err}")
 
 
 @app.command("youtube-publish-package")
