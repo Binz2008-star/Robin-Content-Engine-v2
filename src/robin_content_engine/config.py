@@ -73,6 +73,12 @@ class Settings(BaseSettings):
     highlight_min_seconds: float = Field(default=15.0, ge=5.0, le=60.0)
     highlight_max_seconds: float = Field(default=60.0, ge=10.0, le=60.0)
 
+    # Ban-safety: hard cap on how many uploads the automatic pipeline may
+    # publish per calendar day. Processing/packaging still runs when the
+    # cap is reached so the next upload is ready; only the publish is
+    # deferred. Keeps a small channel from looking like a spam bot.
+    youtube_max_uploads_per_day: int = Field(default=4, ge=1, le=20)
+
     capture_source_dir: Path = Path(r"C:\Users\loyal\Videos\Captures")
     capture_stability_wait_seconds: float = Field(default=2.0, ge=0.0, le=60.0)
 

@@ -49,6 +49,7 @@ from .publishing import PublishingError, dry_run, execute_private_upload
 from .quality_gate import PackagingError, package_short, run_quality_gate
 from .scene_detector import SceneBoundary, SceneDetectionError, detect_scenes
 from .transcription import FasterWhisperRecognizer, TranscriptionError
+from .upload_budget import record_upload, upload_allowed, upload_budget_summary
 from .uploader import YouTubeUploader
 from .vertical_reframe import VerticalReframeError, reframe_to_vertical
 from .youtube_auth import AuthState, YouTubeAuth, YouTubeAuthError
@@ -1173,6 +1174,10 @@ def production_run_once_command(
         return
 
     auth = YouTubeAuth(settings.youtube_client_secret_file, settings.youtube_token_file)
+    if not upload_allowed(settings):
+        typer.echo("DAILY UPLOAD CAP REACHED - processing complete, upload deferred to tomorrow.")
+        typer.echo(upload_budget_summary(settings))
+        return
     try:
         upload_result = execute_private_upload(
             result.package.package_dir, title, description, tags, settings, auth, YouTubeUploader
@@ -1180,6 +1185,7 @@ def production_run_once_command(
     except PublishingError as exc:
         raise typer.BadParameter(str(exc)) from exc
 
+    record_upload(settings)
     typer.echo("UPLOAD SUCCESS")
     typer.echo(f"YouTube video ID: {upload_result.youtube_id}")
     typer.echo(f"Privacy: {upload_result.privacy_status}")
@@ -1409,6 +1415,11 @@ def channel_import_command(
         if no_upload or not result.quality_gate.passed or result.package is None:
             continue
 
+        if not upload_allowed(settings):
+            typer.echo("DAILY UPLOAD CAP REACHED - import processed, upload deferred to tomorrow.")
+            typer.echo(upload_budget_summary(settings))
+            continue
+
         title, description, tags = build_production_metadata(result.source_title, settings)
         typer.echo(f"Title: {title}")
         try:
@@ -1424,6 +1435,7 @@ def channel_import_command(
         except PublishingError as exc:
             raise typer.BadParameter(str(exc)) from exc
 
+        record_upload(settings)
         typer.echo("UPLOAD SUCCESS")
         typer.echo(f"YouTube video ID: {upload_result.youtube_id}")
         typer.echo(f"Privacy: {upload_result.privacy_status}")

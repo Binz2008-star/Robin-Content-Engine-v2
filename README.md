@@ -110,6 +110,22 @@ The same operations are exposed on the existing studio API under
 `/api/production/*` (see `api.py`), sharing one implementation in
 `ops_actions.py`.
 
+## Automation & ban-safety
+
+- The scheduled task runs `ops\run_production_once.ps1` automatically. Set
+  the Windows Task Scheduler interval to your cadence (e.g. every 6 hours).
+- Only ONE job is processed per run (FIFO), and only rights-confirmed,
+  owned/licensed footage is ever published - there is no internet scraping
+  or third-party content ingestion in this system.
+- `YOUTUBE_MAX_UPLOADS_PER_DAY` (default 4) caps automatic uploads per
+  calendar day. When the cap is reached the pipeline still scans, processes
+  and packages the next job, but defers the actual upload to the next day -
+  keeping the channel from looking like a spam bot and staying inside
+  YouTube's API quota.
+- Uploads go out private-first and are flipped to public only afterwards
+  (`YOUTUBE_PUBLIC_AFTER_UPLOAD`), with AI metadata language controlled by
+  `YOUTUBE_METADATA_LANGUAGE`.
+
 ## Development
 
 ```bash

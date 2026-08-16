@@ -123,6 +123,8 @@ def approve(settings: Settings, job_id: int, note: str | None = None) -> dict[st
 
 
 def _run_once_inner(settings: Settings, upload: bool) -> str:
+    from .upload_budget import record_upload, upload_allowed, upload_budget_summary
+
     once = run_production_once(_repo(settings), settings)
     lines = [f"Capture scan: {once.capture_scan.new_registered} new registered."]
     for skipped in once.skipped:
@@ -153,6 +155,10 @@ def _run_once_inner(settings: Settings, upload: bool) -> str:
         dry_run(result.package.package_dir, title, description, tags)
         lines.append("PUBLISH DRY RUN PASS (no upload)")
         return "\n".join(lines)
+    if not upload_allowed(settings):
+        lines.append("DAILY UPLOAD CAP REACHED - upload deferred to tomorrow.")
+        lines.append(upload_budget_summary(settings))
+        return "\n".join(lines)
     upload_result = execute_private_upload(
         result.package.package_dir,
         title,
@@ -162,6 +168,7 @@ def _run_once_inner(settings: Settings, upload: bool) -> str:
         _auth(settings),
         YouTubeUploader,
     )
+    record_upload(settings)
     lines.append(f"UPLOAD SUCCESS — video ID {upload_result.youtube_id}")
     return "\n".join(lines)
 
@@ -257,17 +264,26 @@ def import_video(settings: Settings, video_id: str, upload: bool = False) -> dic
             f"quality gate {'PASS' if result.quality_gate.passed else 'FAIL'}",
         ]
         if upload and result.quality_gate.passed and result.package is not None:
-            title, description, tags = build_production_metadata(result.source_title, settings)
-            upload_result = execute_private_upload(
-                result.package.package_dir,
-                title,
-                description,
-                tags,
-                settings,
-                _auth(settings),
-                YouTubeUploader,
-            )
-            lines.append(f"UPLOAD SUCCESS — video ID {upload_result.youtube_id}")
+            from .upload_budget import record_upload, upload_allowed, upload_budget_summary
+
+            if not upload_allowed(settings):
+                lines.append("DAILY UPLOAD CAP REACHED - upload deferred to tomorrow.")
+                lines.append(upload_budget_summary(settings))
+            else:
+                title, description, tags = build_production_metadata(
+                    result.source_title, settings
+                )
+                upload_result = execute_private_upload(
+                    result.package.package_dir,
+                    title,
+                    description,
+                    tags,
+                    settings,
+                    _auth(settings),
+                    YouTubeUploader,
+                )
+                record_upload(settings)
+                lines.append(f"UPLOAD SUCCESS — video ID {upload_result.youtube_id}")
         else:
             lines.append("Not uploaded (queued for the next scheduled run).")
         return "\n".join(lines)
