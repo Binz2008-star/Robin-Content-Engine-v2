@@ -16,8 +16,13 @@ class ChannelImportError(RuntimeError):
 
 
 def _ffmpeg_location() -> str | None:
+    """yt-dlp accepts either a directory containing ffmpeg(.exe) or the
+    full path to the binary. imageio_ffmpeg's bundled binary is named with
+    its platform/version suffix (e.g. ffmpeg-win-x86_64-v7.1.exe), so the
+    full path must be passed - its parent directory alone would not be
+    found by yt-dlp's default ffmpeg/ffprobe name lookup."""
     try:
-        return str(Path(imageio_ffmpeg.get_ffmpeg_exe()).parent)
+        return str(Path(imageio_ffmpeg.get_ffmpeg_exe()).resolve())
     except Exception:
         return None
 
@@ -45,6 +50,10 @@ def download_channel_video(video_id: str, dest_dir: Path) -> Path:
         "merge_output_format": "mp4",
         "quiet": True,
         "no_warnings": True,
+        # The "android" player client does not require browser cookies /
+        # PO tokens and reliably yields a plain mp4 stream for public
+        # videos (tested against this channel's own uploads).
+        "extractor_args": {"youtube": {"player_client": ["android", "web"]}},
     }
     ffmpeg_location = _ffmpeg_location()
     if ffmpeg_location:
@@ -147,10 +156,15 @@ def import_video_as_short(
         job_id = repository.enqueue_local(video_path, source_title, rights_note)
 
     try:
+        # run_production() internally uses its own `with repository.running():`
+        # block, and psycopg_pool cannot reopen a pool that was already
+        # opened AND closed - so it needs a FRESH JobRepository, never the
+        # one used for the enqueue above (its pool is now closed).
+        pipeline_repository = JobRepository(settings.database_url, settings.max_job_attempts)
         result = run_production(
             job_id,
             rank,
-            repository,
+            pipeline_repository,
             settings,
             horizontal_offset_ratio=horizontal_offset_ratio,
             model_size=model_size,

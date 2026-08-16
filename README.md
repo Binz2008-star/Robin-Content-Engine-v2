@@ -70,7 +70,30 @@ Process and upload one job:
 robin-engine run-once
 ```
 
-The first YouTube upload requires a local OAuth browser flow. Uploads default to `private`. Keep `client_secret.json`, OAuth tokens, `.env`, and generated media out of Git.
+The first YouTube upload requires a local OAuth browser flow. Uploads default to
+`private`. Keep `client_secret.json`, OAuth tokens, `.env`, and generated media out of Git.
+
+## Channel operations
+
+```bash
+# List long-form (non-Short) channel videos as Short-extraction candidates
+robin-engine channel-long-videos --min-seconds 60 --limit 20
+
+# Download an own-channel video, cut its top highlight into a 9:16 Short,
+# and publish it (uses YOUTUBE_AI_METADATA + YOUTUBE_PUBLIC_AFTER_UPLOAD).
+# Requires the optional yt-dlp dependency (pip install -e ".[download]").
+robin-engine channel-import <VIDEO_ID> [<VIDEO_ID> ...]
+
+# Fix titles/descriptions/tags across the channel with AI Arabic metadata.
+# Resumable + quota-aware: state lives in work/metadata_plan.json, so a
+# quota-limited run resumes later instead of re-burning API quota.
+robin-engine channel-metadata-fix --status
+robin-engine channel-metadata-fix --limit 50
+robin-engine channel-metadata-fix --apply --max-updates 20 --quota-budget 5000
+```
+
+Run `robin-engine youtube-sync` before `channel-metadata-fix` so the
+discovery reads a fresh snapshot of titles/descriptions.
 
 ## Development
 
