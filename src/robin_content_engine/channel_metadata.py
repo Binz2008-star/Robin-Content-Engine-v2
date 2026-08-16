@@ -49,8 +49,19 @@ class ChannelMetadataError(RuntimeError):
 
 
 def detect_game(title: str) -> str | None:
-    """Best-effort game-name detection from a video title. Returns the game
-    name when the title clearly names one, else None."""
+    """Best-effort game-name detection from a video title.
+
+    Deliberately CONSERVATIVE: the channel's capture software occasionally
+    names a recording after a DIFFERENT game than what was actually played
+    (confirmed cases: "Black ops" captures that were Apex Legends). A
+    specific game is therefore only claimed when the evidence is strong:
+
+    - "fortnite"/"apex"/"roblox" anywhere in the title (these capture names
+      proved reliable), or
+    - an explicit "Call of Duty ..." title, or
+    - "Black ops" WITH a specific qualifier (edition number, "zombies",
+      etc.) - a BARE "Black ops" title is ambiguous and returns None so the
+      video gets neutral archive metadata instead of a guessed game."""
     t = (title or "").lower()
     if "fortnite" in t:
         return "Fortnite"
@@ -58,8 +69,12 @@ def detect_game(title: str) -> str | None:
         return "Apex Legends"
     if "roblox" in t:
         return "Roblox"
-    if "black ops" in t or "call of duty" in t:
-        return "Call of Duty Black Ops"
+    if "call of duty" in t:
+        return "Call of Duty Black Ops" if "black ops" in t else "Call of Duty"
+    if "black ops" in t:
+        stripped = t.replace("black ops", "").strip(" -_|")
+        if len(stripped) >= 3 or any(ch.isdigit() for ch in t):
+            return "Call of Duty Black Ops"
     return None
 
 

@@ -123,8 +123,14 @@ def _fake_settings(tmp_path: Path) -> SimpleNamespace:
 def test_detect_game_from_titles() -> None:
     assert detect_game("Fortnite_20211205165131") == "Fortnite"
     assert detect_game("Apex Legends_20201208173122") == "Apex Legends"
-    assert detect_game("Black ops") == "Call of Duty Black Ops"
+    assert detect_game("Call of Duty Black Ops III Zombies | 100+ Waves Challenge!") == (
+        "Call of Duty Black Ops"
+    )
+    assert detect_game("Call of Duty: Modern Warfare") == "Call of Duty"
     assert detect_game("Roblox gameplay") == "Roblox"
+    # A BARE "Black ops" capture name is ambiguous - confirmed cases were
+    # actually Apex Legends, so no game is claimed (neutral archive instead).
+    assert detect_game("Black ops") is None
     assert detect_game("Ghfg#y") is None
 
 
