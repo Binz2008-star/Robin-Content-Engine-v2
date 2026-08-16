@@ -95,6 +95,21 @@ robin-engine channel-metadata-fix --apply --max-updates 20 --quota-budget 5000
 Run `robin-engine youtube-sync` before `channel-metadata-fix` so the
 discovery reads a fresh snapshot of titles/descriptions.
 
+## Control panel (browser dashboard)
+
+A loopback-only web dashboard lets you run the whole pipeline from a browser
+instead of the command line. Double-click the desktop icon
+**"Robin Content Engine"** (or run `ops\start_control_panel.cmd`) to start it
+and open `http://127.0.0.1:8765`.
+
+Buttons: scan captures, refresh the channel snapshot, process + upload the
+next job, make private uploads public, fix channel metadata, import a channel
+video as a Short, and approve rights directly from the queue table.
+
+The same operations are exposed on the existing studio API under
+`/api/production/*` (see `api.py`), sharing one implementation in
+`ops_actions.py`.
+
 ## Development
 
 ```bash
