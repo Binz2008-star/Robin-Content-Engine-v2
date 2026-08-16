@@ -6,6 +6,7 @@ from typing import Any
 import imageio_ffmpeg
 import psycopg
 
+from .channel_metadata import detect_game
 from .clip_selector import WindowSelectorConfig
 from .config import Settings
 from .database import JobRepository
@@ -146,9 +147,7 @@ def import_video_as_short(
     pending job instead of registering a duplicate (and re-cutting with
     the current window config produces a fresh, longer artifact if the
     bounds changed)."""
-    source_title = fetch_video_title(settings, video_id)
-    if not source_title:
-        source_title = f"Channel video {video_id}"
+    source_title = _normalized_import_title(settings, video_id)
 
     downloads = settings.work_dir / "downloads"
     video_path = download_channel_video(video_id, downloads)
@@ -183,6 +182,23 @@ def import_video_as_short(
     except ProductionRunError as exc:
         raise ChannelImportError(f"production pipeline failed for job {job_id}: {exc}") from exc
     return job_id, result
+
+
+def _normalized_import_title(settings: Settings, video_id: str) -> str:
+    """A clean, truthful source title for an imported Short.
+
+    The stored channel snapshot can carry default/junk capture names
+    ("Apexsf.kjh", "Black ops", "Furniture"...) that must NEVER drive the
+    Short's metadata. When the conservative game detector recognizes a real
+    game, use "<Game> gameplay"; otherwise use a neutral archive label so
+    the AI metadata cannot mislabel the clip."""
+    title = fetch_video_title(settings, video_id)
+    game = detect_game(title)
+    if game:
+        return f"{game} gameplay"
+    if title and not title.startswith("Channel video"):
+        return "Archived gameplay"
+    return f"Channel video {video_id}"
 
 
 def _existing_pending_job_id(settings: Settings, video_id: str) -> int | None:
