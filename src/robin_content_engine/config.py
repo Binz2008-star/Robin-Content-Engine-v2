@@ -55,6 +55,10 @@ class Settings(BaseSettings):
     # English " — Highlight" metadata. Falls back to the deterministic
     # metadata if the AI call fails, so the pipeline never breaks.
     youtube_ai_metadata: bool = False
+    # Language for AI-generated metadata: "arabic" (Gulf Arabic, default)
+    # or "english" (clear English aimed at a mixed UAE/international
+    # audience, with mixed EN/AR hashtags).
+    youtube_metadata_language: str = "arabic"
 
     work_dir: Path = Path("work")
     max_job_attempts: int = Field(default=3, ge=1, le=10)
@@ -78,6 +82,14 @@ class Settings(BaseSettings):
         if isinstance(value, str) and not value.strip():
             return None
         return value
+
+    @field_validator("youtube_metadata_language")
+    @classmethod
+    def restrict_metadata_language(cls, value: str) -> str:
+        normalized = value.strip().lower()
+        if normalized not in ("arabic", "english"):
+            raise ValueError("youtube_metadata_language must be 'arabic' or 'english'")
+        return normalized
 
     @model_validator(mode="after")
     def anchor_relative_paths(self) -> "Settings":

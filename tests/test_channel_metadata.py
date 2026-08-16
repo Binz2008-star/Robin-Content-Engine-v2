@@ -42,12 +42,14 @@ class FakeAuth:
 
 
 class FakeGenerator:
-    def generate(self, context: str) -> Any:
+    def generate(self, context: str, language: str = "arabic") -> Any:
         return SimpleNamespace(
             title="جلسة فورتنايت نارية مع روبن", description="وصف تجريبي مختصر.", tags=["فورتنايت"]
         )
 
-    def generate_archive_metadata(self, old_title: str, published_at: str) -> Any:
+    def generate_archive_metadata(
+        self, old_title: str, published_at: str, language: str = "arabic"
+    ) -> Any:
         return SimpleNamespace(
             title="مقطع قديم من الأرشيف",
             description="لقطة من أرشيف القناة.",

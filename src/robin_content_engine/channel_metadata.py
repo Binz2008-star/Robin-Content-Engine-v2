@@ -231,11 +231,12 @@ class ChannelMetadataFixer:
         the entry. Raises ChannelMetadataError on generation/validation
         failure (the entry is then marked failed)."""
         try:
+            language = getattr(self.settings, "youtube_metadata_language", "arabic")
             if entry.game:
-                generated = self.generator.generate(build_ai_context(entry.game))
+                generated = self.generator.generate(build_ai_context(entry.game), language=language)
             else:
                 generated = self.generator.generate_archive_metadata(
-                    entry.old_title, entry.published_at
+                    entry.old_title, entry.published_at, language=language
                 )
             validate_generated_metadata(generated.title, generated.description, generated.tags)
         except (ContentGenerationError, MetadataValidationError) as exc:

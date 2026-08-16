@@ -474,7 +474,8 @@ def build_production_metadata(
                 settings.deepseek_base_url,
                 settings.deepseek_model,
             )
-            generated = generator.generate(build_ai_context(source_title))
+            language = getattr(settings, "youtube_metadata_language", "arabic")
+            generated = generator.generate(build_ai_context(source_title), language=language)
             return generated.title, generated.description, list(generated.tags)
         except Exception:
             logging.getLogger(__name__).warning(
