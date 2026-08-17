@@ -222,8 +222,13 @@ class ChannelMetadataFixer:
                 continue
             if not needs_metadata_fix(title or "", description or ""):
                 continue
+            # NEVER overwrite a video that already has a plan entry (done or
+            # pending): a curated/operator-queued correction or an already-
+            # applied fix must be preserved, not re-generated from a stale
+            # snapshot. This is what keeps re-discovery from re-titling
+            # already-fixed or already-published videos.
             existing = self.plan.existing(video_id)
-            if existing is not None and existing.state != "pending":
+            if existing is not None:
                 entries.append(existing)
                 continue
             pub = published_at.date().isoformat() if published_at else ""
