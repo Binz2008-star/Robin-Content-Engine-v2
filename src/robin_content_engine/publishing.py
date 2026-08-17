@@ -31,6 +31,21 @@ _MAX_TAGS_COMBINED_LENGTH = 500
 
 _REQUIRED_MANIFEST_KEYS = ("sha256", "byte_size", "quality_gate_passed", "packaged_artifact_path")
 
+# YouTube refusal reasons that PROVE no video was created: the request never
+# started an upload (daily upload limit, API quota). Unlike a lost network
+# response, these are NOT ambiguous - a retry is always safe.
+_DEFINITIVE_UPLOAD_BLOCK_REASONS = frozenset(
+    {"uploadLimitExceeded", "quotaExceeded", "dailyLimitExceeded"}
+)
+
+
+def _upload_block_reason(exc: Exception) -> str:
+    return str(getattr(exc, "reason", "") or exc)
+
+
+def _is_definitive_upload_block(exc: Exception) -> bool:
+    return _upload_block_reason(exc) in _DEFINITIVE_UPLOAD_BLOCK_REASONS
+
 
 class PublishingError(Exception):
     """Raised for any package/metadata validation failure or a safety-gate
@@ -474,6 +489,17 @@ def execute_private_upload(
     try:
         result = uploader.upload(validation.packaged_video_path, metadata)
     except Exception as exc:
+        if _is_definitive_upload_block(exc):
+            # YouTube refused the upload outright (e.g. uploadLimitExceeded,
+            # quotaExceeded): NO video was created, so the outcome is NOT
+            # ambiguous. The attempt marker is removed again - a retry (e.g.
+            # next day) is safe and needs no operator reconciliation.
+            attempt_path.unlink(missing_ok=True)
+            raise PublishingError(
+                "YouTube blocked the upload and no video was created "
+                f"({_upload_block_reason(exc)}). The attempt marker at {attempt_path} was "
+                "removed - a retry is safe."
+            ) from exc
         raise PublishingError(
             "Upload failed, or its outcome is unknown, after upload execution had already "
             f"begun. The attempt marker at {attempt_path} was intentionally preserved - the "
