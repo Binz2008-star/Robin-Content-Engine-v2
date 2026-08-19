@@ -1,6 +1,6 @@
 # Session Handoff — Robin Content Engine
 
-_Updated: 2026-08-16. Read this first in a new session to resume instantly._
+_Updated: 2026-08-19. Read this first in a new session to resume instantly._
 
 ## What this system is
 
@@ -81,6 +81,46 @@ $env:YOUTUBE_EXPECTED_CHANNEL_ID="UCIcvbGsmSwMDXxjWXq4QG8A"
 - `channel-import <ID> --no-upload` — cut a channel video into a Short (no upload)
 - `channel-metadata-fix --status` / `--apply --max-updates N` — fix titles
 - `youtube-sync` — refresh the channel snapshot (BEFORE metadata-fix)
+
+## IN-PROGRESS WORK — resume here in a new session
+
+The operator paused for a PC restart. Everything below is committed + pushed;
+no uncommitted work exists. A new session should pick up the NEXT OPEN PR.
+
+1. **PR #20 OPEN (awaiting human review, do NOT merge):**
+   `feat/quality-gate-decode-integrity` — quality gate now full-decodes every
+   artifact and rejects truncated/corrupt files (`decode_integrity_ffmpeg`).
+   Tests + ruff green. If merged, base for later PRs.
+2. **PR 1 (NOT started): AI-assisted candidate ranking.** New module +
+   CLI `highlight-rank <job>`. DeepSeek (via ai_logic.py's validated-JSON
+   pattern) reorders a job's ALREADY-computed highlight candidates using
+   transcript (if already stored in `work/transcripts/job-<id>-rank-<n>.json`)
+   + per-candidate signals (HighlightCandidate audio_score/motion_score/
+   scene_signal). Output: ranked order + a suggested hook per candidate,
+   written to `work/rankings/job-<id>.json`. Deterministic fallback = existing
+   score order on ANY AI failure. Read-only: never changes job status or
+   rights_confirmed. Tests: happy path, AI failure fallback, malformed JSON.
+3. **PR 2 (NOT started): AI hook integration.** Burn the PR-1 hook as the
+   OPENING caption (captioner `segments_to_srt`/`burn_captions` `hook_text`)
+   and use it in `build_production_metadata`; persist ASR transcripts to
+   `work/transcripts/` so PR 1 can consume them on re-runs. Fallback = no hook.
+   Must NOT touch rights/upload/budget gates.
+4. **PR 3 (NOT started): posting-time recommendation.** Read-only report from
+   `youtube_videos` (published_at + view_count) suggesting best posting
+   windows. No scheduler, no upload authority.
+
+## Guardrails — HARD (a prior draft was reverted for violating these)
+
+- Sourcing stays 100% local. capture_scan.py must NEVER gain internet/HTTP
+  fetch. NO third-party content harvesting (Pexels/Pixabay/Commons/scraping
+  are explicitly rejected).
+- rights_confirmed is a MANUAL operator action ONLY. NO auto-approve path,
+  NO AI/heuristic approval, NO `AUTO_CONFIRM_LOCAL_CAPTURES`.
+- Upload cap + channel-ID pin stay hard-enforced; no configurable off switch.
+- Uploads stay private-first → flip-to-public.
+- NO "AI Strategy Controller" with authority to decide which jobs get
+  sourced/approved/uploaded. AI may only advise (ranking, hooks, metadata).
+- Secrets/.env never printed, logged, or committed.
 
 ## Guardrails (do not remove)
 
