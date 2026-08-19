@@ -1,0 +1,17 @@
+{
+  "name": "robin-content-engine-v2",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "packageManager": "npm@10.8.2",
+  "workspaces": [
+    "studio"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspace studio",
+    "typecheck": "npm run typecheck --workspace studio",
+    "lint": "npm run lint --workspace studio",
+    "test": "npm run test --workspace studio",
+    "build": "npm run build --workspace studio"
+  }
+}
