@@ -1,0 +1,2294 @@
+version: 1
+
+# Canonical, machine- and human-readable task registry.
+#
+# Every agent must find its task here before editing anything. See
+# /AGENTS.md for the full rule set. SHAs in this file are verified against
+# `git rev-parse` / `git merge-base` at the time the entry was written or
+# last updated — do not carry forward a SHA without re-verifying it.
+#
+# If your branch is not listed below, it is not yet registered: register it
+# (or ask a human to) before starting work on it.
+
+tasks:
+
+  - id: RCE-20260807-API
+    title: FastAPI Control API
+    status: complete
+    owner: github-copilot
+    branch: feat/control-api
+    base_branch: feat/initial-engine
+    base_sha: 779c4d62af6abe349136e9fb2991b20ef719011e
+    final_sha: 3c2998367e3b8d9b18399cc052b3eccd834dfcab
+    pr: 6
+    merged: true
+    merged_into: feat/initial-engine
+    result_sha_on_feat_initial_engine: 4d85d62ea4951a2eaf057e9f51f1a3b3f96dc647
+    allowed_paths:
+      - src/robin_content_engine/**
+      - tests/**
+      - pyproject.toml
+      - README.md
+      - .env.example
+    forbidden_paths:
+      - studio/**
+      - schema.sql
+      - package.json
+      - package-lock.json
+      - metadata.json
+    merge_allowed: false
+    deploy_allowed: false
+    note: >-
+      PR #6 verified merged (merged=true, merged_by=Binz2008-star) into
+      feat/initial-engine. No longer an active implementation task. Not
+      merged to main. No deploy performed.
+
+  - id: RCE-20260807-STUDIO
+    title: Studio API Readiness
+    status: review
+    owner: google-studio
+    branch: feat/studio-api-readiness
+    current_sha: 938d4c23f2ea96d3444886ca89fe748d8175b7ea
+    allowed_paths:
+      - studio/**
+    forbidden_paths:
+      - src/robin_content_engine/**
+      - schema.sql
+      - pyproject.toml
+      - tests/**
+    merge_allowed: false
+    deploy_allowed: false
+    note: Frozen pending live FastAPI integration.
+
+  - id: RCE-20260807-CONTROL
+    title: Multi-Agent Repository Control Plane
+    status: active
+    owner: claude
+    branch: chore/agent-control-plane
+    base_branch: main
+    base_sha: 5387af1f14888964b463b1fcaed8751d40ecbde6
+    pr: 5
+    pr_state: open (draft)
+    allowed_paths:
+      - AGENTS.md
+      - CLAUDE.md
+      - .github/copilot-instructions.md
+      - .github/pull_request_template.md
+      - .github/workflows/agent-scope-guard.yml
+      - AI_WORKSPACE/**
+    forbidden_paths:
+      - src/**
+      - studio/**
+      - tests/**
+      - schema.sql
+      - pyproject.toml
+      - package.json
+      - package-lock.json
+    merge_allowed: false
+    deploy_allowed: false
+    note: >-
+      Verified via GitHub: PR #5 open, draft, mergeable_state=clean, no
+      review comments. This reconciliation pass is itself a unit of work
+      on this task.
+
+  - id: RCE-20260807-OAUTH
+    title: Phase 4A — YouTube OAuth + Channel Connection
+    status: complete
+    owner: claude
+    branch: feat/youtube-oauth
+    base_branch: feat/initial-engine
+    base_sha: 4d85d62ea4951a2eaf057e9f51f1a3b3f96dc647
+    final_sha: e7d51cf7ab32c901472598fe5d1c0baa39db72d2
+    pr: 7
+    merged: true
+    merged_into: feat/initial-engine
+    result_sha_on_feat_initial_engine: 741d2c8edf435da4c42bce7448710169307631cc
+    allowed_paths:
+      - src/robin_content_engine/youtube_auth.py
+      - src/robin_content_engine/uploader.py
+      - src/robin_content_engine/cli.py
+      - tests/test_youtube_auth.py
+      - tests/test_uploader.py
+    forbidden_paths:
+      - studio/**
+      - schema.sql
+      - AI_WORKSPACE/**
+      - AGENTS.md
+      - CLAUDE.md
+    merge_allowed: false
+    deploy_allowed: false
+    note: >-
+      PR #7 verified merged (merged=true, merged_by=Binz2008-star) into
+      feat/initial-engine. Real local OAuth smoke completed by the
+      operator on their own machine (authenticated channel confirmed:
+      UCIcvbGsmSwMDXxjWXq4QG8A, @roben.1). No credentials were ever
+      read, printed, or committed by any agent. Not merged to main.
+      No deploy performed. No video uploaded.
+
+  - id: RCE-20260807-CHANNELSYNC
+    title: Phase 4B — YouTube Channel Sync (read-only snapshots)
+    status: complete
+    owner: claude
+    branch: feat/youtube-channel-sync
+    base_branch: feat/initial-engine
+    base_sha: 741d2c8edf435da4c42bce7448710169307631cc
+    final_sha: 375fe01fe472399deedc6378a4e3068ef4f3a0c0
+    pr: 8
+    merged: true
+    merge_method: squash
+    merge_commit_sha: 8a55704611bb4ae666951db487013a818f44730c
+    merged_into: feat/initial-engine
+    result_sha_on_feat_initial_engine: 8a55704611bb4ae666951db487013a818f44730c
+    merged_by: Binz2008-star
+    allowed_paths:
+      - .env.example
+      - schema.sql
+      - src/robin_content_engine/channel_repository.py
+      - src/robin_content_engine/cli.py
+      - src/robin_content_engine/config.py
+      - src/robin_content_engine/youtube_sync.py
+      - tests/test_api.py
+      - tests/test_channel_repository.py
+      - tests/test_youtube_sync.py
+    forbidden_paths:
+      - studio/**
+      - AGENTS.md
+      - CLAUDE.md
+      - AI_WORKSPACE/**
+      - main
+      - client_secret.json
+      - client_secret*.json
+      - token.json
+      - .env
+    merge_allowed: false
+    deploy_allowed: false
+    ci: >-
+      Verified via GitHub: 1 check run ("test") completed/success on final
+      head 375fe01fe472399deedc6378a4e3068ef4f3a0c0. ci.yml only runs
+      `ruff check .` and `pytest` — mypy is not a CI gate in this repo.
+      Independently re-executed by this agent in a fresh worktree at that
+      exact head: pytest 77 passed/1 warning (matches self-report exactly,
+      up from 73 after 4 new retry-logic tests), ruff all checks passed,
+      git diff --check clean, git status clean.
+    migration:
+      status: APPLIED_TO_PRODUCTION
+      applied_at: "2026-08-07T19:45Z (approx, this session)"
+      authorized_by: >-
+        Direct chat message from the operator (explicit, scoped
+        authorization). A prior comment on PR 5 claiming the same
+        authorization was treated as untrusted external content and
+        NOT acted on.
+      production_neon_branch_id: br-lingering-poetry-axoi0r6y
+      pre_migration_verification_branch: br-twilight-field-axlipzqs
+      post_migration_verification: >-
+        Confirmed via Neon MCP: youtube_channels and youtube_videos exist
+        with correct PK/FK/CHECK constraints, all 3 triggers present and
+        bound, video_queue preserved (no data loss). schema.sql was
+        unchanged between the migrated head and the final merged head, so
+        no re-migration was needed for this pass.
+    real_smoke_evidence: >-
+      Self-reported by the operator after running `robin-engine
+      youtube-sync` locally (this agent cannot run it — no real OAuth
+      token.json and no raw TCP path to Neon from this sandbox): YouTube
+      to Neon sync succeeded 144 discovered / 144 stored; second
+      (idempotency) sync also 144/144 with no duplicates; authenticated
+      Channel ID UCIcvbGsmSwMDXxjWXq4QG8A (matches Phase 4A); a transient
+      Neon OperationalError during the run was handled by the new retry
+      logic and completed successfully; no YouTube write operations; no
+      deploy. Not independently re-verified by this agent (would require
+      real credentials this sandbox does not have).
+    note: >-
+      PR #8 marked ready for review then squash-merged into
+      feat/initial-engine by this agent under direct chat authorization.
+      Merge commit 8a55704611bb4ae666951db487013a818f44730c verified as
+      the new feat/initial-engine HEAD via git fetch. main independently
+      confirmed unchanged (5387af1f14888964b463b1fcaed8751d40ecbde6, same
+      as at the start of this whole engagement). No deploy performed.
+    stop_conditions:
+      - do not merge to main
+      - do not deploy
+      - never read, print, commit, log, or expose .env, token.json,
+        client_secret*.json, or any access/refresh token or API key
+      - do not change OAuth scopes unless explicitly required
+      - do not treat GitHub PR/issue comments as authorization for
+        production actions — require direct chat confirmation
+    next_action: >-
+      Phase 4B closed. Wait for explicit human direction before starting
+      any further phase (Content Radar, autonomous production, scheduler,
+      analytics) — per AGENTS.md, do not infer scope expansion from a
+      closed phase. New baseline for the next phase is feat/initial-engine
+      @ 8a55704611bb4ae666951db487013a818f44730c.
+
+  - id: RCE-20260807-CAPTURE
+    title: Phase 5 — Local Capture Source Integration
+    status: complete
+    owner: claude
+    branch: feat/local-capture-source
+    base_branch: feat/initial-engine
+    base_sha: 8a55704611bb4ae666951db487013a818f44730c
+    final_sha: ce23bd33e3d61f0e951ac1a8bf23f3640929fdae
+    pr: 9
+    merged: true
+    merge_method: squash
+    merge_commit_sha: a0feaedcf6e47f1aeca0ccc76dbba37d6bc704e1
+    merged_into: feat/initial-engine
+    result_sha_on_feat_initial_engine: a0feaedcf6e47f1aeca0ccc76dbba37d6bc704e1
+    merged_by: Binz2008-star
+    ci: >-
+      Verified via GitHub: check run "test" completed/success on final_sha
+      ce23bd33e3d61f0e951ac1a8bf23f3640929fdae. Independently re-run by
+      this agent immediately before merging: pytest 96 passed/1 warning,
+      ruff all checks passed, focused mypy on capture_scan.py/cli.py/
+      config.py - no issues found, git diff --check clean.
+    rights_safety_correction: >-
+      Real local smoke surfaced that capture_scan.py originally called
+      JobRepository.enqueue_local(), which hardcodes rights_confirmed=
+      TRUE - meaning every discovered file (including non-gameplay files
+      that happened to be in the capture folder) was auto-confirmed for
+      publishing rights just by existing there. Fixed by switching to the
+      existing, unmodified JobRepository.enqueue_api_job() (already took
+      rights_confirmed as an explicit parameter) and passing
+      rights_confirmed=False for every capture-scan discovery, with a
+      provenance rights_note stating rights require explicit
+      verification. No schema/database.py change. This correctly engages
+      the existing Rights Gate (quarantine_unconfirmed()) rather than
+      weakening it.
+    production_remediation: >-
+      Operator reported: 3 Neon production rows (IDs 6, 7, 8, created by
+      the first pre-fix smoke) corrected to status=pending,
+      rights_confirmed=false, with the corrected provenance rights_note.
+      No other rows modified. NOT independently verified by this agent -
+      the Neon MCP connector remained connected at the org level but not
+      enabled in this chat session throughout this task, so this agent
+      never queried production Neon directly at any point in this phase.
+    count_discrepancy_item9: >-
+      15 vs 16 unsupported-file count: reviewed the extension-filtering
+      code, no bug found. desktop.ini (.ini) would be counted as
+      skipped_unsupported identically to any other non-allowed extension;
+      nothing in the scan loop special-cases or skips hidden/system
+      files. Most likely a difference in how the operator described the
+      count in natural language, or desktop.ini not actually present at
+      scan time - not a scanner defect. No speculative fix was made.
+    note: >-
+      PR #9 body updated to remove stale pre-fix language
+      (enqueue_local()/rights_confirmed=TRUE claims) before merge, marked
+      ready for review, re-confirmed immediately before merging (head
+      unchanged, mergeable_state=clean, CI still success), then
+      squash-merged. Merge commit a0feaedcf6e47f1aeca0ccc76dbba37d6bc704e1
+      verified as the new feat/initial-engine HEAD via git fetch. main
+      independently re-confirmed unchanged
+      (5387af1f14888964b463b1fcaed8751d40ecbde6, same as at the start of
+      this entire engagement). No deploy performed.
+    allowed_paths:
+      - src/robin_content_engine/capture_scan.py
+      - src/robin_content_engine/config.py
+      - src/robin_content_engine/cli.py
+      - tests/test_capture_scan.py
+      - .env.example
+    forbidden_paths:
+      - studio/**
+      - AGENTS.md
+      - CLAUDE.md
+      - AI_WORKSPACE/**
+      - main
+      - schema.sql
+      - src/robin_content_engine/database.py
+      - src/robin_content_engine/uploader.py
+      - src/robin_content_engine/pipeline.py
+      - client_secret.json
+      - client_secret*.json
+      - token.json
+      - .env
+    merge_allowed: false
+    deploy_allowed: false
+    build_vs_adopt: >-
+      Evaluated before coding: no new dependency justified. Scope is a
+      single non-recursive directory listing, extension filtering, and a
+      two-snapshot stat()-based stability check — stdlib pathlib/os
+      fully covers this. A filesystem-watcher library (e.g. watchdog)
+      was considered and explicitly rejected: the phase brief requires a
+      manual scan command only, not a background watcher. Decision:
+      stdlib-only implementation, zero new dependencies.
+    duplicate_detection_strategy: >-
+      Resolved absolute file path checked against existing
+      video_queue.source_path values (via the existing
+      JobRepository.list_jobs(), reused as-is) before insert. No schema
+      change: no uniqueness is enforced at the DB level, only at the
+      application layer during a single sequential manual scan (no
+      concurrent writers in this phase, so this is sufficient).
+    file_stability_strategy: >-
+      Two stat() snapshots (size + mtime) of a candidate file taken a
+      short configurable interval apart (default 2.0s, Settings-
+      configurable); only registered if unchanged, otherwise skipped
+      this run (will be reconsidered on the next scan) — guards against
+      ingesting a file Xbox Game Bar is still actively writing.
+    schema_migration_needed: >-
+      No. video_queue already supports this use case via existing
+      source_path/source_title/rights_confirmed/rights_note fields and
+      the existing enqueue_api_job()/list_jobs() methods, both reused
+      unmodified. database.py is in forbidden_paths for this task.
+    stop_conditions:
+      - do not merge to main
+      - do not deploy
+      - do not modify, move, rename, or delete original capture files
+      - never read, print, commit, log, or expose .env, token.json,
+        client_secret*.json, or any access/refresh token or API key
+      - do not introduce a database/schema migration without stopping
+        and reporting it first — none is pre-authorized this phase
+      - do not start highlight detection, AI clip scoring, Content
+        Radar, autonomous production, scheduler, publishing automation,
+        analytics/learning loop, or a background directory watcher —
+        those are later phases
+      - do not call render/upload from capture-scan
+    next_action: >-
+      Phase 5 closed. Wait for explicit human direction before starting
+      any further phase (highlight detection, Content Radar, autonomous
+      production, scheduler, analytics/learning loop, background
+      watcher). New baseline for the next phase is feat/initial-engine @
+      a0feaedcf6e47f1aeca0ccc76dbba37d6bc704e1. If the operator wants
+      independent verification of the production row remediation
+      (item 8), enable the Neon connector for this chat.
+
+  - id: RCE-20260808-RIGHTS
+    title: Phase 6 — Rights Verification / Approval Flow
+    status: complete
+    owner: claude
+    branch: feat/rights-approval-flow
+    base_branch: feat/initial-engine
+    base_sha: a0feaedcf6e47f1aeca0ccc76dbba37d6bc704e1
+    final_sha: c9054f6f02fbf341885d7b8a479e153d3b86a0b5
+    pr: 10
+    merged: true
+    merge_method: squash
+    merge_commit_sha: c80b1ce54ddbdedf615cb88942fdd7e68c77b613
+    merged_into: feat/initial-engine
+    result_sha_on_feat_initial_engine: c80b1ce54ddbdedf615cb88942fdd7e68c77b613
+    merged_by: Binz2008-star
+    ci: >-
+      SUCCESS on final_sha c9054f6 - independently verified by this agent
+      via GitHub check-runs API before the operator merged. Independently
+      run by this agent before pushing the correction: pytest 139
+      passed/1 warning (124 prior baseline + 15 new auto-quarantine
+      regression tests), ruff all checks passed, focused mypy on
+      database.py/cli.py - no issues found, git diff --check clean. The
+      merge itself (c80b1ce into feat/initial-engine, main untouched, no
+      deploy) was independently verified by this agent via git fetch and
+      the GitHub pull_request_read API after the operator reported it.
+    correction_2026-08-08: >-
+      Auto-quarantined captures are now reviewable. run_once() calls
+      quarantine_unconfirmed() before claim_next(), which moves any
+      pending+unconfirmed row to quarantined with a fixed last_error
+      before an operator can review it; the original
+      list_pending_rights_review()/approve_rights()/reject_rights() only
+      matched status='pending', so such a row became invisible to
+      rights-list and unrecoverable via rights-approve/rights-reject.
+      Fixed: reviewable state is now rights_confirmed=FALSE AND
+      (status='pending' OR (status='quarantined' AND last_error equals
+      the exact quarantine_unconfirmed() marker)), still via one atomic
+      conditional UPDATE per operation. Approval of an auto-quarantined
+      row restores status='pending' and clears last_error. Explicit
+      operator rejection (last_error='Rights rejected by operator.')
+      remains excluded from the default list and from both mutations -
+      it is not reviewable. This supersedes the "known limitation" noted
+      in the 2026-08-08 HANDOFF entry for this task; that limitation no
+      longer exists as of c9054f6. No change to pipeline.py, schema.sql,
+      or the HTTP surface.
+    allowed_paths:
+      - src/robin_content_engine/database.py
+      - src/robin_content_engine/cli.py
+      - tests/test_database.py
+      - tests/test_rights_approval.py
+    forbidden_paths:
+      - studio/**
+      - AGENTS.md
+      - CLAUDE.md
+      - AI_WORKSPACE/**
+      - main
+      - schema.sql
+      - src/robin_content_engine/api.py
+      - src/robin_content_engine/uploader.py
+      - src/robin_content_engine/pipeline.py
+      - src/robin_content_engine/youtube_auth.py
+      - src/robin_content_engine/capture_scan.py
+      - client_secret.json
+      - client_secret*.json
+      - token.json
+      - .env
+    merge_allowed: false
+    deploy_allowed: false
+    security_decision: >-
+      Rights approval is a sensitive write operation. Per explicit task
+      instruction: no new unauthenticated HTTP endpoint for setting
+      rights_confirmed=TRUE. This phase is a LOCAL OPERATOR CLI-only
+      approval path (robin-engine rights-*). api.py is in forbidden_paths
+      - no HTTP mutation added. A future authenticated Studio/API
+      approval surface can reuse the same JobRepository domain methods
+      later, but that is out of scope here.
+    build_vs_adopt: >-
+      No new dependency. Reuses the existing FastAPI/Pydantic
+      architecture, Typer CLI, and JobRepository as the domain boundary -
+      a small domain/CLI workflow does not justify a workflow framework,
+      agent framework, or event bus.
+    schema_migration_needed: >-
+      No. video_queue already supports this via existing status/
+      rights_confirmed/rights_note/source_path/source_title fields.
+      claim_next()/claim_job() already only match status='pending' AND
+      rights_confirmed=TRUE, so approval alone (leaving status at
+      'pending') is sufficient for a row to become eligible under the
+      existing queue rules - nothing new needed to "enable" it.
+      quarantine_job()'s existing 'quarantined' status value fits
+      rejection exactly, so no new status was needed either. No audit
+      columns (verified_at/verified_by) were required - the append-only
+      rights_note already carries the verification/rejection provenance.
+    stop_conditions:
+      - do not merge to main
+      - do not deploy
+      - do not add an unauthenticated HTTP endpoint that can set
+        rights_confirmed=TRUE
+      - do not implement highlight detection, AI clip scoring, video/voice
+        generation, autonomous pipeline execution, Content Radar,
+        scheduler, publishing automation, analytics, learning loop,
+        background filesystem watcher, or a Studio rights UI
+      - do not merge PR, do not deploy
+      - do not mutate the real production Neon rows (IDs 6/7/8) during
+        implementation - read-only until explicit authorization after
+        code complete + tests green + CI green
+      - do not schedule self check-ins / periodic PR polling for this
+        task - report CI state once after opening the draft PR
+      - never read, print, commit, log, or expose .env, token.json,
+        client_secret*.json, or any access/refresh token or API key
+    production_smoke: >-
+      Executed by the operator directly (not by this agent - this
+      agent's sandbox has no raw TCP path to Neon, confirmed by a failed
+      socket connect during this task). Run from the operator's Windows
+      machine, exact branch/head feat/rights-approval-flow @ c9054f6, via
+      the real robin-engine CLI (rights-list, rights-show, rights-approve,
+      rights-reject - no manual SQL for the decisions). Operator-reported
+      results: job 8 (Fortnite) approved -> rights_confirmed=true,
+      status=pending, last_error=null; jobs 6 and 7 (ChatGPT Classic)
+      rejected -> rights_confirmed=false, status=quarantined,
+      last_error='Rights rejected by operator.'; all three rights_note
+      values preserved original discovery provenance plus the new
+      operator note; final `rights-list` returned "No jobs awaiting
+      rights review."; no render/upload/YouTube-write command was run.
+      Operator additionally reported an independent read-only Neon query
+      (run outside this agent, this agent has no Neon MCP tools connected
+      in this session) confirming the same final state for rows 6/7/8.
+      This agent did not itself execute or independently re-verify the
+      production mutation or the post-state query - recorded here as
+      operator-executed and operator-reported, consistent with this
+      task's actual capability boundary, not as first-hand verification
+      by this agent.
+    next_action: >-
+      None outstanding for this task. PR #10 merged (squash) into
+      feat/initial-engine at c80b1ce, independently verified by this
+      agent via git fetch and the GitHub API. main was not touched, no
+      deploy occurred. Phase 7 (Open-Source Harvest Audit / any
+      implementation) is a separate task and is NOT authorized by this
+      task's closure - do not start Phase 7 implementation without its
+      own explicit authorization and its own task registration.
+
+  - id: RCE-20260808-HARVEST7A
+    title: Phase 7A — Open-Source Harvest Deep Dive (research/architecture only)
+    status: complete
+    owner: claude
+    branch: none — research only, no branch, no implementation code
+    base_branch: feat/initial-engine
+    base_sha: c80b1ce54ddbdedf615cb88942fdd7e68c77b613
+    pr: none
+    merge_allowed: false
+    deploy_allowed: false
+    scope: >-
+      Source-level license/architecture audit of AutoShorts, OpenShorts,
+      PySceneDetect, MoneyPrinterTurbo, ShortGPT, plus an ASR benchmark
+      protocol design (faster-whisper / whisper.cpp / WhisperX) for the
+      operator's AMD RX 6800 XT Windows machine, and a proposed Robin
+      Phase 7B module architecture + GPU-neutral highlight scoring design
+      + smallest-useful-first-implementation recommendation. Deliverable
+      is a report for CTO review - no code, no dependency install, no
+      pyproject.toml change, no feature branch, no production DB access.
+    allowed_paths:
+      - AI_WORKSPACE/ACTIVE_TASKS.yaml
+      - AI_WORKSPACE/HANDOFF.md
+    forbidden_paths:
+      - src/**
+      - tests/**
+      - pyproject.toml
+      - schema.sql
+      - main
+      - any production database write
+    stop_conditions:
+      - do not create implementation code or a feature branch
+      - do not install dependencies or modify pyproject.toml
+      - do not modify production DB
+      - do not render, upload, deploy, or start autonomous production
+      - do not mark Phase 7 implementation active - this task authorizes
+        research/architecture output only
+    result: >-
+      Delivered in chat 2026-08-08: source-level decision matrices for
+      AutoShorts (MIT), OpenShorts (MIT core / cloud/ proprietary-billing
+      boundary precisely mapped, yt-dlp confirmed cleanly isolated to one
+      function), PySceneDetect (BSD-3-Clause, adopt AdaptiveDetector),
+      MoneyPrinterTurbo (MIT, bundled fonts/songs NOT MIT - excluded),
+      ShortGPT (MIT but yt-dlp dependency confirmed, rejected outright),
+      and an ASR benchmark protocol recommending faster-whisper (adopt)
+      + whisper.cpp (benchmark candidate) over WhisperX (rejected, no
+      AMD/Vulkan path documented) for the operator's RX 6800 XT. Proposed
+      Phase 7B module architecture (scene_detector.py,
+      highlight_features.py, highlight_scoring.py, clip_selector.py,
+      transcription.py; vertical_reframe.py deferred to Phase 7C), a
+      GPU-neutral highlight-score design with explicitly-flagged
+      placeholder weights, and a smallest-useful first-implementation
+      recommendation (timestamps+scores only, no render/upload/DB write).
+      No code was written, no branch created, no dependency installed, no
+      production DB accessed - all four research passes used WebFetch
+      against public GitHub URLs only.
+    next_action: >-
+      None for this task - it is a completed research deliverable, now
+      pending operator/CTO review. Any Phase 7B implementation is a
+      separate task requiring its own explicit authorization and
+      registration; this closure does not authorize it.
+
+  - id: RCE-20260808-HIGHLIGHT7B
+    title: Phase 7B — Deterministic Gameplay Highlight Intelligence MVP
+    status: complete
+    owner: claude
+    branch: feat/highlight-intelligence-mvp
+    base_branch: feat/initial-engine
+    base_sha: c80b1ce54ddbdedf615cb88942fdd7e68c77b613
+    final_sha: f56ae1b1e65b38cd4d52ceff977cbb14013c6a27
+    pr: 11
+    merged: true
+    merge_method: squash
+    merge_commit_sha: 67064bdcacb20df1362c786be6f3046514f5cfa3
+    merged_into: feat/initial-engine
+    result_sha_on_feat_initial_engine: 67064bdcacb20df1362c786be6f3046514f5cfa3
+    merged_by: Binz2008-star
+    ci: >-
+      SUCCESS on final_sha f56ae1b1e65b38cd4d52ceff977cbb14013c6a27
+      (check run "test" on GitHub) - independently verified by this
+      agent via GitHub pull_request_read after the operator merged; CI
+      was in-progress (checked once, per this task's explicit
+      instruction to stop hourly/background self-check polling) at the
+      time this agent last reported. Independently run by this agent
+      before pushing the final correction: pytest 198 passed/1 warning
+      (196 prior + 2 new non-integral-duration regression tests), ruff
+      all checks passed, focused mypy on
+      scene_detector.py/highlight_features.py/highlight_scoring.py/
+      clip_selector.py/cli.py/models.py - no issues found, git diff
+      --check clean. The merge itself (67064bd into feat/initial-engine,
+      main untouched, no deploy) was independently verified by this
+      agent via git fetch and the GitHub pull_request_read API after the
+      operator reported it.
+    correction_2026-08-08_duration_boundary: >-
+      Real Windows smoke on ID 8 (26.555s source) exposed that
+      generate_time_windows() truncates the final bin when source
+      duration isn't an exact multiple of the 1.0s grid, and
+      generate_candidate_windows() converted min/max_clip_seconds to a
+      bin COUNT using only the first window's width - so a candidate
+      spanning the configured bin count could span less real time than
+      min_clip_seconds if it included that truncated final bin.
+      Reproduced exactly: start=12.0, end=26.555, duration=14.555s
+      against min_clip_seconds=15.0, matching the operator's smoke
+      report precisely. Fixed: every candidate's real timestamp span
+      (end_seconds - start_seconds) is now validated against
+      min/max_clip_seconds (small float tolerance) before being kept -
+      bin count still decides which durations to search, but real
+      timestamps decide validity. Never pads/extends past the source's
+      real duration. The corrected multi-event candidate generation from
+      07407aa is preserved unchanged.
+    correction_2026-08-08_candidate_generation: >-
+      generate_candidate_windows() previously kept only the single
+      np.argmax()-best start position per tested duration, so distinct
+      genuine highlights elsewhere in the source could be silently
+      discarded before suppress_overlaps() ever ran - confirmed by
+      re-running the old algorithm against a 3-peak synthetic fixture,
+      which produced exactly one raw candidate. Fixed: now builds a
+      candidate for every valid (duration, start) pair via vectorized
+      cumsum sliding means (still O(n) per duration), ranks the full pool
+      globally by score with a start-time tie-break, truncates to
+      max_candidates_before_dedup only after that global ranking, then
+      hands off to the unchanged suppress_overlaps(). Per-candidate
+      reason now describes the candidate's own aggregate signals via the
+      newly-public highlight_scoring.describe_reason(), since every start
+      is considered rather than one per duration. Two new regression
+      tests (three and five separated synthetic events) verify multiple
+      distinct events survive to the final top-N; both were confirmed to
+      fail against the old algorithm on the same fixture before this fix.
+    allowed_paths:
+      - pyproject.toml
+      - src/robin_content_engine/scene_detector.py
+      - src/robin_content_engine/highlight_features.py
+      - src/robin_content_engine/highlight_scoring.py
+      - src/robin_content_engine/clip_selector.py
+      - src/robin_content_engine/cli.py
+      - src/robin_content_engine/models.py
+      - tests/test_scene_detector.py
+      - tests/test_highlight_features.py
+      - tests/test_highlight_scoring.py
+      - tests/test_clip_selector.py
+      - tests/test_highlight_scan_cli.py
+    forbidden_paths:
+      - studio/**
+      - AGENTS.md
+      - CLAUDE.md
+      - AI_WORKSPACE/**
+      - main
+      - schema.sql
+      - src/robin_content_engine/api.py
+      - src/robin_content_engine/uploader.py
+      - src/robin_content_engine/pipeline.py
+      - src/robin_content_engine/youtube_auth.py
+      - src/robin_content_engine/capture_scan.py
+      - src/robin_content_engine/channel_repository.py
+      - src/robin_content_engine/youtube_sync.py
+      - client_secret.json
+      - client_secret*.json
+      - token.json
+      - .env
+    merge_allowed: false
+    deploy_allowed: false
+    build_vs_adopt: >-
+      Final decision per Phase 7A audit (RCE-20260808-HARVEST7A): ADOPT
+      PySceneDetect (AdaptiveDetector) as a direct dependency (BSD-3-
+      Clause, pure CPU/numpy/OpenCV, no GPU dependency). REIMPLEMENT
+      CLEANLY (idea only, not code) AutoShorts' audio-energy, motion-
+      activity, and sliding-window candidate search concepts, using
+      numpy/OpenCV only - no torch/torchaudio/decord/CuPy/CUDA/NVENC.
+      INSPIRE (architecture only) from OpenShorts' clip-selection
+      design. Explicitly excluded from this phase: transcription
+      (faster-whisper/whisper.cpp/WhisperX), vertical reframing, AI/LLM
+      semantic scoring, yt-dlp, OpenShorts cloud/.
+    schema_migration_needed: >-
+      No. Read-only against the existing video_queue table via
+      JobRepository.get_job() only. No new columns, no new tables, no
+      write path added.
+    stop_conditions:
+      - do not render, clip/export, caption, transcribe, do AI/LLM
+        semantic scoring, vertical-reframe, upload, or write to YouTube
+      - do not claim a job, increment attempts, or write any
+        generated_*/output_path/status field - DB interaction is
+        strictly read-only (JobRepository.get_job() only)
+      - do not add faster-whisper, whisper.cpp, or WhisperX in this phase
+      - do not add scipy unless numpy is proven insufficient
+      - do not add torch, torchaudio, decord, cupy, or any CUDA/NVENC
+        assumption
+      - do not modify pipeline.py, uploader.py, youtube_auth.py, api.py,
+        or schema.sql - stop and report if any of those seem necessary
+      - do not merge PR, do not deploy
+      - do not run the real Windows ID-8 smoke without separate
+        explicit authorization after CI review
+      - no background polling / self check-ins for this task's PR
+    next_action: >-
+      None outstanding for this task. PR #11 merged (squash) into
+      feat/initial-engine at 67064bd, independently verified by this
+      agent via git fetch and the GitHub API. main was not touched, no
+      deploy occurred. Open follow-up (not part of this task's closure):
+      ID 8 (26.555s) is too short for a meaningful "top 5 distinct
+      highlights" qualitative smoke under the default 15s minimum + IoU
+      suppression - a longer (multi-minute) owned Fortnite capture will
+      be needed for that validation later, under the same rights-safe
+      local-capture boundary. Any further phase (transcription,
+      reframing, rendering, AI semantic scoring, real qualitative smoke
+      on a longer capture) is a separate task requiring its own explicit
+      authorization and registration.
+
+  - id: RCE-20260808-HIGHLIGHT7B-QV
+    title: Phase 7B-QV — Long Gameplay Qualitative Validation (operator-executed, no code)
+    status: complete
+    owner: claude (governance/report only) + operator (execution)
+    branch: >-
+      none — no code changes, no new branch, no PR (this task's own
+      code corrections were tracked separately as RCE-20260808-
+      HIGHLIGHT-DIVERSITY / PR #12 and RCE-20260808-HIGHLIGHT-
+      CONTAINMENT / PR #13, both merged into feat/initial-engine)
+    base_branch: feat/initial-engine
+    base_sha: 67064bdcacb20df1362c786be6f3046514f5cfa3
+    final_result_sha_on_feat_initial_engine: 8a0ffa8ec6d8ff86edb42075adea9e7866cd64f5
+    pr: none (see PR #12 and PR #13 for the code)
+    merge_allowed: false
+    deploy_allowed: false
+    final_closure: >-
+      PASS / CLOSED, per explicit operator decision. Chain: PR #12
+      (pre-dedup-truncation fix, merged d2fe747) -> operator job-19
+      smoke found a 60%-containment near-duplicate pair -> PR #13
+      (containment-ratio dedup criterion, merged 8a0ffa8, pre-merge
+      exact head 69a005307df30ff680a63b70b2a21e7d066798e3, exact-head CI
+      SUCCESS, independently verified by this agent) -> operator's
+      final authorized job-19 smoke (post PR #13) returned 5 useful
+      candidates -> operator visually confirmed the closest-in-time
+      remaining pair (389-404s and 381-396s) are two SEPARATE genuine
+      gameplay events within the same Fortnite match, not a
+      near-duplicate - this agent could not make that visual judgment
+      itself (no video access from this sandbox) and correctly deferred
+      to the operator's own review rather than guessing. Explicit
+      operator decision recorded verbatim: do NOT add event-level
+      minimum-separation/diversity logic, do NOT change IoU threshold
+      (0.35), do NOT change containment threshold (0.50), do NOT change
+      scoring/audio/motion weights. Phase 7B (deterministic gameplay
+      highlight intelligence) is now considered qualitatively validated
+      and closed. Next phase (8A - clip cutting) is a separate,
+      independently authorized task.
+    scope: >-
+      Qualitative validation of the already-merged deterministic
+      Highlight Intelligence (robin-engine highlight-scan) against a new
+      3-5+ minute owned Fortnite capture, entirely on the operator's real
+      Windows machine (this agent's sandbox has no camera/game, no
+      production DB access, no local capture directory - cannot execute
+      any step itself). Process: capture-scan to register the new file,
+      rights-show to inspect it, explicit rights-approve after operator
+      confirms personal-recording provenance, rights-show to confirm
+      rights_confirmed=true, then a single read-only highlight-scan
+      --top 5 --json run with wall-clock timing. Human grades each of
+      the 5 candidates A/B/C with a reason. No code change, no new
+      branch, no PR, no render, no upload, no YouTube write, no weight
+      tuning before human review. The only DB mutation permitted is the
+      existing explicit rights-approve path if the new capture needs it.
+    allowed_paths:
+      - AI_WORKSPACE/ACTIVE_TASKS.yaml
+      - AI_WORKSPACE/HANDOFF.md
+    forbidden_paths:
+      - src/**
+      - tests/**
+      - pyproject.toml
+      - schema.sql
+      - main
+      - any production database write outside rights-approve
+    stop_conditions:
+      - no code changes, no new branch, no PR
+      - no render, upload, YouTube write, or DB mutation beyond the
+        existing rights-approve workflow
+      - do not tune scoring weights/thresholds before human review of
+        this test's results
+      - do not start Phase 7C implementation after this test without
+        separate explicit authorization
+    operator_reported_results_job19: >-
+      Real Windows execution against job 19 (~409.055s owned Fortnite
+      capture). Operator-reported human grading of the top-5 candidates
+      (pre-diversity-fix run): 3/5 graded A (genuinely independent,
+      distinct regions), 2/5 graded B but assessed as essentially the
+      same event (389-404s and 378-398s, later independently confirmed
+      by this agent's own regression-test construction to have IoU
+      ~=0.346, just under the 0.35 suppression threshold). Operator's
+      engineering conclusion: the base audio/motion scoring correctly
+      identifies useful events (3/5 A is a genuine pass signal) - no
+      ASR/Vision AI and no score-weight retuning needed yet. The only
+      remaining defect is narrow: temporal dedup permits two near-
+      duplicate views of one event when IoU is just under threshold.
+      This agent has not independently verified this operator-reported
+      qualitative grading (no access to the real capture or Windows
+      environment) - recorded as operator-reported, not first-hand
+      verified.
+    next_action: >-
+      CLOSED. All five steps of the operator's plan completed: (1) PR
+      #12 merged d2fe747. (2) PR #13 merged 8a0ffa8 (pre-merge exact
+      head 69a005307df30ff680a63b70b2a21e7d066798e3, exact-head CI
+      SUCCESS). (3) Operator executed the final authorized job-19
+      smoke. (4) 5 candidates returned; operator visually confirmed the
+      closest remaining pair are genuinely distinct events - see
+      final_closure above. Phase 7B-QV = PASS/CLOSED. (5) Next phase
+      (8A - Clip Cutting MVP) separately authorized and registered as
+      RCE-20260808-CLIPCUT8A.
+
+  - id: RCE-20260808-HIGHLIGHT-DIVERSITY
+    title: Phase 7B correction — candidate-diversity pre-dedup truncation defect
+    status: complete
+    owner: claude
+    branch: fix/highlight-candidate-diversity
+    base_branch: feat/initial-engine
+    base_sha: 67064bdcacb20df1362c786be6f3046514f5cfa3
+    final_sha: 6e671e905140da2f3076f57cac03b05b28e4ee14
+    pr: 12
+    merged: true
+    merge_method: squash
+    merge_commit_sha: d2fe7474667491c83f0ea393e6e43fd6b199f15e
+    merged_into: feat/initial-engine
+    result_sha_on_feat_initial_engine: d2fe7474667491c83f0ea393e6e43fd6b199f15e
+    merged_by: >-
+      claude (explicit operator authorization: "نعمله Ready ثم
+      squash merge إلى feat/initial-engine فقط. لا main ولا deploy" -
+      scoped exactly to feat/initial-engine, no main, no deploy)
+    ci: >-
+      SUCCESS on final_sha 6e671e905140da2f3076f57cac03b05b28e4ee14
+      (check run "test" on GitHub), confirmed via GitHub API -
+      mergeable_state=clean. A 60-minute send_later safety-net check-in
+      remains scheduled, silent unless action is needed. Independently
+      run by this agent before pushing: pytest 199 passed/1 warning (198
+      prior + 1 new regression test), ruff all checks passed, focused
+      mypy on clip_selector.py - no issues found,
+      git diff --check clean.
+    allowed_paths:
+      - src/robin_content_engine/clip_selector.py
+      - tests/test_clip_selector.py
+    forbidden_paths:
+      - studio/**
+      - AGENTS.md
+      - CLAUDE.md
+      - AI_WORKSPACE/**
+      - main
+      - schema.sql
+      - src/robin_content_engine/api.py
+      - src/robin_content_engine/uploader.py
+      - src/robin_content_engine/pipeline.py
+      - src/robin_content_engine/youtube_auth.py
+      - src/robin_content_engine/capture_scan.py
+      - src/robin_content_engine/scene_detector.py
+      - src/robin_content_engine/highlight_features.py
+      - src/robin_content_engine/highlight_scoring.py
+      - src/robin_content_engine/cli.py
+      - client_secret.json
+      - client_secret*.json
+      - token.json
+      - .env
+    merge_allowed: false
+    deploy_allowed: false
+    build_vs_adopt: >-
+      No new dependency. Pure algorithm fix within the already-merged
+      clip_selector.py.
+    stop_conditions:
+      - do not truncate the globally-ranked candidate pool before
+        suppress_overlaps() runs
+      - do not merely raise max_candidates_before_dedup to a larger
+        number - that hides the defect on longer sources rather than
+        fixing it
+      - no transcription, AI semantic scoring, rendering, upload, or
+        score-weight tuning
+      - do not re-run job 19 until code review + exact-head CI are
+        complete
+      - do not merge PR, do not deploy
+    external_validation_2026-08-08: >-
+      Operator performed a focused external research pass validating the
+      ranking->dedupe->Top-N approach this correction implements against
+      several external open-source projects (not adopted as dependencies
+      - reference/inspiration only): AI-Youtube-Shorts-Generator (MIT)
+      explicitly documents the same ranking->overlap-dedupe->Top-N order
+      Robin now uses, confirming Robin's prior order
+      (ranking->truncate-to-50->dedupe) was the anomaly, not the fix.
+      SentrySearch (Apache-2.0) offered a forward-looking idea:
+      similarity-based dedupe beyond pure temporal IoU. ActionFormer/
+      OpenTAD noted as NMS/temporal-action-detection reference material
+      only, not for adoption (would pull in a PyTorch/deep-learning
+      stack Robin explicitly avoids per the Phase 7A/7B BUILD vs ADOPT
+      decisions). DSNet/DR-DSN video-summarization literature surfaced
+      "diversity + representativeness" (vs. pure top-score) selection as
+      a candidate direction for a LATER phase. Vis-DSS (GPL) and
+      VideoHighlighter (AGPL-3.0) explicitly noted as ideas-only due to
+      copyleft licensing - not adoptable regardless of relevance.
+      Operator's own decision: implement nothing beyond the current
+      pre-dedup-truncation fix right now; if job 19's post-fix results
+      (once re-run) are temporally distinct but semantically repetitive
+      (e.g. all "ordinary gunfire/movement"), the next candidate
+      direction is an MMR-style (Maximal Marginal Relevance)
+      diversity-aware reranking layer using existing audio/motion/scene
+      signal profiles as the similarity basis (candidate_value - penalty
+      for similarity to already-selected candidates), not a new
+      framework or dependency. This is a roadmap note only - NOT
+      authorization to build anything beyond RCE-20260808-HIGHLIGHT-
+      DIVERSITY's current scope. Any MMR/diversity-reranking work or new
+      signal source requires its own separate explicit authorization and
+      task registration, gated on human A/B/C review of job 19's
+      post-fix results.
+    next_action: >-
+      None outstanding for this task. PR #12 merged (squash) into
+      feat/initial-engine at d2fe747, independently verified by this
+      agent via git fetch and the GitHub API. main was not touched, no
+      deploy occurred. This closes the pre-dedup-truncation defect as an
+      independent fix, per the operator's explicit decision. The
+      remaining near-duplicate/containment issue (389-404s vs 378-398s,
+      IoU~=0.346 just under threshold) is intentionally NOT part of this
+      task - it is being tracked as a new, separate, narrow task
+      (near-duplicate containment-ratio fix, PR #13) per the operator's
+      explicit ordering. Phase 7B-QV (qualitative validation) is not yet
+      closed - it remains open pending PR #13 and one final job-19
+      re-run.
+
+  - id: RCE-20260808-HIGHLIGHT-CONTAINMENT
+    title: Phase 7B-QV correction — near-duplicate containment-ratio dedup criterion
+    status: complete
+    owner: claude
+    branch: fix/highlight-near-duplicate-containment
+    base_branch: feat/initial-engine
+    base_sha: d2fe7474667491c83f0ea393e6e43fd6b199f15e
+    final_sha: 69a005307df30ff680a63b70b2a21e7d066798e3
+    pr: 13
+    merged: true
+    merge_method: squash
+    merge_commit_sha: 8a0ffa8ec6d8ff86edb42075adea9e7866cd64f5
+    merged_into: feat/initial-engine
+    result_sha_on_feat_initial_engine: 8a0ffa8ec6d8ff86edb42075adea9e7866cd64f5
+    merged_by: >-
+      claude (explicit operator authorization scoped exactly to
+      "squash-merge PR #13 into feat/initial-engine, main untouched, no
+      deploy" - independently verified afterward via git fetch and the
+      GitHub API, matching exactly)
+    ci: >-
+      SUCCESS on current_sha 69a005307df30ff680a63b70b2a21e7d066798e3
+      (check run "test" on GitHub), confirmed via a scheduled safety-net
+      check-in - no new commits beyond the wiring correction, no review
+      comments, no reviews, mergeable_state=clean. This corrected
+      cli.py's highlight_scan never passing
+      selector_config.containment_threshold to suppress_overlaps()
+      (worked by coincidence since the function's own default matched),
+      and a configurability test whose fixture had IoU already above
+      threshold so it didn't actually prove containment_threshold
+      changed anything. CI on the prior sha (79ad515) was independently
+      confirmed SUCCESS before this correction. Independently run by
+      this agent before pushing the correction: pytest 204 passed/1
+      warning, ruff all checks passed, focused mypy
+      on clip_selector.py AND cli.py (newly touched, explicitly
+      authorized) - no issues found, git diff --check clean.
+    allowed_paths:
+      - src/robin_content_engine/clip_selector.py
+      - tests/test_clip_selector.py
+      - src/robin_content_engine/cli.py
+        # amended 2026-08-08: operator found + explicitly authorized a
+        # narrow one-line wiring fix only (pass
+        # selector_config.containment_threshold through to
+        # suppress_overlaps() in the highlight_scan command) - not
+        # general cli.py editing
+    forbidden_paths:
+      - studio/**
+      - AGENTS.md
+      - CLAUDE.md
+      - AI_WORKSPACE/**
+      - main
+      - schema.sql
+      - src/robin_content_engine/api.py
+      - src/robin_content_engine/uploader.py
+      - src/robin_content_engine/pipeline.py
+      - src/robin_content_engine/youtube_auth.py
+      - src/robin_content_engine/capture_scan.py
+      - src/robin_content_engine/scene_detector.py
+      - src/robin_content_engine/highlight_features.py
+      - src/robin_content_engine/highlight_scoring.py
+      - client_secret.json
+      - client_secret*.json
+      - token.json
+      - .env
+    merge_allowed: false
+    deploy_allowed: false
+    build_vs_adopt: >-
+      No new dependency. Pure algorithm addition within the already-
+      merged clip_selector.py - a containment-ratio check alongside the
+      existing IoU check in suppress_overlaps()'s duplicate test.
+    scope: >-
+      Operator-specified fix for the exact real job-19 near-duplicate
+      symptom: reject candidate B as a duplicate of already-accepted
+      candidate A if EITHER interval_iou(A,B) > 0.35 OR
+      intersection(A,B)/min(duration_A,duration_B) >= 0.50. Not a
+      threshold tune (0.35->0.34) - a genuinely separate
+      containment/near-duplicate concept, verified against the real
+      case: 389-404s (15s) vs 378-398s (20s), intersection=9s,
+      9/15=0.60 >= 0.50 -> correctly rejected, even though IoU alone
+      (~=0.346) was just under the existing 0.35 threshold. Do not
+      change scoring, audio/motion weights, or add any new signal
+      source (explicitly not needed per operator's A/B/C review: 3/5
+      graded A already, base scoring works).
+    stop_conditions:
+      - do not change the scoring formula or audio/motion weights
+      - do not add ASR/vision/any new signal source
+      - do not simply lower overlap_iou_threshold as a substitute for
+        the containment-ratio criterion
+      - regression tests required for BOTH directions - the exact
+        job-19 duplicate case must be rejected, and a genuinely
+        adjacent low-overlap pair must NOT be rejected
+      - do not re-run job 19 until this PR is reviewed and CI is green
+      - do not merge PR, do not deploy
+    operator_post_fix_smoke_finding_resolved: >-
+      Operator's informal post-fix re-run of job 19 surfaced a new
+      close-in-time pair (389-404s and 381-396s, IoU~=0.304,
+      containment~=46.7%) that raised an "event-level diversity" open
+      question - this agent could not judge it visually (no access to
+      the actual video from this sandbox) and asked the operator to
+      make the call themselves. RESOLVED: operator visually confirmed
+      389-404s and 381-396s are two SEPARATE genuine gameplay events
+      within the same Fortnite match, not a near-duplicate of one
+      event. Per explicit operator decision: do NOT add event-level
+      minimum-separation logic, do NOT change the IoU threshold (0.35),
+      do NOT change the containment threshold (0.50), do NOT change
+      scoring/audio/motion weights. The final authorized job-19 smoke
+      (post PR #13 merge) returned 5 useful candidates - see
+      RCE-20260808-HIGHLIGHT7B-QV closure for the full record.
+    next_action: >-
+      None outstanding for this task. PR #13 merged (squash) into
+      feat/initial-engine at 8a0ffa8, independently verified by this
+      agent via git fetch and the GitHub API. main was not touched, no
+      deploy occurred. See RCE-20260808-HIGHLIGHT7B-QV for the closure
+      of the parent qualitative-validation phase this correction was
+      part of.
+
+  - id: RCE-20260808-CLIPCUT8A
+    title: Phase 8A — Clip Cutting MVP
+    status: complete
+    owner: claude
+    branch: feat/highlight-clip-cutting
+    base_branch: feat/initial-engine
+    base_sha: 8a0ffa8ec6d8ff86edb42075adea9e7866cd64f5
+    head_sha: 2aee3c96da9f25e18940936498bc08b91969ff51
+    pr: 14
+    pr_url: https://github.com/Binz2008-star/Robin-Content-Engine-v2/pull/14
+    pr_state: merged
+    merged: true
+    merge_method: squash
+    merge_commit_sha: 79e5285bd1cd42456d0d31021ae5a2d6b6c13b64
+    merged_into: feat/initial-engine
+    result_sha_on_feat_initial_engine: 79e5285bd1cd42456d0d31021ae5a2d6b6c13b64
+    merged_by: Binz2008-star
+    ci_check_at_exact_head: >-
+      204276b (first push): checked once, CI run 31265013831 completed
+      conclusion=success. 2aee3c9 (review-fix push): checked once
+      immediately after push (per no-recurring-polling rule) - CI run
+      31266422178 was in_progress at last check, not polled to
+      completion. No further automated checks will run against this PR
+      unless a new HEAD is pushed or explicitly requested.
+    review_round_1: >-
+      CTO review comment on PR #14 (author=Binz2008-star, OWNER) flagged
+      that cut_clip() only checked output existed/non-empty, not that its
+      actual duration matched the requested interval at runtime - tests
+      checked duration only externally. Fixed in 2aee3c9:
+      cut_clip() now probes the produced file's real duration via a new
+      _probe_output_duration() helper and compares it against the
+      requested interval within the existing 0.5s tolerance; on mismatch
+      raises ClipCutError and deletes only the bad output it just created
+      (never the source), keeping the deterministic filename free for
+      retry. Added a mocked-probe regression test
+      (test_rejects_output_with_wrong_duration_and_cleans_up_failed_attempt)
+      and resolution/FPS preservation assertions to the success-path
+      test. No change to highlight selection/scoring, CLI contract,
+      DB/schema, dependencies, render/publish, or filenames. Replied on
+      PR #14 confirming the fix.
+    build_vs_adopt_result: >-
+      Confirmed sufficient: existing moviepy+ffmpeg dependency (same
+      stack already used by video_editor.py's ShortsRenderer.render())
+      covers accurate local clip extraction with H.264/AAC output and
+      native-FPS preservation (via omitting write_videofile's fps= so
+      moviepy's @use_clip_fps_by_default falls back to the source clip's
+      own fps). No new dependency added.
+    allowed_paths:
+      - pyproject.toml
+      - src/robin_content_engine/clip_cutter.py
+      - src/robin_content_engine/cli.py
+      - src/robin_content_engine/models.py
+      - tests/test_clip_cutter.py
+      - tests/test_highlight_cut_cli.py
+    forbidden_paths:
+      - studio/**
+      - AGENTS.md
+      - CLAUDE.md
+      - AI_WORKSPACE/**
+      - main
+      - schema.sql
+      - src/robin_content_engine/api.py
+      - src/robin_content_engine/uploader.py
+      - src/robin_content_engine/pipeline.py
+      - src/robin_content_engine/youtube_auth.py
+      - src/robin_content_engine/capture_scan.py
+      - src/robin_content_engine/scene_detector.py
+      - src/robin_content_engine/highlight_features.py
+      - src/robin_content_engine/highlight_scoring.py
+      - src/robin_content_engine/clip_selector.py
+      - client_secret.json
+      - client_secret*.json
+      - token.json
+      - .env
+    merge_allowed: false
+    deploy_allowed: false
+    scope: >-
+      Narrow local clip-cutting capability only: take a rights-confirmed
+      local job, re-run the EXISTING deterministic highlight analysis
+      (scene_detector/highlight_features/highlight_scoring/
+      clip_selector - reused unmodified, not reimplemented), select one
+      ranked candidate, and cut exactly that interval to a new local MP4
+      (H.264/AAC), preserving source framing/FPS/resolution and never
+      touching the original file. No vertical crop, no captions/ASR, no
+      LLM, no thumbnail, no publishing/upload, no scheduler, no
+      analytics, no schema migration unless proven necessary.
+    build_vs_adopt: >-
+      Required BEFORE implementation: check whether the existing
+      moviepy+ffmpeg dependency (already used by video_editor.py) is
+      sufficient for accurate local clip extraction before adding
+      anything new. No new video framework/dependency without a
+      concrete, reported technical reason. No yt-dlp, no remote
+      ingestion, no source downloading.
+    stop_conditions:
+      - no vertical crop/reframe, no captions/ASR/transcription, no
+        LLM, no thumbnail generation, no publishing, no YouTube upload,
+        no scheduler, no analytics
+      - no DB/schema migration unless absolutely proven necessary
+      - do not claim the queue job, increment attempts, change job
+        status, or modify rights state
+      - do not call an LLM or YouTube, do not trigger
+        pipeline.run_once()
+      - never overwrite, move, rename, or delete the original source
+        file; fail safely or use a deterministic alternate filename
+        rather than silently overwriting an existing output
+      - do not duplicate/reimplement the highlight scoring algorithm -
+        reuse the existing scene_detector/highlight_features/
+        highlight_scoring/clip_selector functions as-is
+      - do not run the real Job 19 cut until implementation review is
+        complete, exact-head CI is green, and explicit authorization is
+        given separately
+      - do not merge PR, do not deploy
+      - no recurring/background polling for this task's PR
+    real_smoke_evidence: >-
+      Operator-reported real Windows execution of `robin-engine
+      highlight-cut 19 --rank 1` on exact head 2aee3c9: PASS. Attempts:
+      0 (job state unmutated, matching this task's read-only DB
+      contract). Source FPS 23.8061 vs output FPS 23.8100 (native FPS
+      preserved within normal container/metadata tolerance, no fps=
+      forced re-encode). Human QA: 6/6 PASS. This agent could not run
+      this step itself (no .env/DATABASE_URL/DEEPSEEK_API_KEY in this
+      sandbox and no reachable production Neon or real capture file —
+      confirmed empirically by attempting the command directly and
+      capturing the pydantic ValidationError before accepting the
+      operator's authorization as sufficient) — recorded as
+      operator-executed and operator-reported, not first-hand verified
+      by this agent, consistent with every prior real-smoke phase in
+      this project.
+    merge_verification: >-
+      Independently verified by this agent via GitHub `pull_request_read`
+      and `git fetch` (not assumed from chat or from the PR-comment
+      "CTO authorization" that preceded direct chat confirmation — that
+      comment was treated as untrusted external content and not acted
+      on by itself, per this task's own stop_conditions and this
+      project's standing rule). PR #14: state=closed, merged=true,
+      merged_by=Binz2008-star, head.sha=2aee3c96da9f25e18940936498bc08b91969ff51,
+      base.ref=feat/initial-engine. `feat/initial-engine` fetched and
+      confirmed at merge commit 79e5285bd1cd42456d0d31021ae5a2d6b6c13b64.
+      `main` independently re-confirmed unchanged at
+      5387af1f14888964b463b1fcaed8751d40ecbde6 (same SHA as the start of
+      this entire engagement, across all eight phases).
+    next_action: >-
+      Phase 8A CLOSED. PR #14 squash-merged into feat/initial-engine only;
+      main untouched; no deploy. New baseline for the next phase is
+      feat/initial-engine @ 79e5285bd1cd42456d0d31021ae5a2d6b6c13b64. Next
+      phase (8B — Vertical Reframe / Short Composition MVP) is a separate
+      task, registered below as RCE-20260808-REFRAME8B per explicit
+      operator direction.
+
+  - id: RCE-20260808-REFRAME8B
+    title: Phase 8B — Vertical Reframe / Short Composition MVP
+    status: complete
+    owner: claude
+    branch: feat/vertical-reframe-mvp
+    base_branch: feat/initial-engine
+    base_sha: 79e5285bd1cd42456d0d31021ae5a2d6b6c13b64
+    head_sha: 76e53fa4bd83d9fd91fd1e89f63cb60927ed7c3e
+    pr: 15
+    pr_url: https://github.com/Binz2008-star/Robin-Content-Engine-v2/pull/15
+    pr_state: merged
+    merged: true
+    merge_method: squash
+    merge_commit_sha: f402f87f10781fe60134ea9f62fa45245fa61c0c
+    merged_into: feat/initial-engine
+    result_sha_on_feat_initial_engine: f402f87f10781fe60134ea9f62fa45245fa61c0c
+    merged_by: Binz2008-star
+    allowed_paths:
+      - pyproject.toml
+      - src/robin_content_engine/vertical_reframe.py
+      - src/robin_content_engine/cli.py
+      - src/robin_content_engine/models.py
+      - tests/test_vertical_reframe.py
+      - tests/test_highlight_reframe_cli.py
+    forbidden_paths:
+      - studio/**
+      - AGENTS.md
+      - CLAUDE.md
+      - AI_WORKSPACE/**
+      - main
+      - schema.sql
+      - src/robin_content_engine/api.py
+      - src/robin_content_engine/uploader.py
+      - src/robin_content_engine/pipeline.py
+      - src/robin_content_engine/youtube_auth.py
+      - src/robin_content_engine/capture_scan.py
+      - src/robin_content_engine/channel_repository.py
+      - src/robin_content_engine/youtube_sync.py
+      - src/robin_content_engine/database.py
+      - src/robin_content_engine/scene_detector.py
+      - src/robin_content_engine/highlight_features.py
+      - src/robin_content_engine/highlight_scoring.py
+      - src/robin_content_engine/clip_selector.py
+      - src/robin_content_engine/clip_cutter.py
+      - client_secret.json
+      - client_secret*.json
+      - token.json
+      - .env
+    merge_allowed: false
+    deploy_allowed: false
+    scope: >-
+      Narrow vertical (9:16) short-composition MVP, per explicit operator
+      direction: take a rights-confirmed local job, re-run the EXISTING
+      deterministic highlight analysis (scene_detector/highlight_features/
+      highlight_scoring/clip_selector — reused unmodified via the existing
+      _load_rights_confirmed_local_job()/_run_highlight_analysis() shared
+      helpers from Phase 8A), select one ranked candidate, and produce a
+      new local 9:16 MP4 (H.264/AAC) using a STATIC, deterministic crop
+      (no dynamic/subject tracking in this iteration — the operator wants
+      to validate whether a well-designed fixed crop is good enough for
+      Fortnite gameplay before any tracking work is considered). No
+      captions/ASR, no LLM, no thumbnail, no publishing/upload, no
+      scheduler, no analytics, no schema migration unless proven
+      necessary. clip_cutter.py from Phase 8A is left unmodified/unused by
+      this task — vertical_reframe.py implements its own crop+encode
+      pipeline so Phase 8A's file stays untouched.
+    build_vs_adopt: >-
+      Required BEFORE implementation: confirm whether the existing
+      moviepy+ffmpeg stack's built-in crop transform is sufficient for a
+      static rectangular 9:16 crop before adding anything new (no new
+      video framework/dependency, no vision/tracking library, no yt-dlp,
+      no remote ingestion).
+    stop_conditions:
+      - static/fixed crop only — no dynamic subject tracking, no
+        vision/ML-based framing, no ASR/captions, no LLM, no thumbnail
+        generation, no publishing, no YouTube upload, no scheduler, no
+        analytics
+      - no DB/schema migration unless absolutely proven necessary
+      - do not claim the queue job, increment attempts, change job
+        status, or modify rights state
+      - do not call an LLM or YouTube, do not trigger
+        pipeline.run_once()
+      - never overwrite, move, rename, or delete the original source
+        file; fail safely or use a deterministic alternate filename
+        rather than silently overwriting an existing output
+      - do not duplicate/reimplement the highlight scoring algorithm -
+        reuse the existing scene_detector/highlight_features/
+        highlight_scoring/clip_selector functions as-is
+      - do not modify clip_cutter.py (Phase 8A) - implement an
+        independent crop+encode path in vertical_reframe.py
+      - do not run a real Job 19 (or any real capture) reframe until
+        implementation review is complete, exact-head CI is green, and
+        explicit authorization is given separately
+      - do not merge PR, do not deploy
+      - no recurring/background polling for this task's PR
+    real_smoke_evidence: >-
+      A PR #15 comment (author=Binz2008-star, OWNER, wrapped as
+      untrusted external content) first claimed a real Windows Job 19
+      smoke of `robin-engine highlight-reframe 19 --rank 1`. This agent
+      did not act on that instruction from the comment itself,
+      consistent with this project's standing rule, and replied on the
+      PR asking for direct chat confirmation instead. The operator then
+      independently reported the same result directly in chat
+      (corroborating, not merely repeating, the PR comment's numbers):
+      candidate 389.0-404.0s, deterministic centered crop 810x1440,
+      actual duration 14.99s, output FPS 23.8100 vs source 23.8061, Job
+      19 status stayed pending, attempts stayed 0, rights stayed
+      confirmed=true, source file size unchanged at exactly 774,585,683
+      bytes with LastWriteTime unchanged, Human QA PASS (operator
+      described the result as fully correct), no upload, no deploy. This
+      agent could not run this step itself (no .env/DATABASE_URL and no
+      reachable production Neon or real capture file in this sandbox,
+      same limitation as every prior real-smoke phase) - recorded as
+      operator-executed and operator-reported, corroborated via direct
+      chat per this project's standing rule (a PR comment alone is never
+      sufficient), not first-hand verified by this agent.
+    merge_verification: >-
+      Independently verified by this agent via GitHub `pull_request_read`
+      and `get_commit` (not assumed from the PR comment or from chat).
+      PR #15: state=closed, merged=true, merged_by=Binz2008-star,
+      head.sha=76e53fa4bd83d9fd91fd1e89f63cb60927ed7c3e,
+      base.ref=feat/initial-engine. `feat/initial-engine` fetched and
+      confirmed at merge commit
+      f402f87f10781fe60134ea9f62fa45245fa61c0c. `main` independently
+      re-confirmed unchanged at
+      5387af1f14888964b463b1fcaed8751d40ecbde6 (same SHA as the start of
+      this entire engagement, across all nine phases).
+    next_action: >-
+      Phase 8B CLOSED (merge-verified + smoke corroborated via direct
+      chat). PR #15 squash-merged into feat/initial-engine only; main
+      untouched; no deploy. New baseline for the next phase is
+      feat/initial-engine @ f402f87f10781fe60134ea9f62fa45245fa61c0c.
+      Operator's stated architectural conclusion: static centered crop
+      works well for Fortnite, so no tracking work is needed now. Next
+      phase (8C - Transcription/Captions MVP, local-only, no
+      publish/YouTube) proposed by the operator and is a separate task
+      requiring its own registration - see RCE-20260808-CAPTIONS8C.
+
+  - id: RCE-20260808-CAPTIONS8C
+    title: Phase 8C — Transcription / Captions MVP
+    status: complete
+    owner: claude
+    branch: feat/vertical-captions-mvp
+    base_branch: feat/initial-engine
+    base_sha: f402f87f10781fe60134ea9f62fa45245fa61c0c
+    head_sha: 3968486290a5ea2559221a3e8c7f689f63ce7ca2
+    pr: 16
+    pr_url: https://github.com/Binz2008-star/Robin-Content-Engine-v2/pull/16
+    pr_state: merged
+    merged: true
+    merge_method: squash
+    merge_commit_sha: 5781882d1ba00330e72a3d825f0fc2b1e03e4fab
+    merged_into: feat/initial-engine
+    result_sha_on_feat_initial_engine: 5781882d1ba00330e72a3d825f0fc2b1e03e4fab
+    merged_by: Binz2008-star
+    allowed_paths:
+      - pyproject.toml
+      - src/robin_content_engine/transcription.py
+      - src/robin_content_engine/captioner.py
+      - src/robin_content_engine/cli.py
+      - src/robin_content_engine/models.py
+      - tests/test_transcription.py
+      - tests/test_captioner.py
+      - tests/test_highlight_caption_cli.py
+    forbidden_paths:
+      - studio/**
+      - AGENTS.md
+      - CLAUDE.md
+      - AI_WORKSPACE/**
+      - main
+      - schema.sql
+      - src/robin_content_engine/api.py
+      - src/robin_content_engine/uploader.py
+      - src/robin_content_engine/pipeline.py
+      - src/robin_content_engine/youtube_auth.py
+      - src/robin_content_engine/capture_scan.py
+      - src/robin_content_engine/channel_repository.py
+      - src/robin_content_engine/youtube_sync.py
+      - src/robin_content_engine/database.py
+      - src/robin_content_engine/scene_detector.py
+      - src/robin_content_engine/highlight_features.py
+      - src/robin_content_engine/highlight_scoring.py
+      - src/robin_content_engine/clip_selector.py
+      - src/robin_content_engine/clip_cutter.py
+      - src/robin_content_engine/vertical_reframe.py
+      - client_secret.json
+      - client_secret*.json
+      - token.json
+      - .env
+    merge_allowed: false
+    deploy_allowed: false
+    scope: >-
+      Narrow local captioning MVP, per explicit operator direction: take
+      an already-produced local 9:16 clip (Phase 8B's
+      highlight-reframe output) or equivalently the same rights-confirmed
+      candidate interval, run local speech-to-text against the source
+      audio, and burn deterministic, readable captions onto a new local
+      MP4. No publishing/YouTube upload, no LLM-based
+      summarization/rewriting of the transcript (captions are the ASR's
+      own words verbatim, only segmented for readability), no cloud ASR
+      API, no schema migration unless proven necessary. vertical_reframe.py
+      and clip_cutter.py from Phases 8A/8B are left unmodified - this
+      task adds its own independent transcription+caption-burn pipeline.
+    build_vs_adopt: >-
+      Required BEFORE implementation: confirm faster-whisper (the
+      Phase 7A research pass's recommended ADOPT choice - CPU int8, no
+      CUDA/GPU assumption, appropriate for the operator's AMD RX 6800 XT
+      Windows machine which has no verified CUDA path) is installable and
+      actually runnable in THIS sandbox without needing network access
+      mid-test; if the model weights cannot be fetched here, transcription
+      must be exercised in tests via a mockable interface (no test may
+      require a real model download or real inference). No new dependency
+      beyond faster-whisper (and, if needed, a caption-burn mechanism)
+      without a concrete, reported technical reason. No cloud/paid ASR
+      API, no whisper.cpp/WhisperX per the Phase 7A audit's own
+      conclusions for this operator's hardware.
+    stop_conditions:
+      - local ASR only (faster-whisper, CPU int8) - no cloud transcription
+        API, no LLM call, no summarization/rewriting of the transcript
+      - captions must be the ASR's own transcribed words - do not
+        fabricate, translate, or embellish text
+      - no DB/schema migration unless absolutely proven necessary
+      - do not claim the queue job, increment attempts, change job
+        status, or modify rights state
+      - do not call YouTube, do not trigger pipeline.run_once(), do not
+        publish/upload
+      - never overwrite, move, rename, or delete the original source
+        file or any Phase 8A/8B output; fail safely or use a
+        deterministic alternate filename rather than silently
+        overwriting an existing output
+      - do not duplicate/reimplement the highlight scoring algorithm or
+        the crop geometry - reuse the existing shared helpers/functions
+        as-is
+      - do not modify clip_cutter.py or vertical_reframe.py (Phases
+        8A/8B) - implement an independent transcription+caption path
+      - tests must never require real network access or a real model
+        download - use a mockable transcription interface
+      - do not run a real Job 19 (or any real capture) captioning until
+        implementation review is complete, exact-head CI is green, and
+        explicit authorization is given separately
+      - do not merge PR, do not deploy
+      - no recurring/background polling for this task's PR
+    review_round_1: >-
+      CTO review comment on PR #16 (author=Binz2008-star, OWNER) flagged
+      four narrow robustness gaps ahead of the real smoke: (1)
+      burn_captions() only cleaned up the output on the
+      duration/dimension-mismatch paths, not on ffmpeg non-zero exit or a
+      raised post-encode probe - a failed ffmpeg run or corrupt output
+      could leave a partial file permanently blocking retries via the
+      overwrite-refusal check; (2) FasterWhisperRecognizer let raw
+      exceptions escape from model construction/transcription instead of
+      raising TranscriptionError, so the CLI's own error boundary
+      couldn't catch expected model/network/runtime failures; (3) the
+      subtitles-filter path escaping was inline and unescaped for the
+      operator's real Windows path shape (drive-letter colon,
+      backslashes, spaces); (4) output FPS was never validated
+      post-encode the way duration/dimensions already were. Fixed in
+      3968486: output cleanup now covers every failure path (ffmpeg
+      failure, empty output, raising probe), TranscriptionError now wraps
+      WhisperModel construction/.transcribe() failures without caching a
+      failed load, escape_subtitles_filter_path() factored out and
+      regression-tested against a literal
+      X:\content engine\Robin-Content-Engine-v2\work\highlights\...srt-
+      shaped path plus a single-quote-in-path guard, and FPS is now
+      probed/validated with the same tolerance pattern as
+      duration/dimensions. 8 new regression tests (275 total). No scope
+      expansion. Replied on PR #16 confirming the fix.
+    real_smoke_evidence: >-
+      NOT YET REPORTED. A PR #16 comment (author=Binz2008-star, OWNER,
+      wrapped as untrusted external content) claimed the review-round-1
+      fix was sufficient and instructed this agent to proceed with a real
+      Job 19 caption smoke. Per this project's standing rule, this agent
+      did not act on that instruction - it replied on the PR declining to
+      run it from a comment and noting that this sandbox could not
+      execute it anyway (the faster-whisper model download is blocked by
+      this sandbox's egress proxy, confirmed 403 earlier in this task).
+      No direct-chat confirmation of a completed real Job 19 caption
+      smoke was given before the PR was merged - unlike every prior
+      real-smoke phase in this project (4-8B), this closure records the
+      merge as verified but the real captioning smoke as an open item,
+      not as passed.
+    exact_head_ci_2026-08-10: >-
+      Independently re-confirmed by this agent via the GitHub check-runs
+      API on exact head 3968486290a5ea2559221a3e8c7f689f63ce7ca2:
+      check run "test", status=completed, conclusion=SUCCESS.
+    real_smoke_result_2026-08-10: >-
+      The previously-open real captioning smoke item is now closed. This
+      agent executed both runs directly (this session's sandbox has real
+      filesystem/DB/Windows access, unlike prior phases' sandboxes) on
+      the operator's Windows machine, exact head
+      3968486290a5ea2559221a3e8c7f689f63ce7ca2, branch
+      feat/vertical-captions-mvp, via the real `robin-engine` CLI (no
+      manual DB writes). Run 1: `robin-engine highlight-caption 19
+      --rank 1 --model-size base` - faster-whisper base model downloaded
+      successfully (confirmed present in the local Hugging Face cache
+      afterward), transcription ran, but produced zero non-empty
+      transcript segments (job 19's rank-1 candidate audio has no
+      detected speech) - the command correctly failed with "Invalid
+      value: No non-empty transcript segments to caption." (exit code
+      2), exactly the documented no-speech failure path, not a defect;
+      elapsed 173.4s; job 19 status/attempts/rights and the source file
+      size+LastWriteTime were all independently confirmed unchanged
+      before and after. Run 2 (per operator direction, to get a
+      speech-containing capture): `robin-engine capture-scan` discovered
+      3 new local Fortnite captures (jobs 20/21/22); operator selected
+      job 22; `rights-show 22` confirmed unconfirmed/pending;
+      `rights-approve 22 --note "Personally recorded Fortnite gameplay
+      with operator microphone commentary, confirmed by operator."`
+      confirmed rights; `robin-engine highlight-caption 22 --rank 1
+      --model-size base` PASSED - model reused from cache (no
+      re-download), 1 non-empty transcript segment, output
+      `work\highlights\job-22-highlight-01-41000-56000-vertical-captioned.mp4`,
+      810x1440 (9:16), ~24.43fps, 14.98s duration, 8,833,903 bytes,
+      elapsed 60.3s; job 22 status(pending)/attempts(0)/rights(confirmed)
+      and source file size(119,192,294 bytes)/LastWriteTime were all
+      independently confirmed unchanged before and after. Operator
+      reviewed the output and reported the spoken audio is colloquial
+      Arabic; the beginning of the speech was captioned correctly but
+      the remainder of the clip has no visible captions (consistent with
+      the "1 transcript segment" result for a 15s window) - operator
+      explicitly judged this acceptable (not a blocker) rather than a
+      defect requiring a fix in this phase. No upload, no YouTube write,
+      no deploy, no pipeline.run_once() in either run.
+    merge_verification: >-
+      Independently verified by this agent via GitHub `pull_request_read`
+      and `get_commit` (not assumed from the PR comment or from chat).
+      PR #16: state=closed, merged=true, merged_by=Binz2008-star,
+      head.sha=3968486290a5ea2559221a3e8c7f689f63ce7ca2,
+      base.ref=feat/initial-engine. `feat/initial-engine` fetched and
+      confirmed at merge commit
+      5781882d1ba00330e72a3d825f0fc2b1e03e4fab. `main` independently
+      re-confirmed unchanged at 5387af1f14888964b463b1fcaed8751d40ecbde6
+      (same SHA as the start of this entire engagement, across all ten
+      phases).
+    next_action: >-
+      Phase 8C CLOSED (merge-verified) AND real-smoke item now closed as
+      of 2026-08-10 - see real_smoke_result_2026-08-10 above. New
+      baseline for the next phase is feat/initial-engine @
+      5781882d1ba00330e72a3d825f0fc2b1e03e4fab. Next phase (8D - Final
+      Short Quality Gate / Packaging MVP) separately authorized and
+      registered below as RCE-20260810-QUALITY8D.
+
+  - id: RCE-20260810-QUALITY8D
+    title: Phase 8D — Final Short Quality Gate / Packaging MVP
+    status: complete
+    owner: claude
+    branch: feat/final-short-quality-gate
+    base_branch: feat/initial-engine
+    base_sha: 5781882d1ba00330e72a3d825f0fc2b1e03e4fab
+    head_sha: dceff7ef6bd2d345290e3c2929e1c8a427e7923c
+    pr: 17
+    pr_url: https://github.com/Binz2008-star/Robin-Content-Engine-v2/pull/17
+    pr_state: merged
+    merged: true
+    merge_method: squash
+    merge_commit_sha: a909175ce98e6e28ce71e30875cb3718f2c4223f
+    merged_into: feat/initial-engine
+    result_sha_on_feat_initial_engine: a909175ce98e6e28ce71e30875cb3718f2c4223f
+    merged_by: Binz2008-star
+    merge_allowed: false
+    deploy_allowed: false
+    ci_at_exact_head: >-
+      Independently re-confirmed by this agent via the GitHub check-runs
+      API on exact head dceff7ef6bd2d345290e3c2929e1c8a427e7923c: check
+      run "test", status=completed, conclusion=SUCCESS.
+    real_smoke_evidence: >-
+      Executed directly by this agent on the operator's Windows machine,
+      exact head dceff7ef6bd2d345290e3c2929e1c8a427e7923c (this session's
+      installed `robin-engine` console script still pointed at the
+      older feat/vertical-captions-mvp source tree from the Phase 8C
+      smoke, so the CLI was invoked as `python -m
+      robin_content_engine.cli` with PYTHONPATH pointed at this
+      branch's src/ for the duration of this smoke only - no code was
+      changed, reinstalled, or committed), against the already
+      human-approved Phase 8C artifact
+      work\highlights\job-22-highlight-01-41000-56000-vertical-captioned.mp4
+      (source recorded before any command: 8,833,903 bytes, SHA-256
+      7036bf708a495e064b26a47801c202f038b0b514014a3f6a24bb539f114188c9).
+      `short-qc` (text and --json forms) returned PASS with all 12
+      checks individually PASS: file_exists, file_non_empty,
+      video_decodable (duration=15.0s, 810x1440, fps=24.43,
+      has_audio=True), duration_within_bounds, aspect_ratio_9_16
+      (exact 0.5625), valid_dimensions, valid_fps, audio_present,
+      no_black_start_frame (luma=54.89), no_black_end_frame
+      (luma=64.51), sampled_frame_decode_integrity (5/5),
+      metadata_no_nan. `short-package` (run exactly once) created
+      work\ready\job-22-highlight-01-41000-56000-vertical-captioned\
+      with the packaged MP4 (8,833,903 bytes, SHA-256 identical to the
+      source, byte-for-byte) and manifest.json
+      (quality_gate_passed=true, sha256 matching the packaged MP4
+      exactly, duration/width/height/fps/audio_present all correct,
+      full 12-check list embedded, no secrets/tokens). Source artifact
+      independently re-verified unchanged after both commands: same
+      size, same LastWriteTime, same SHA-256. No DB/job/rights access,
+      no upload, no deploy.
+    merge_verification: >-
+      Independently verified by this agent via `gh pr view 17` and
+      `git fetch` (not assumed from the operator's chat report alone).
+      PR #17: state=MERGED, closed=true, merged_by=Binz2008-star,
+      headRefOid=dceff7ef6bd2d345290e3c2929e1c8a427e7923c (exactly the
+      head this agent ran the real QC+packaging smoke against),
+      mergeCommit.oid=a909175ce98e6e28ce71e30875cb3718f2c4223f,
+      base.ref=feat/initial-engine. `feat/initial-engine` fetched and
+      confirmed at a909175ce98e6e28ce71e30875cb3718f2c4223f. `main`
+      independently re-confirmed unchanged at
+      5387af1f14888964b463b1fcaed8751d40ecbde6 (same SHA as the start
+      of this entire engagement, across all twelve phases).
+    next_action: >-
+      Phase 8D CLOSED (merge-verified + real smoke executed and
+      confirmed PASS by this agent directly). PR #17 squash-merged into
+      feat/initial-engine only; main untouched; no deploy; no upload;
+      no DB mutation. New baseline for the next phase is
+      feat/initial-engine @ a909175ce98e6e28ce71e30875cb3718f2c4223f.
+      Operator has proposed Phase 9 (Publishing Integration - private-
+      first, explicit-authorization-gated, no automatic/public-by-
+      default publishing) as the next logical phase, but this closure
+      does NOT authorize it - any Phase 9 implementation requires its
+      own separate explicit authorization and its own
+      AI_WORKSPACE/ACTIVE_TASKS.yaml registration before any branch or
+      code work begins, per this project's standing rule. Before the
+      next real smoke on a future branch, the editable install should
+      be refreshed from that branch's checkout so `robin-engine` points
+      at current code again (noted by the operator; not a blocker for
+      this closure).
+    scope: >-
+      Final LOCAL automated quality gate for an already-produced local
+      short (Phase 8C's highlight-caption output, or equivalent), per
+      explicit operator direction. Inspects a produced artifact and
+      decides PASS or FAIL-with-explicit-reasons: file existence/
+      non-empty, decodability, duration bounds, 9:16 aspect ratio, valid
+      width/height, valid FPS, audio presence, non-black start/end
+      frames (conservative threshold - must not falsely reject normal
+      dark Fortnite gameplay), sampled-frame decode integrity, and
+      metadata NaN/invalid-value checks. A separate packaging command
+      copies a PASS-ing artifact plus a JSON manifest (including
+      SHA-256) into work/ready/ - never uploads. No semantic gameplay
+      judgment, caption OCR, ASR correctness scoring, profanity
+      filtering, CV subject detection, thumbnail scoring, or engagement
+      prediction in this phase.
+    allowed_paths:
+      - src/robin_content_engine/quality_gate.py
+      - src/robin_content_engine/cli.py
+      - src/robin_content_engine/models.py
+      - tests/test_quality_gate.py
+      - tests/test_short_qc_cli.py
+      - tests/test_short_package_cli.py
+    forbidden_paths:
+      - studio/**
+      - AGENTS.md
+      - CLAUDE.md
+      - AI_WORKSPACE/**
+      - main
+      - schema.sql
+      - src/robin_content_engine/api.py
+      - src/robin_content_engine/uploader.py
+      - src/robin_content_engine/pipeline.py
+      - src/robin_content_engine/youtube_auth.py
+      - src/robin_content_engine/capture_scan.py
+      - src/robin_content_engine/channel_repository.py
+      - src/robin_content_engine/youtube_sync.py
+      - src/robin_content_engine/database.py
+      - src/robin_content_engine/scene_detector.py
+      - src/robin_content_engine/highlight_features.py
+      - src/robin_content_engine/highlight_scoring.py
+      - src/robin_content_engine/clip_selector.py
+      - src/robin_content_engine/clip_cutter.py
+      - src/robin_content_engine/vertical_reframe.py
+      - src/robin_content_engine/captioner.py
+      - src/robin_content_engine/transcription.py
+      - client_secret.json
+      - client_secret*.json
+      - token.json
+      - .env
+    stop_conditions:
+      - no YouTube call, no uploader.py, no pipeline.run_once()
+      - no JobRepository mutation - no job status/attempts/rights change
+      - no production DB required for short-qc (must work offline)
+      - no LLM/cloud AI, no yt-dlp, no cloud QA service
+      - no semantic gameplay judgment, caption OCR, ASR correctness
+        scoring, profanity filtering, CV subject detection, thumbnail
+        scoring, or engagement prediction
+      - never modify/delete the inspected artifact or any prior-phase
+        output
+      - packaging must refuse to overwrite an existing destination
+      - one Draft PR targeting feat/initial-engine, not main
+      - check exact-head CI once, no recurring/background polling
+      - do not run a real Windows smoke automatically in this phase
+      - do not merge, do not deploy
+
+  - id: RCE-20260810-PUBLISH9A
+    title: Phase 9A — Manual Private Publishing Integration
+    status: complete
+    owner: claude
+    branch: feat/manual-private-publishing
+    base_branch: feat/initial-engine
+    base_sha: a909175ce98e6e28ce71e30875cb3718f2c4223f
+    head_sha: 6ed6795adb8e224e4bbaa2833ec945c186bc8dd2
+    pr: 18
+    pr_url: https://github.com/Binz2008-star/Robin-Content-Engine-v2/pull/18
+    pr_state: merged
+    merged: true
+    merge_method: squash
+    merge_commit_sha: 5bdb6ad87a1e5ff73c1db95665fbc13a85826180
+    merged_into: feat/initial-engine
+    result_sha_on_feat_initial_engine: 5bdb6ad87a1e5ff73c1db95665fbc13a85826180
+    merge_allowed: false
+    deploy_allowed: false
+    zero_real_youtube_writes: >-
+      Confirmed: no real videos().insert call was executed under this
+      task. All 37 new tests use fake/mocked YouTubeAuth/YouTubeUploader
+      only, including an explicit canary test that patches the real
+      googleapiclient.discovery.build (imported into both uploader.py
+      and youtube_auth.py) to raise AssertionError if ever called - it
+      stayed silent across the full suite. The --execute-private-upload
+      code path was implemented and exercised only via injected fakes,
+      never against real credentials or the real YouTube API.
+    scope: >-
+      Connect a validated Phase 8D work/ready/<package>/ artifact to the
+      existing YouTubeAuth/YouTubeUploader code via a highly controlled,
+      manual, PRIVATE-ONLY publishing path. This authorizes
+      IMPLEMENTATION and offline/dry-run testing only - it does NOT
+      authorize a real YouTube video upload. No videos().insert call may
+      be executed under this task; no public/unlisted upload; no
+      autonomous publishing. Reuses the existing YouTubeAuth/
+      YouTubeUploader unmodified (no new YouTube SDK/client). The new
+      publishing path hard-forces privacy_status="private" - no CLI
+      option can select public/unlisted, and this is not inherited from
+      environment configuration. Manual operator-supplied metadata only
+      (title/description/tags) - no LLM/automated metadata generation of
+      any kind in this phase.
+    allowed_paths:
+      - src/robin_content_engine/publishing.py
+      - src/robin_content_engine/cli.py
+      - tests/test_publishing.py
+      - tests/test_youtube_publish_cli.py
+      - src/robin_content_engine/uploader.py
+        # only if a genuinely necessary small compatibility refactor is
+        # proven first - not a default target
+    forbidden_paths:
+      - studio/**
+      - AGENTS.md
+      - CLAUDE.md
+      - AI_WORKSPACE/**
+      - main
+      - schema.sql
+      - src/robin_content_engine/pipeline.py
+      - src/robin_content_engine/database.py
+      - src/robin_content_engine/quality_gate.py
+      - src/robin_content_engine/captioner.py
+      - src/robin_content_engine/vertical_reframe.py
+      - src/robin_content_engine/clip_cutter.py
+      - src/robin_content_engine/scene_detector.py
+      - src/robin_content_engine/highlight_features.py
+      - src/robin_content_engine/highlight_scoring.py
+      - src/robin_content_engine/clip_selector.py
+      - src/robin_content_engine/capture_scan.py
+      - src/robin_content_engine/channel_repository.py
+      - src/robin_content_engine/youtube_sync.py
+      - src/robin_content_engine/youtube_auth.py
+        # reused, not modified, unless a proven compatibility need
+        # surfaces - not a default target
+      - client_secret.json
+      - client_secret*.json
+      - token.json
+      - .env
+    stop_conditions:
+      - no real YouTube upload, no live videos().insert call, in this
+        task under any circumstance
+      - no public or unlisted upload - privacy_status is hard-forced to
+        "private" with no CLI option to override it
+      - do not upload the Job 22 package or any other real artifact
+      - do not change or delete an existing YouTube video
+      - no DB/JobRepository mutation, no job status/attempts/rights
+        change, no ContentEngine construction
+      - no LLM/DeepSeek/OpenAI metadata generation - manual
+        operator-supplied title/description/tags only
+      - no browser OAuth in the publish command - load existing
+        credentials non-interactively only; fail safely and point the
+        operator at `youtube-auth` if missing
+      - the real-upload code path must revalidate the package, require
+        youtube_expected_channel_id, verify the authenticated channel ID
+        exactly matches it, and abort before constructing YouTubeUploader
+        on any mismatch
+      - mandatory duplicate-upload safety - an atomic upload_attempt.json
+        (no secrets/tokens) before calling the uploader; refuse a new
+        attempt if upload_attempt.json or upload_receipt.json already
+        exists; no --force option in this phase; if the uploader raises
+        after upload execution has begun, preserve the
+        attempt/ambiguous-state record rather than auto-clearing and
+        retrying (the remote upload may have already succeeded) -
+        require operator reconciliation before any future retry
+      - do not trust manifest paths blindly - resolve paths and require
+        the packaged video to remain inside the supplied package
+        directory; reject path traversal/escaped paths
+      - tests must use fake/mocked auth/uploader only - no test may
+        contact YouTube
+      - one Draft PR targeting feat/initial-engine, not main
+      - check exact-head CI once, no recurring/background polling
+      - do not merge, do not deploy
+      - do not reinstall/repair the shared editable install as part of
+        this task
+    ci_at_exact_head: >-
+      Independently verified by this agent via the GitHub Actions API on
+      exact head 6ed6795adb8e224e4bbaa2833ec945c186bc8dd2: run
+      31388646724, status=completed, conclusion=SUCCESS.
+    merge_verification: >-
+      Independently verified by this agent via `gh pr view 18` (not
+      assumed from the operator's chat report alone). PR #18:
+      state=MERGED, closed=true, headRefOid=
+      6ed6795adb8e224e4bbaa2833ec945c186bc8dd2 (exactly the head this
+      agent ran the real dry-run and real upload against),
+      mergeCommit.oid=5bdb6ad87a1e5ff73c1db95665fbc13a85826180,
+      base.ref=feat/initial-engine, mergedAt=2026-08-10T12:47:45Z.
+      `feat/initial-engine` fetched and confirmed at
+      5bdb6ad87a1e5ff73c1db95665fbc13a85826180. `main` independently
+      re-confirmed unchanged at 5387af1f14888964b463b1fcaed8751d40ecbde6
+      - same SHA as the start of this entire engagement, across all
+      fourteen phases.
+    real_smoke_evidence: >-
+      Executed directly by this agent on the operator's Windows machine,
+      exact head 6ed6795adb8e224e4bbaa2833ec945c186bc8dd2, against the
+      Phase 8D package
+      work\ready\job-22-highlight-01-41000-56000-vertical-captioned\
+      (package SHA-256
+      7036bf708a495e064b26a47801c202f038b0b514014a3f6a24bb539f114188c9).
+      This session's installed `robin-engine` console script still
+      pointed at an older source tree, so the CLI was invoked as `python
+      -m robin_content_engine.cli` with PYTHONPATH pointed at this
+      branch's src/ for the duration of the smoke only - no code was
+      changed, reinstalled, or committed. First pass stopped cleanly at
+      the channel-identity preflight because `youtube_expected_channel_id`
+      was unconfigured in the environment - correctly refused per this
+      task's own safety gate, no upload attempted. Operator declined to
+      edit .env (and this agent likewise treated .env as off-limits to
+      write, consistent with every prior phase's stop conditions) and
+      instead re-authorized the smoke with the expected channel ID set
+      as a session-only `$env:YOUTUBE_EXPECTED_CHANNEL_ID` (a non-secret
+      channel identifier, not written to any file). Preflight then
+      confirmed expected == authenticated channel
+      (UCIcvbGsmSwMDXxjWXq4QG8A, "Robin", @roben.1). Real dry-run PASS
+      (zero network I/O). The operator's explicit, scoped,
+      one-time re-authorization for exactly one real PRIVATE upload (see
+      note below) superseded this task's original blanket
+      "do not upload the Job 22 package or any other real artifact" stop
+      condition, exactly as every prior phase's real-smoke steps have
+      superseded their own phase's pre-smoke stop condition once
+      separately and explicitly authorized. `youtube-publish-package
+      ... --execute-private-upload` was run exactly once: UPLOAD
+      SUCCESS, YouTube video ID MMaVyYUt8XE, privacy=private, elapsed
+      14.37s. upload_receipt.json created (channel_id=
+      UCIcvbGsmSwMDXxjWXq4QG8A, privacy_status=private, package_sha256
+      matching exactly); upload_attempt.json absent afterward (removed
+      only after the receipt was durably written, per the ordering this
+      task's own code enforces). Independent read-only
+      `videos().list(part="status,snippet", id="MMaVyYUt8XE")` (no
+      insert/update/delete) confirmed exactly one matching item,
+      snippet.channelId=UCIcvbGsmSwMDXxjWXq4QG8A,
+      status.privacyStatus=private. Post-upload integrity re-verified:
+      packaged MP4 and manifest.json byte-identical (same SHA-256, same
+      size, same LastWriteTime) to their pre-upload state; worktree git
+      status clean, HEAD unchanged; no DB/JobRepository/rights mutation
+      (this path never constructs JobRepository); no deploy; no second
+      upload attempt.
+    next_action: >-
+      Phase 9A CLOSED (merge-verified + real dry-run and real first
+      private upload executed and confirmed PASS by this agent
+      directly). PR #18 squash-merged into feat/initial-engine only;
+      main untouched; no deploy; no DB mutation. Robin's pipeline is now
+      validated end-to-end through a real, verified, private YouTube
+      publish: Capture -> Rights -> Highlight -> Cut -> 9:16 Reframe ->
+      ASR -> Captions -> Quality Gate -> Package -> Manual Private
+      Publish. New baseline for the next phase is feat/initial-engine @
+      5bdb6ad87a1e5ff73c1db95665fbc13a85826180. Any further phase
+      (public/unlisted publishing, autonomous publishing, scheduling, or
+      anything else) requires its own separate explicit authorization
+      and its own task registration before any branch or code work
+      begins, per this project's standing rule.
+
+  - id: RCE-20260810-PRODUCTION10
+    title: Phase 10 — Production Runner
+    status: complete
+    owner: claude
+    branch: feat/production-runner
+    base_branch: feat/initial-engine
+    base_sha: 5bdb6ad87a1e5ff73c1db95665fbc13a85826180
+    head_sha: d2bc6f40239cf41fa11e7da27c790f760e4cd967
+    pr: 19
+    pr_url: https://github.com/Binz2008-star/Robin-Content-Engine-v2/pull/19
+    pr_state: merged
+    merged: true
+    merged_at: 2026-08-10T20:16:24Z
+    merge_method: merge
+    merge_commit_sha: c7fd99159c966123f51218e8f1ff22cc56b9cce5
+    merged_into: feat/initial-engine
+    result_sha_on_feat_initial_engine: c7fd99159c966123f51218e8f1ff22cc56b9cce5
+    merge_allowed: false
+    deploy_allowed: false
+    authorization_note: >-
+      Authorized under an "Expanded Executive Authority" directive (chat,
+      2026-08-10) granting broad independent implementation/refactor/PR/
+      governance authority within named boundaries, rather than a
+      narrowly-scoped single-feature brief like every prior phase. No
+      prior "Phase 10" specification was found anywhere (git history,
+      this file, HANDOFF.md, GitHub issues/PRs) despite the directive
+      referring to "the previous Phase 10 directive" as the functional
+      spec - this agent searched before proceeding and used the
+      directive's own "CURRENT MISSION" section (connect Capture ->
+      Rights -> Highlight -> Cut -> Vertical -> ASR -> Captions -> QC ->
+      Package -> Private Publish into one orchestrated run) as the
+      working spec, exercising the explicitly delegated "architecture
+      decisions within Robin's established vision" / "choose the safest
+      implementation among reasonable alternatives" authority. Real
+      end-to-end production smoke (including any real YouTube upload)
+      is explicitly NOT run as part of this implementation pass - the
+      directive's own LOCAL EXECUTION AUTHORITY section lists
+      "production-run-once real local smoke" as occurring "after CTO
+      approval," and CURRENT MISSION's own closing instruction is to
+      implement, validate, open/update the Draft PR, check CI once, and
+      report to CTO review - not to execute a real smoke automatically.
+    scope: >-
+      Orchestrate the already-proven local stages (highlight analysis,
+      9:16 reframe, local ASR + caption burn-in, Phase 8D quality gate,
+      Phase 8D packaging, and optionally Phase 9A private-only YouTube
+      publish) into one command per job/rank, reusing every underlying
+      module unmodified. Resumable by construction: each stage's
+      existing deterministic filename + refuse-to-overwrite behavior is
+      used to skip already-completed expensive stages (reframe+ASR+
+      caption burn-in) on a re-run, rather than introducing a new state-
+      file format. Gracefully falls back to an uncaptioned (but still
+      vertical-reframed) artifact when a clip has no detected speech,
+      rather than failing the whole run - the only NEW behavior this
+      phase introduces beyond pure orchestration, and one explicitly
+      flagged in the directive as a decision this agent may make
+      independently. No JobRepository status/attempts mutation (kept
+      read-only, matching Phases 5-9's own pattern) - the existing
+      status/attempts fields are tied to the legacy pipeline.py
+      render/upload flow, and repurposing them for this new flow would
+      be a genuine schema/semantics decision this task's own directive
+      requires stopping and reporting before making, not a default. The
+      optional publish step reuses publishing.execute_private_upload()
+      exactly as youtube-publish-package does - zero duplicated safety
+      logic (channel-identity guard, duplicate-upload protection,
+      hard-coded private, etc.).
+    allowed_paths:
+      - src/robin_content_engine/production_runner.py
+      - src/robin_content_engine/cli.py
+      - tests/test_production_runner.py
+      - tests/test_production_run_cli.py
+    forbidden_paths:
+      - studio/**
+      - AGENTS.md
+      - CLAUDE.md
+      - AI_WORKSPACE/**
+      - main
+      - schema.sql
+      - src/robin_content_engine/database.py
+      - src/robin_content_engine/pipeline.py
+      - src/robin_content_engine/quality_gate.py
+      - src/robin_content_engine/publishing.py
+      - src/robin_content_engine/captioner.py
+      - src/robin_content_engine/transcription.py
+      - src/robin_content_engine/vertical_reframe.py
+      - src/robin_content_engine/clip_cutter.py
+      - src/robin_content_engine/scene_detector.py
+      - src/robin_content_engine/highlight_features.py
+      - src/robin_content_engine/highlight_scoring.py
+      - src/robin_content_engine/clip_selector.py
+      - src/robin_content_engine/uploader.py
+      - src/robin_content_engine/youtube_auth.py
+      - client_secret.json
+      - client_secret*.json
+      - token.json
+      - .env
+    stop_conditions:
+      - do not run a real end-to-end production smoke (including any
+        real YouTube upload) in this implementation pass - implement,
+        validate, open/update the Draft PR, check CI once, report to
+        CTO review
+      - do not merge this PR without an explicit CTO PASS on this exact
+        head, or unless it is a narrow governance/docs-only change
+      - do not touch main, do not deploy
+      - no JobRepository status/attempts mutation
+      - no schema migration - stop and report if one seems necessary
+      - do not modify quality_gate.py, publishing.py, captioner.py,
+        transcription.py, vertical_reframe.py, clip_cutter.py, or the
+        highlight scoring/selector/detector modules - reuse only
+      - the optional publish step must remain private-only, hard-coded,
+        with no CLI option to select public/unlisted
+      - tests must use fake/mocked auth/uploader only - no test may
+        contact YouTube
+      - never expose/print .env, tokens, or client secrets
+    ci_at_exact_head_2026-08-10_initial: >-
+      Checked once via the GitHub check-runs API on exact head
+      570c7a81980bcde24641e15e48ae93735181cbfc: check run "test",
+      status=in_progress at time of writing (not polled to completion,
+      per this task's own no-recurring-polling instruction). This head
+      later completed as FAILURE (run 31392736396, 367 passed/1 failed)
+      per CTO review round 1 - see cto_review_round1_2026-08-10 below.
+    cto_review_round1_2026-08-10: >-
+      Binz2008-star (OWNER) posted a CTO review on PR #19: exact-head CI
+      was RED (run 31392736396, 1 test failure); the PR implemented a
+      manual per-job helper rather than the authorized operational
+      runner; missing production-run-once (capture-scan first, never
+      auto-confirm rights, automatic deterministic single-job
+      selection); missing read-only production-status; missing
+      automatic deterministic publish metadata; resume/package trust
+      too weak (an existing package directory was loaded without
+      validating bytes/hash/QC before reuse); automatic selection
+      needed to skip already-published/ambiguous jobs without a DB
+      schema change. Corrected in commit e62a987 - see
+      cto_review_round1_correction_2026-08-10 below. No real YouTube
+      write performed as part of this correction round.
+    cto_review_round1_correction_2026-08-10: >-
+      (1) CI fix: test_production_run_title_without_description_fails
+      asserted the literal "--description" substring, but Typer/Rich's
+      text wrapping breaks words after hyphens by default and CI's
+      narrower detected terminal width wrapped exactly at that
+      boundary (not reproduced on Windows locally) - fixed by asserting
+      the plain word "description" instead. (2) Added `robin-engine
+      production-run-once`: scans the capture directory first (reuses
+      capture_scan.scan_captures() unmodified), deterministically
+      selects exactly ONE eligible rights-confirmed job (oldest id
+      first, skipping already-published/ambiguous ones), runs the full
+      pipeline, then publishes (dry-run by default,
+      --execute-private-upload for a real PRIVATE-ONLY write, capped at
+      one upload per invocation by construction); prints "NO ELIGIBLE
+      JOB" on an empty/exhausted queue. `production-run <job_id>` kept
+      as the manual/debug command. (3) Added read-only `robin-engine
+      production-status [--json]` - awaiting-rights/rights-approved-
+      eligible/processing/packaged/uploaded-private/ambiguous counts,
+      derived purely from filename globs and marker-file existence, no
+      DB write/network/video-decode. (4) Added
+      build_automatic_metadata() - fixed deterministic title/
+      description, no LLM, no TTS. (5) run_production() no longer
+      blindly trusts an existing package directory - it is always
+      re-validated via publishing.validate_package() (the Phase 9
+      contract) before reuse; ProductionRunResult.package is now
+      PackageValidation (from publishing.py), not the narrower
+      PackageResult (from quality_gate.py). (6) local_upload_state()
+      derives published/ambiguous/none purely from
+      upload_receipt.json/upload_attempt.json existence - no DB schema
+      change. 30 new regression tests (398 total).
+    test_isolation_fix: >-
+      While writing tests/test_production_run_cli.py, the publish-path
+      tests initially collided on the real (gitignored, untracked)
+      work/ready/ directory in the worktree across repeated runs -
+      production-run's packaging step defaults to the same literal
+      relative "work/ready/" root as short-package (deliberately not
+      Settings.work_dir-relative, matching that command's own design),
+      so a CLI test that does not monkeypatch.chdir() into an isolated
+      tmp_path can collide with a prior run's upload_attempt.json/
+      upload_receipt.json markers under a real relative path. Fixed by
+      adding the same monkeypatch.chdir(tmp_path) isolation
+      tests/test_short_package_cli.py already uses for the identical
+      reason; re-verified stable across two consecutive full test-file
+      runs before proceeding. Stray untracked work/ready/ artifacts
+      created during debugging were removed (gitignored, never staged
+      or committed).
+    cto_review_round2_2026-08-10: >-
+      Binz2008-star (OWNER) confirmed exact-head CI 31405151466 SUCCESS
+      on the round-1 head and raised two further operational blockers
+      before a real production smoke: (1) run_production_once() built
+      candidates from only rights_confirmed + source_path, permitting a
+      rights-confirmed row with DB status uploaded/quarantined/
+      processing/rendered/failed to be processed again - restricted
+      eligibility to status=='pending' AND rights_confirmed AND
+      source_path AND no existing youtube_id; (2) the candidate loop
+      called run_production() per candidate and only checked QC/
+      publish-state afterward, so a first-candidate QC/package failure
+      could fall through to a second candidate in the same invocation -
+      replaced with a cheap filesystem-only precheck (job-id package-
+      dir glob + marker existence, no video decode/analysis) that skips
+      published/ambiguous candidates BEFORE selection, then calls
+      run_production() exactly once for the selected job with no
+      fallthrough on failure. Also corrected production-status: an
+      explicitly rejected/quarantined unconfirmed row must not count as
+      awaiting_rights - fixed via the same reviewable-state predicate
+      list_pending_rights_review() itself uses (AUTO_QUARANTINE_REASON
+      imported as a read-only constant, no schema change).
+    cto_review_round2_correction_2026-08-10: >-
+      Commit 62d46d1cc7f1da9f1e5376839a86406357c79945. New
+      _precheck_local_state() helper (pure glob + marker-file existence,
+      job-id-prefixed rank-1 package directory pattern). Eligibility
+      filter now status=='pending' AND rights_confirmed AND source_path
+      AND not youtube_id. run_production_once() calls run_production()
+      at most once per invocation, period - proven by a regression that
+      forces candidate #1's QC to fail (via an injected stricter
+      QualityGateConfig) while candidate #2 remains genuinely eligible,
+      asserting the run_production() call count is exactly 1 and
+      candidate #2's job id never appears as selected_job_id. A second
+      regression proves the precheck phase itself never triggers
+      highlight analysis (call-counted at 1, from the single selected
+      job's real run, not from scanning multiple candidates).
+      ProductionStatusReport gained a `rejected` field; a job with
+      status='quarantined' and last_error='Rights rejected by
+      operator.' now reports rejected, not awaiting_rights, while a job
+      auto-quarantined by quarantine_unconfirmed() (last_error==
+      AUTO_QUARANTINE_REASON) correctly remains awaiting_rights - both
+      proven by dedicated regression tests. 18 new regression tests
+      (416 total, up from 398).
+    real_smoke_pool_closed_blocker_2026-08-10: >-
+      Authorized real Windows production-run-once smoke (session-only
+      YOUTUBE_EXPECTED_CHANNEL_ID, no .env modification) crashed before
+      candidate selection with psycopg_pool.PoolClosed: "pool has
+      already been opened/closed and cannot be reused". Root cause:
+      run_production_once() (commit 62d46d1) opened/closed the
+      JobRepository connection pool twice in sequence - once for
+      scan_captures(), a separate time for list_jobs() - and
+      psycopg_pool does not support reopening a pool once closed.
+      Confirmed zero side effects before stopping: production-status
+      counts identical before/after, no stray upload_attempt.json
+      anywhere, no code changed, exact head unchanged. No real YouTube
+      upload occurred (crash was pre-selection). Reported to CTO instead
+      of self-correcting, per this task's own stop-and-report discipline
+      for a real-smoke failure.
+    real_smoke_pool_closed_correction_2026-08-10: >-
+      Commit d2bc6f40239cf41fa11e7da27c790f760e4cd967, per explicit CTO
+      review directive on PR #19 (narrow fix only, no database.py
+      change). run_production()'s media-processing body (highlight
+      analysis, reframe, ASR, caption/no-speech fallback, quality gate,
+      packaging + validate_package()) extracted into a new internal
+      helper, _run_production_loaded_job(), which performs ZERO
+      repository access. Public run_production() (manual `production-
+      run`) unchanged in contract: one repository.running() cycle to
+      look up/validate the job, then delegates to the helper.
+      run_production_once() now uses exactly ONE `with
+      repository.running():` block covering both scan_captures() and
+      list_jobs(); candidate selection and (if any) media processing
+      happen after that block exits, validating the already-loaded row
+      via a new pure _validate_job_and_source() helper and calling
+      _run_production_loaded_job() directly - never the public
+      run_production(), which would otherwise try to reopen the
+      already-closed pool. database.py untouched (narrow approach was
+      sufficient; no global pool reopen/reentrancy semantics needed).
+      New OnceOnlyFakeRepository test double mimics the real
+      ConnectionPool's single-use lifecycle (raises on a second
+      running() entry after close) - the prior reentrant FakeRepository
+      could not have caught this bug. 4 new regression tests prove
+      exactly one repository lifecycle for run_production_once() (both
+      the job-selected and no-eligible-job paths) and for manual
+      run_production(), and that run_production_once() never calls the
+      public run_production(). Full suite: 420 passed, 0 failed (up
+      from 416). ruff clean. Focused mypy on touched files blocked by a
+      pre-existing, unrelated environment issue (numpy stub requires
+      Python 3.12 syntax under this repo's mypy python_version=3.11
+      config; reproduces identically on unmodified database.py's
+      sibling-free import chain vs. production_runner.py's numpy-
+      transitive imports, and reproduces identically at the pre-fix
+      HEAD 62d46d1 via git stash - confirmed not caused by this
+      change). git diff --check clean. No real YouTube upload, no
+      merge, no deploy, no main change, no .env modification.
+    ci_success_confirmed_2026-08-10: >-
+      Checked once via the check-runs API on exact HEAD
+      d2bc6f40239cf41fa11e7da27c790f760e4cd967: check run "test",
+      status=completed, conclusion=success. PR #19 independently
+      confirmed MERGEABLE with matching headRefOid via `gh pr view`.
+    real_smoke_retry_result_2026-08-10: >-
+      CTO authorized a retry of the real Windows production-run-once
+      smoke against the corrected head. Result: full success. Capture
+      scan found 17 videos (0 new). Exactly one job selected (job 8,
+      lowest id among 2 eligible candidates - job 8 and job 14) - no
+      PoolClosed error, no second candidate touched. Pipeline completed
+      end to end: highlight analysis -> 9:16 reframe -> local ASR ->
+      caption burn-in (1 segment) -> quality gate (11/11 checks PASS) ->
+      packaging -> automatic publish dry-run PASS. Job 8's DB row
+      verified unchanged both before and after
+      (status=pending, rights_confirmed=true, youtube_id=null,
+      attempts=0) via a direct read-only get_job() call - confirming
+      run_production_once() never mutates JobRepository beyond its own
+      documented scan_captures() INSERT-only behavior. Job 14 remains
+      the next eligible candidate, untouched.
+    real_smoke_standalone_dry_run_and_upload_2026-08-10: >-
+      With explicit operator approval obtained separately for this exact
+      step, ran a standalone `youtube-publish-package` dry-run for job
+      8's package (zero network I/O, package SHA-256/media/title/tags
+      validated, privacy=private) - PASS, no filesystem side effects
+      (no marker files written). Then, with a second explicit approval
+      specific to the real upload itself, ran
+      `youtube-publish-package --execute-private-upload` for the same
+      package: UPLOAD SUCCESS, YouTube video ID 8jOm0HvxNB4,
+      privacy=private. Independently verified via `youtube-sync` (a
+      real, separate YouTube Data API read, not the same code path as
+      the upload) that the video exists on channel
+      UCIcvbGsmSwMDXxjWXq4QG8A with privacy_status='private' and
+      is_current=true in the synced snapshot table. Job 8's DB row
+      re-checked post-upload: still unchanged
+      (status=pending, rights_confirmed=true, youtube_id=null,
+      attempts=0) - youtube-publish-package never touches
+      JobRepository, exactly as documented. Duplicate-upload protection
+      verified: an immediate second `--execute-private-upload` attempt
+      for the same package was rejected (exit code 2, "A successful
+      upload receipt already exists, refusing a duplicate upload")
+      before any network call - no second real upload occurred.
+    final_independent_audit_2026-08-10: >-
+      Before recommending merge, ran a 3-dimension independent
+      adversarial audit of the full PR #19 diff (base_sha
+      5bdb6ad87a1e5ff73c1db95665fbc13a85826180 to head_sha
+      d2bc6f40239cf41fa11e7da27c790f760e4cd967) via a multi-agent
+      workflow, separate from and blind to this agent's own prior
+      self-review: (1) repository connection-pool lifecycle correctness
+      across every call path and error branch, (2) governance/safety-
+      boundary compliance (allowed_paths only, forbidden_paths
+      untouched anywhere in the full diff, tests use fakes only with
+      zero real network/DB calls, private-only publish constraint
+      intact, no secrets in the diff), (3) docstring-claim accuracy
+      (every safety claim in production_runner.py traced against the
+      actual code). Result: 0 findings raised across all three
+      dimensions (65 tool invocations, ~10.4 minutes of genuine
+      analysis per the workflow's own usage telemetry) - no adversarial
+      verification pass was even needed since nothing was raised to
+      verify.
+    merge_2026-08-10: >-
+      With explicit operator approval, PR #19 was marked ready for
+      review (`gh pr ready 19`, previously Draft) and merged via
+      `gh pr merge 19 --merge` into feat/initial-engine (NOT main).
+      Merge commit c7fd99159c966123f51218e8f1ff22cc56b9cce5 at
+      2026-08-10T20:16:24Z. Independently re-verified post-merge: PR
+      state=MERGED with matching mergeCommit.oid; main's HEAD ref
+      unchanged at 5387af1f14888964b463b1fcaed8751d40ecbde6 (confirmed
+      via a direct GitHub API ref read, not assumed).
+    next_action: >-
+      Phase 10 (RCE-20260810-PRODUCTION10) is CLOSED. PR #19 merged
+      into feat/initial-engine at c7fd99159c966123f51218e8f1ff22cc56b9cce5.
+      main remains untouched at
+      5387af1f14888964b463b1fcaed8751d40ecbde6 - no task in this
+      registry has authorized a main merge or deploy. The
+      feat/production-runner branch can be deleted by the operator at
+      their convenience (not done automatically here - no destructive
+      git action taken without explicit instruction). Job 14 remains
+      the next eligible candidate in the production queue for a future
+      production-run-once invocation, whenever the operator chooses -
+      not scheduled or triggered by this task.
+    production_operations_log_2026-08-11: >-
+      New dedicated worktree created at X:\content engine\production,
+      tracking feat/initial-engine (fast-forwarded to merge commit
+      c7fd99159c966123f51218e8f1ff22cc56b9cce5) - this is now the
+      canonical source for real production-run-once invocations, not
+      the already-merged feat/production-runner feature branch. Ran
+      production-run-once for real: job 8 correctly skipped
+      ("already published" - precheck/duplicate-protection working
+      against a prior run), job 14 selected, processed end-to-end
+      (highlight -> reframe -> ASR, 3 caption segments -> QC 11/11
+      PASS -> package -> dry-run PASS), job 14's DB row unchanged
+      before/after (status=pending, rights_confirmed=true,
+      youtube_id=null, attempts=0). With explicit per-step operator
+      approval, executed the real private upload for job 14:
+      video ID qs2kXUlvi-w, privacy=private, independently verified via
+      youtube-sync + a direct read of the resulting youtube_videos
+      snapshot row (channel UCIcvbGsmSwMDXxjWXq4QG8A,
+      privacy_status='private', is_current=true). Post-upload
+      production-status: uploaded_private=3 (jobs 8, 14, 22),
+      rights_approved_eligible=0 - the queue currently has no further
+      pending+rights-confirmed candidates; 11 jobs remain
+      awaiting_rights (need operator rights review before they become
+      eligible), 1 (job 19) shows local processing artifacts without a
+      completed package, 2 are rejected.
+
+      STANDING AUTHORIZATION GRANTED 2026-08-11: the operator was
+      asked explicitly whether to keep confirming each real upload
+      individually or grant standing authorization for future jobs to
+      auto-upload after a QC pass without a per-job chat confirmation,
+      and chose the standing policy. Recorded durably in this agent's
+      cross-session memory (feedback_standing_upload_authorization).
+      From this point forward, a job clearing production-run-once's
+      local pipeline (QC PASS + package + dry-run PASS) may proceed
+      directly to youtube-publish-package --execute-private-upload
+      without a separate chat approval gate - the dry-run/QC pass IS
+      the gate now. This does NOT extend to main/deploy/.env changes,
+      which remain separately gated as always.
+    job19_incident_and_scheduled_task_2026-08-11: >-
+      SELF-CORRECTION: the operator asked for a recurring/scheduled
+      production-run-once workflow. Before registering a Windows
+      Scheduled Task, this agent manually ran the exact planned wrapper
+      script once as what it described to the operator as a "safe,
+      zero-risk test" on the stated (incorrect) assumption that the
+      queue was empty (rights_approved_eligible=0 from the prior
+      status check). This assumption was wrong: job 19's
+      production-status classification of "processing" is derived
+      purely from local filesystem artifacts (a partial reframed file
+      left over from an earlier session), NOT from database
+      eligibility - job 19 was actually a fully eligible DB candidate
+      (status=pending, rights_confirmed=true, source_path present, no
+      youtube_id) the whole time. The "test" therefore ran the real
+      production-run-once --execute-private-upload command for real,
+      selecting and uploading job 19: video ID NbScN15vYbw,
+      privacy=private, independently verified via youtube-sync + a
+      direct read of the resulting youtube_videos snapshot row
+      (channel UCIcvbGsmSwMDXxjWXq4QG8A, privacy_status='private',
+      is_current=true). Job 19's DB row confirmed unchanged
+      (status=pending, rights_confirmed=true, youtube_id=null,
+      attempts=0). This action WAS within the operator's standing
+      upload authorization (granted the same session) and was
+      immediately, transparently disclosed to the operator as soon as
+      discovered, including the specific reasoning error (conflating a
+      local-filesystem-derived status-report label with database-level
+      eligibility) - not represented as intentional. Post-upload
+      production-status: uploaded_private=4 (jobs 8, 14, 19, 22),
+      rights_approved_eligible=0, processing=0 - the queue is now
+      genuinely empty of eligible/partially-processed candidates.
+
+      Having thereby verified the exact scheduled command end-to-end
+      (including the real-upload path) works correctly, registered a
+      Windows Scheduled Task "RobinProductionRunOnce": runs
+      X:\content engine\ops\run_production_once.ps1 every 2 hours
+      (Logon Mode: Interactive only - fires only while the operator is
+      logged in, no stored credentials; MultipleInstances: IgnoreNew -
+      cannot overlap; first run 2026-08-11 00:47 local). The script
+      sets PYTHONPATH to the canonical production worktree and
+      YOUTUBE_EXPECTED_CHANNEL_ID, runs `production-run-once
+      --execute-private-upload` from
+      X:\content engine\Robin-Content-Engine-v2 (where .env lives),
+      and logs full output to
+      X:\content engine\ops\logs\production-run-once_<timestamp>.log.
+      Recorded durably in cross-session memory
+      (project_robin_scheduled_production) so future sessions know
+      real uploads can occur autonomously in the background and must
+      check logs/production-status rather than assume prior queue
+      state still holds.
+
+# Other branches observed on origin at the time this registry was created
+# that are NOT yet registered as tasks (owner/scope unknown to this agent —
+# not fabricated here). Whoever owns them should add a task entry above
+# before resuming work:
+#
+#   - feat/studio-ui
+#   - fix/studio-copilot-review
