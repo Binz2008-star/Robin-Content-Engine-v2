@@ -8,6 +8,16 @@ from moviepy import VideoFileClip
 # width / height for a 9:16 vertical short.
 TARGET_ASPECT_RATIO = 9 / 16
 
+# Standard YouTube Shorts delivery resolution. The 9:16 crop is ALWAYS
+# resized (lanczos) to exactly this size, whether that means upscaling a
+# small crop (e.g. a 200x360 crop from a low-res source) or downscaling a
+# larger-than-needed crop (e.g. 1215x2160 from 4K) - a uniform
+# 1080x1920 delivery guarantees even yuv420p dimensions, deterministic
+# output geometry, and YouTube-side rendering at full phone resolution
+# instead of letting YouTube upscale a tiny postage-stamp clip.
+TARGET_WIDTH = 1080
+TARGET_HEIGHT = 1920
+
 # Used both to guard against negligible floating-point accumulation when
 # checking a requested end against the source's real duration, and as the
 # explicit codec/container tolerance for validating the produced output's
@@ -33,6 +43,8 @@ class ReframeResult:
     crop_width: int
     crop_height: int
     crop_x1: int
+    output_width: int = TARGET_WIDTH
+    output_height: int = TARGET_HEIGHT
 
     @property
     def duration_seconds(self) -> float:
@@ -50,8 +62,12 @@ def reframe_to_vertical(
     """Extract [start_seconds, end_seconds) from source_path and crop it to a
     static, deterministic 9:16 vertical frame - the full source height and a
     9:16-proportioned width taken directly from the source's own frame (no
-    resize, no letterbox/pad, no dynamic/subject tracking) - writing a new
-    local MP4 (H.264 video, AAC audio) at output_path.
+    letterbox/pad, no dynamic/subject tracking) - then resize the crop to
+    the standard YouTube Shorts resolution of 1080x1920 (lanczos
+    resampling, moviepy's Resize effect) so even a low-resolution source
+    delivers a full-size Short instead of a tiny clip that YouTube would
+    have to upscale. Writes a new local MP4 (H.264 video, AAC audio) at
+    output_path.
 
     horizontal_offset_ratio (0.0 = crop aligned to the left edge, 0.5 =
     centered, 1.0 = aligned to the right edge) is a single fixed crop
@@ -65,12 +81,12 @@ def reframe_to_vertical(
 
     After encoding, the produced file's actual duration and frame dimensions
     are probed and checked against what was requested, within
-    _DURATION_TOLERANCE_SECONDS for duration and exactly for dimensions. A
-    file that exists and is non-empty but has the wrong duration or the
-    wrong crop dimensions is not a success: it is deleted (only the output
-    this attempt just created - the source is never touched) and
-    VerticalReframeError is raised, so the deterministic output filename
-    remains free for a retry.
+    _DURATION_TOLERANCE_SECONDS for duration and exactly for the 1080x1920
+    output dimensions. A file that exists and is non-empty but has the wrong
+    duration or the wrong output dimensions is not a success: it is deleted
+    (only the output this attempt just created - the source is never
+    touched) and VerticalReframeError is raised, so the deterministic
+    output filename remains free for a retry.
     """
     if end_seconds <= start_seconds:
         raise VerticalReframeError("end_seconds must be greater than start_seconds")
@@ -88,6 +104,7 @@ def reframe_to_vertical(
     source = VideoFileClip(str(source_path))
     clip = None
     cropped = None
+    resized = None
     try:
         if not source.duration or source.duration <= 0:
             raise VerticalReframeError(f"Source video has no usable duration: {source_path}")
@@ -115,23 +132,37 @@ def reframe_to_vertical(
 
         clip = source.subclipped(start_seconds, min(end_seconds, source.duration))
         cropped = clip.cropped(x1=x1, y1=0, x2=x1 + crop_width, y2=source_height)
+        # Always deliver the standard Shorts resolution: lanczos-resize the
+        # 9:16 crop to exactly 1080x1920 (moviepy's Resize effect uses
+        # PIL.Image.Resampling.LANCZOS), whether that is an upscale or a
+        # slight downscale - uniform geometry keeps the quality gate and
+        # upload path deterministic.
+        resized = cropped.resized(new_size=(TARGET_WIDTH, TARGET_HEIGHT))
         # fps intentionally omitted: moviepy's @use_clip_fps_by_default falls
         # back to the clip's own native fps (i.e. the source's), preserving
         # it rather than resampling to an arbitrary value.
-        cropped.write_videofile(
+        resized.write_videofile(
             str(output_path),
             codec="libx264",
             audio_codec="aac",
             preset="slow",  # Better quality encoding
             threads=4,
             pixel_format="yuv420p",
+            # Constant-quality encoding (CRF 18) instead of a fixed bitrate
+            # ceiling: a 1080x1920 short of fast-moving gameplay needs more
+            # than 4000k to look clean, and CRF self-tunes per scene. The
+            # VBV cap just bounds worst-case spikes for safe streaming.
             ffmpeg_params=[
                 "-movflags",
                 "+faststart",
                 "-tune",
                 "film",
-                "-b:v",
-                "4000k",
+                "-crf",
+                "18",
+                "-maxrate",
+                "20M",
+                "-bufsize",
+                "30M",
             ],
             logger=None,
         )
@@ -150,11 +181,11 @@ def reframe_to_vertical(
                 f"requested duration {expected_duration:.3f}s within tolerance "
                 f"{_DURATION_TOLERANCE_SECONDS}s for {output_path}"
             )
-        if produced_width != crop_width or produced_height != source_height:
+        if produced_width != TARGET_WIDTH or produced_height != TARGET_HEIGHT:
             output_path.unlink()
             raise VerticalReframeError(
                 f"Produced clip dimensions {produced_width}x{produced_height} do not "
-                f"match the expected 9:16 crop {crop_width}x{source_height} for "
+                f"match the expected {TARGET_WIDTH}x{TARGET_HEIGHT} Shorts output for "
                 f"{output_path}"
             )
 
@@ -165,8 +196,12 @@ def reframe_to_vertical(
             crop_width=crop_width,
             crop_height=source_height,
             crop_x1=x1,
+            output_width=produced_width,
+            output_height=produced_height,
         )
     finally:
+        if resized is not None:
+            resized.close()
         if cropped is not None:
             cropped.close()
         if clip is not None:

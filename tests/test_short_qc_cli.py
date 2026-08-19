@@ -25,8 +25,9 @@ def _explode(*args: Any, **kwargs: Any) -> Any:
 
 @pytest.fixture(scope="module")
 def valid_vertical_video(tmp_path_factory: pytest.TempPathFactory) -> Path:
-    """~16s, exact 9:16 (90x160) - fits the CLI's real default 15-60s
-    duration bounds and should PASS every check."""
+    """~16s, exact 9:16 at the standard 1080x1920 Shorts resolution - fits
+    the CLI's real default 15-60s duration bounds AND the real default
+    1080x1920 minimum resolution, so it should PASS every check."""
     out = tmp_path_factory.mktemp("short_qc_cli") / "valid.mp4"
     ffmpeg = imageio_ffmpeg.get_ffmpeg_exe()
     cmd = [
@@ -35,7 +36,7 @@ def valid_vertical_video(tmp_path_factory: pytest.TempPathFactory) -> Path:
         "-f",
         "lavfi",
         "-i",
-        "testsrc=s=90x160:r=24:d=16",
+        "testsrc=s=1080x1920:r=24:d=16",
         "-f",
         "lavfi",
         "-i",
@@ -80,7 +81,7 @@ def test_json_output_contract(valid_vertical_video: Path) -> None:
     assert payload["passed"] is True
     assert payload["path"] == str(valid_vertical_video)
     assert isinstance(payload["checks"], list)
-    assert len(payload["checks"]) == 12
+    assert len(payload["checks"]) == 13
     for check in payload["checks"]:
         assert set(check.keys()) == {"name", "passed", "detail"}
     media = payload["media"]
@@ -91,8 +92,8 @@ def test_json_output_contract(valid_vertical_video: Path) -> None:
         "fps",
         "has_audio",
     }
-    assert media["width"] == 90
-    assert media["height"] == 160
+    assert media["width"] == 1080
+    assert media["height"] == 1920
 
 
 def test_json_output_on_failure_still_valid_json(tmp_path: Path) -> None:

@@ -27,11 +27,15 @@ from robin_content_engine.quality_gate import QualityGateConfig, package_short  
 from robin_content_engine.youtube_auth import ChannelIdentity, YouTubeAuthError  # noqa: E402
 
 # Small explicit bounds so synthetic fixtures stay fast, same technique as
-# tests/test_quality_gate.py.
+# tests/test_quality_gate.py. min_width/min_height are lowered to match the
+# small 90x160 fixtures; the production default (1080x1920) is enforced
+# elsewhere.
 TEST_CONFIG = QualityGateConfig(
     min_clip_seconds=2.0,
     max_clip_seconds=8.0,
     duration_tolerance_seconds=0.3,
+    min_width=90,
+    min_height=160,
 )
 
 EXPECTED_CHANNEL_ID = "UC_expected_channel"

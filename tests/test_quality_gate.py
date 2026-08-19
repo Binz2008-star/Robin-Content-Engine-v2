@@ -23,10 +23,15 @@ from robin_content_engine.quality_gate import (  # noqa: E402
 
 # Small explicit bounds so synthetic fixtures can stay short (fast to
 # encode) while still exercising the real duration_within_bounds logic.
+# min_width/min_height are lowered to match the small 90x160 test
+# fixtures - the production default (1080x1920) is exercised by the
+# dedicated below-min-resolution test.
 TEST_CONFIG = QualityGateConfig(
     min_clip_seconds=2.0,
     max_clip_seconds=8.0,
     duration_tolerance_seconds=0.3,
+    min_width=90,
+    min_height=160,
 )
 
 
@@ -245,7 +250,28 @@ def test_landscape_video_fails_aspect_ratio(landscape_video: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
-# 6. Invalid duration -> FAIL
+# 6. Below-minimum-resolution video -> FAIL min_resolution
+# ---------------------------------------------------------------------------
+
+
+def test_below_min_resolution_video_fails(tmp_path: Path) -> None:
+    """A tiny but otherwise-valid clip (e.g. a 200x360 crop that was never
+    upscaled) must fail the gate under the production default minimum of
+    1080x1920 - never uploadable as-is."""
+    small = _make_simple_video(tmp_path / "small.mp4", width=90, height=160, duration=4.0)
+    default_config = QualityGateConfig(min_clip_seconds=2.0, max_clip_seconds=8.0)
+
+    result = run_quality_gate(small, default_config)
+
+    checks = _checks_by_name(result)
+    assert checks["min_resolution"].passed is False
+    assert checks["video_decodable"].passed is True
+    assert checks["duration_within_bounds"].passed is True
+    assert result.passed is False
+
+
+# ---------------------------------------------------------------------------
+# 7. Invalid duration -> FAIL
 # ---------------------------------------------------------------------------
 
 

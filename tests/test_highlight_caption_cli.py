@@ -245,12 +245,10 @@ def test_successful_caption_produces_output_with_expected_geometry(
     assert output_path.stat().st_size > 0
     assert output_path.suffix == ".mp4"
 
-    crop_line = next(line for line in result.output.splitlines() if line.startswith("Crop:"))
-    expected_width, expected_height = (
-        int(part) for part in crop_line.split("Crop:", 1)[1].split("at")[0].strip().split("x")
-    )
     with VideoFileClip(str(output_path)) as produced:
-        assert list(produced.size) == [expected_width, expected_height]
+        # the captioned clip is burned from the reframed 1080x1920 output,
+        # so it inherits the standard Shorts resolution
+        assert list(produced.size) == [1080, 1920]
 
     # exactly one recognizer constructed, exactly one transcribe() call,
     # against the intermediate reframed clip (not the raw source)

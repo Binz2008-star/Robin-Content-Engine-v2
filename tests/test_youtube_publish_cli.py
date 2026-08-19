@@ -65,7 +65,7 @@ def _make_source_video(path: Path, *, duration: float = 16.0) -> Path:
         "-f",
         "lavfi",
         "-i",
-        f"testsrc=s=90x160:r=24:d={duration}",
+        f"testsrc=s=1080x1920:r=24:d={duration}",
         "-f",
         "lavfi",
         "-i",
@@ -86,10 +86,11 @@ def _make_source_video(path: Path, *, duration: float = 16.0) -> Path:
 
 @pytest.fixture
 def package_dir(tmp_path: Path) -> Path:
-    """16s clip, packaged with the real default QualityGateConfig (15-60s
-    bounds) - matches what the CLI itself uses (no config override), so
-    validate_package()'s fresh re-run at publish time genuinely re-checks
-    the same bounds a real production package would face."""
+    """16s 1080x1920 clip, packaged with the real default QualityGateConfig
+    (15-60s bounds, >=1080x1920 minimum resolution) - matches what the CLI
+    itself uses (no config override), so validate_package()'s fresh re-run
+    at publish time genuinely re-checks the same bounds a real production
+    package would face."""
     source = _make_source_video(tmp_path / "source.mp4")
     result = real_package_short(source, tmp_path / "ready")
     return result.package_dir

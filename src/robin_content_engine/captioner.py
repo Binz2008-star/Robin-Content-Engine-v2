@@ -168,10 +168,15 @@ def burn_captions(
             "libx264",
             "-preset",
             "slow",
+            # Match the reframe stage's CRF 18 constant-quality encoding so
+            # this second generation loses as little as possible. The VBV
+            # cap bounds worst-case bitrate spikes for safe streaming.
             "-crf",
-            "23",
-            "-b:v",
-            "4000k",
+            "18",
+            "-maxrate",
+            "20M",
+            "-bufsize",
+            "30M",
             "-c:a",
             "copy",
             "-pix_fmt",

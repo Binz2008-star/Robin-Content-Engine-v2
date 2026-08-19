@@ -65,7 +65,9 @@ def test_reframe_produces_centered_9_16_crop_by_default(
     assert result.duration_seconds == pytest.approx(4.0, abs=1e-6)
 
     with VideoFileClip(str(output_path)) as produced:
-        assert list(produced.size) == [36, 64]
+        # the 9:16 crop is always delivered at the standard Shorts
+        # resolution (1080x1920), never left at the tiny native crop size
+        assert list(produced.size) == [1080, 1920]
         assert produced.duration == pytest.approx(4.0, abs=0.5)
         assert produced.fps == pytest.approx(24.0, abs=0.5)
 

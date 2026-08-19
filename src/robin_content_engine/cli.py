@@ -671,6 +671,7 @@ def highlight_reframe(
     typer.echo(f"Duration: {result.duration_seconds:.1f}s")
     typer.echo(f"Score: {candidate.score:.3f}")
     typer.echo(f"Crop: {result.crop_width}x{result.crop_height} at x={result.crop_x1}")
+    typer.echo(f"Output size: {result.output_width}x{result.output_height}")
     typer.echo(f"Output path: {result.output_path}")
 
 
@@ -787,6 +788,9 @@ def highlight_caption(
     typer.echo(
         f"Crop: {reframe_result.crop_width}x{reframe_result.crop_height} "
         f"at x={reframe_result.crop_x1}"
+    )
+    typer.echo(
+        f"Output size: {reframe_result.output_width}x{reframe_result.output_height}"
     )
     typer.echo(f"Caption segments: {caption_result.segment_count}")
     typer.echo(f"Output path: {caption_result.output_path}")

@@ -31,6 +31,9 @@ def _run_ffmpeg(cmd: list[str]) -> None:
 
 @pytest.fixture(scope="module")
 def valid_vertical_video(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """16s, exact 9:16 at the standard 1080x1920 Shorts resolution so it
+    passes the CLI's real default quality gate (15-60s duration bounds,
+    >=1080x1920 minimum resolution)."""
     out = tmp_path_factory.mktemp("short_package_cli_valid") / "valid.mp4"
     ffmpeg = imageio_ffmpeg.get_ffmpeg_exe()
     _run_ffmpeg(
@@ -40,7 +43,7 @@ def valid_vertical_video(tmp_path_factory: pytest.TempPathFactory) -> Path:
             "-f",
             "lavfi",
             "-i",
-            "testsrc=s=90x160:r=24:d=16",
+            "testsrc=s=1080x1920:r=24:d=16",
             "-f",
             "lavfi",
             "-i",

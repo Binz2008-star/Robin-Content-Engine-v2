@@ -244,9 +244,10 @@ def test_successful_reframe_produces_vertical_output_matching_scan_rank(
         expected_duration = scan_candidate["end_seconds"] - scan_candidate["start_seconds"]
         assert produced.duration == pytest.approx(expected_duration, abs=0.5)
         width, height = produced.size
-        # source is 128x64 -> expected 9:16 crop width = floor_even(64*9/16) = 36
-        assert width == 36
-        assert height == 64
+        # the 9:16 crop of the 128x64 source is upscaled to the standard
+        # Shorts delivery resolution, never left at the tiny crop size
+        assert width == 1080
+        assert height == 1920
 
 
 def test_never_constructs_content_engine(

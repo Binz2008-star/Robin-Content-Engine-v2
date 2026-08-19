@@ -31,13 +31,18 @@ only - no internet scraping, ever.**
   from the channel's own long videos. First in queue: #34 Roblox, #36 CoD
   Zombies, #37-41 Apex, #42/44 neutral "Archived gameplay".
 - **23 uploaded**, 0 failed, 8 quarantined (non-gaming/rejects + 7s clip).
-- **Daily upload cap: 2/day** (`YOUTUBE_MAX_UPLOADS_PER_DAY=2`) — cool-down
-  mode. Raise to 4 after the channel recovers.
-- **YouTube `uploadLimitExceeded` active** — YouTube's own daily upload
-  limit throttled the channel after a burst of ~27 uploads in 2 days.
-  It resets in ~24-72h. **Operator action:** verify the channel in YouTube
-  Studio (Settings → Channel → Feature eligibility → Verification) to raise
-  the limit long-term. Do NOT try to bypass.
+- **Daily upload cap: 4/day** (`YOUTUBE_MAX_UPLOADS_PER_DAY=4`) — raised
+  from 2 now that YouTube's `uploadLimitExceeded` cool-down has resolved.
+- **Video quality overhaul (2026-08-19):** the 9:16 reframe now always
+  delivers **1080x1920** (lanczos upscale, CRF 18, was: tiny 200-360p crops
+  at a fixed 4000k bitrate), caption burn-in re-encodes at CRF 18 (was 23),
+  and the quality gate now **requires >=1080x1920** (`min_resolution`).
+  Old low-resolution artifacts fail the gate and are auto-rebuilt at full
+  resolution on the next run — no manual cleanup needed.
+- **YouTube `uploadLimitExceeded` resolved** — the earlier daily-limit
+  throttle cleared after the cool-down; uploads are back to the normal
+  cap. If it ever returns, verify the channel in YouTube Studio (Settings →
+  Channel → Feature eligibility → Verification); do NOT try to bypass.
 - **Metadata corrections: DONE on YouTube** — 24 "Furniture" + 12 "Black
   ops" captures retitled to neutral archive titles; 2 verified-Apex videos
   (`N1IMHGr3Lx0`, `sQert_40bmc`) retitled to Apex. Metadata plan is cleared.

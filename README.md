@@ -22,9 +22,12 @@ fingerprint evasion.
    over a configurable window (`HIGHLIGHT_MIN_SECONDS`/`HIGHLIGHT_MAX_SECONDS`,
    default production 25-45s).
 4. **Cut, reframe to 9:16, caption** (local faster-whisper ASR; uncaptioned
-   fallback when no speech).
-5. **Quality-gate and package** (duration/aspect/decodability/black-frame checks,
-   SHA-256 manifest).
+   fallback when no speech). Every crop is lanczos-upscaled to the standard
+   YouTube Shorts resolution (1080x1920) and encoded at constant quality
+   (CRF 18), so even a low-resolution source delivers a full-size, clean
+   Short instead of a tiny postage-stamp clip YouTube would have to upscale.
+5. **Quality-gate and package** (duration/aspect/decodability/black-frame
+   checks, a 1080x1920 minimum resolution, SHA-256 manifest).
 6. **Generate metadata** via DeepSeek - natural Gulf-Arabic or English-for-a-
    mixed-UAE/international audience (`YOUTUBE_METADATA_LANGUAGE`), with a
    deterministic safety validation (no clickbait, no unverifiable claims).

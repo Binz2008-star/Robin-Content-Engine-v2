@@ -40,6 +40,13 @@ _DEFAULT_BLACK_FRAME_LUMA_THRESHOLD = 8.0
 
 _DEFAULT_SAMPLE_FRAME_COUNT = 5
 
+# The minimum delivered resolution for a publishable Short - the standard
+# YouTube Shorts size. A clip below this (e.g. a 200x360 crop from a low-
+# resolution source that was never upscaled) is far too small to look good
+# on YouTube and must never pass the gate or be uploaded.
+_DEFAULT_MIN_WIDTH = 1080
+_DEFAULT_MIN_HEIGHT = 1920
+
 _ALL_CHECK_NAMES = (
     "file_exists",
     "file_non_empty",
@@ -47,6 +54,7 @@ _ALL_CHECK_NAMES = (
     "duration_within_bounds",
     "aspect_ratio_9_16",
     "valid_dimensions",
+    "min_resolution",
     "valid_fps",
     "audio_present",
     "no_black_start_frame",
@@ -68,6 +76,8 @@ class QualityGateConfig:
     aspect_ratio_tolerance: float = _DEFAULT_ASPECT_RATIO_TOLERANCE
     min_fps: float = _DEFAULT_MIN_FPS
     max_fps: float = _DEFAULT_MAX_FPS
+    min_width: int = _DEFAULT_MIN_WIDTH
+    min_height: int = _DEFAULT_MIN_HEIGHT
     black_frame_luma_threshold: float = _DEFAULT_BLACK_FRAME_LUMA_THRESHOLD
     sample_frame_count: int = _DEFAULT_SAMPLE_FRAME_COUNT
 
@@ -292,6 +302,15 @@ def run_quality_gate(path: Path, config: QualityGateConfig | None = None) -> Qua
         bool(width and height and width > 0 and height > 0),
         f"{width}x{height}",
     )
+
+    if width and height:
+        record(
+            "min_resolution",
+            width >= config.min_width and height >= config.min_height,
+            f"{width}x{height}, required >= {config.min_width}x{config.min_height}",
+        )
+    else:
+        record("min_resolution", False, "No dimension metadata available.")
 
     if fps is None:
         record("valid_fps", False, "No FPS metadata available.")
