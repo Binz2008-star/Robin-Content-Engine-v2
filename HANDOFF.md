@@ -91,20 +91,28 @@ no uncommitted work exists. A new session should pick up the NEXT OPEN PR.
    `feat/quality-gate-decode-integrity` — quality gate now full-decodes every
    artifact and rejects truncated/corrupt files (`decode_integrity_ffmpeg`).
    Tests + ruff green. If merged, base for later PRs.
-2. **PR 1 (NOT started): AI-assisted candidate ranking.** New module +
-   CLI `highlight-rank <job>`. DeepSeek (via ai_logic.py's validated-JSON
-   pattern) reorders a job's ALREADY-computed highlight candidates using
-   transcript (if already stored in `work/transcripts/job-<id>-rank-<n>.json`)
-   + per-candidate signals (HighlightCandidate audio_score/motion_score/
-   scene_signal). Output: ranked order + a suggested hook per candidate,
-   written to `work/rankings/job-<id>.json`. Deterministic fallback = existing
-   score order on ANY AI failure. Read-only: never changes job status or
-   rights_confirmed. Tests: happy path, AI failure fallback, malformed JSON.
+2. **PR #21 OPEN (awaiting human review):**
+   `feat/highlight-ai-ranking` — AI-assisted candidate ranking.
+   `robin-engine highlight-rank <job>` re-runs the deterministic highlight
+   analysis (same as highlight-scan), asks DeepSeek to reorder the
+   already-selected candidates best-first + suggest a short spoken hook per
+   candidate, and writes `work/rankings/job-<id>.json`. Reads per-rank
+   transcripts from `work/transcripts/job-<id>-rank-<n>.json` (format
+   version 1) when present. Advice-only (never changes job status/rights/
+   upload state); deterministic score-order fallback on ANY AI failure, with
+   the reason recorded. Tests + ruff green; the only failing suite test is
+   pre-existing on base (`test_run_production_corrupt_captioned_artifact_is_
+   rebuilt_not_reused`, environment-related). Ranking report schema:
+   `method` (`ai`|`deterministic-fallback`), per-candidate `new_rank`/
+   `original_rank`/`hook`/`ai_reason`.
 3. **PR 2 (NOT started): AI hook integration.** Burn the PR-1 hook as the
    OPENING caption (captioner `segments_to_srt`/`burn_captions` `hook_text`)
    and use it in `build_production_metadata`; persist ASR transcripts to
-   `work/transcripts/` so PR 1 can consume them on re-runs. Fallback = no hook.
-   Must NOT touch rights/upload/budget gates.
+   `work/transcripts/job-<id>-rank-<n>.json` in the format PR-1's
+   `highlight_ranking.load_transcript()` reads (format version 1:
+   `{"format_version":1,"segments":[...]}`), so PR 1 can consume them on
+   re-runs. Fallback = no hook (PR-1 reports `hook: null`). Must NOT touch
+   rights/upload/budget gates.
 4. **PR 3 (NOT started): posting-time recommendation.** Read-only report from
    `youtube_videos` (published_at + view_count) suggesting best posting
    windows. No scheduler, no upload authority.
