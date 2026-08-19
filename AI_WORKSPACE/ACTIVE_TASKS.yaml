@@ -2337,6 +2337,54 @@ tasks:
     merge_allowed: false
     deploy_allowed: false
 
+  - id: RCE-20260820-HOOK2
+    title: PR 2 — AI hook integration (opening caption + metadata + transcript persistence)
+    status: active
+    owner: Binz2008-star (CTO session, direct operator "start the next move"
+      authorization; acting as the implementing agent this session)
+    branch: feat/ai-hook-integration
+    base_branch: main
+    base_sha: 3e9974ce2f038184445d81a005c6904a59c41617
+    scope: >-
+      Burn the PR-21 AI hook as the OPENING caption (captioner
+      segments_to_srt/burn_captions gain hook_text), use the hook in
+      build_production_metadata (AI context + deterministic description),
+      and persist per-rank ASR transcripts to
+      work/transcripts/job-<id>-rank-<n>.json in format version 1
+      ({"format_version":1,"job_id":...,"rank":...,"segments":[...]}) so
+      highlight_ranking.load_transcript() can consume them on re-runs.
+      Fallback = no hook (rankings report hook: null). MUST NOT touch
+      rights/upload/budget gates; no schema change; advice/local-files only.
+    allowed_paths:
+      - src/robin_content_engine/captioner.py
+      - src/robin_content_engine/ai_logic.py
+      - src/robin_content_engine/production_runner.py
+      - src/robin_content_engine/cli.py
+      - src/robin_content_engine/ops_actions.py
+      - tests/test_captioner.py
+      - tests/test_production_runner.py
+      - tests/test_ai_logic_ranking.py
+      - AI_WORKSPACE/ACTIVE_TASKS.yaml
+      - AI_WORKSPACE/HANDOFF.md
+    forbidden_paths:
+      - schema.sql
+      - studio/**
+      - src/robin_content_engine/database.py
+      - src/robin_content_engine/publishing.py
+      - src/robin_content_engine/upload_budget.py
+      - .env
+      - client_secret*.json
+      - token*.json
+    merge_allowed: false
+    deploy_allowed: false
+    stop_conditions:
+      - no change to rights approval, upload cap, channel pin, or privacy
+        enforcement
+      - no schema.sql / database.py change
+      - no real YouTube write, no network, no LLM call in tests
+      - hooks/transcripts are local advisory files only - never a DB column
+      - fall back to "no hook" on ANY missing/invalid/unsafe hook input
+
 # Other branches observed on origin at the time this registry was created
 # that are NOT yet registered as tasks (owner/scope unknown to this agent —
 # not fabricated here). Whoever owns them should add a task entry above

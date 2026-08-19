@@ -25,6 +25,21 @@ _FPS_TOLERANCE = 0.5
 # a minute even at preset slow.
 _FFMPEG_TIMEOUT_SECONDS = 600
 
+# Display window for an optional AI-suggested opening "hook" caption burned
+# ahead of the ASR captions. Bounded and deterministic: the hook always gets
+# at least _HOOK_MIN_SECONDS of screen time and at most _HOOK_MAX_SECONDS,
+# and it is clamped to start at 0.0 and end at the first ASR segment's start
+# (so it never covers the spoken captions). The two special cases are a clip
+# whose first ASR segment begins inside the minimum window (the hook then
+# extends slightly past it, briefly co-displaying with the first caption -
+# preferable to an invisible hook) and a clip with no ASR segments at all,
+# where the hook fills a fixed _HOOK_NO_SPEECH_SECONDS window (only reachable
+# via segments_to_srt(); burn_captions() itself refuses to burn without
+# readable ASR segments).
+_HOOK_MIN_SECONDS = 1.0
+_HOOK_MAX_SECONDS = 3.0
+_HOOK_NO_SPEECH_SECONDS = 2.0
+
 
 class CaptionError(Exception):
     pass
@@ -44,12 +59,31 @@ def _format_srt_timestamp(seconds: float) -> str:
     return f"{hours:02d}:{minutes:02d}:{secs:02d},{millis:03d}"
 
 
-def segments_to_srt(segments: list[TranscriptSegment]) -> str:
+def segments_to_srt(
+    segments: list[TranscriptSegment], hook_text: str | None = None
+) -> str:
     """Render transcript segments as SRT subtitle text - the ASR's own
     transcribed words, verbatim, only segmented for readability. Segments
-    with empty/whitespace-only text are skipped."""
+    with empty/whitespace-only text are skipped.
+
+    When an AI-suggested opening hook is supplied (non-empty after
+    normalization), it is rendered as the FIRST subtitle block, ahead of the
+    ASR segments, spanning from 0.0 to a bounded deterministic window (see
+    _HOOK_MIN_SECONDS/_HOOK_MAX_SECONDS). A blank/whitespace-only hook is
+    treated exactly like no hook. The hook is advisory display text - it is
+    never merged into or mixed with the ASR's own transcribed words."""
+    hook = _normalize_hook_text(hook_text)
     blocks = []
     index = 1
+    if hook is not None:
+        hook_end = _hook_display_end_seconds(segments)
+        blocks.append(
+            f"{index}\n"
+            f"{_format_srt_timestamp(0.0)} --> "
+            f"{_format_srt_timestamp(hook_end)}\n"
+            f"{hook}\n"
+        )
+        index += 1
     for segment in segments:
         text = segment.text.strip()
         if not text:
@@ -62,6 +96,29 @@ def segments_to_srt(segments: list[TranscriptSegment]) -> str:
         )
         index += 1
     return "\n".join(blocks)
+
+
+def _normalize_hook_text(hook_text: str | None) -> str | None:
+    """Collapse an optional hook line to a single normalized string, or
+    None when it is absent/blank - a blank hook must behave exactly like no
+    hook."""
+    if hook_text is None:
+        return None
+    cleaned = " ".join(hook_text.split()).strip()
+    return cleaned or None
+
+
+def _hook_display_end_seconds(segments: list[TranscriptSegment]) -> float:
+    """Deterministic end time (seconds) for the opening hook caption block:
+    clamped into [_HOOK_MIN_SECONDS, _HOOK_MAX_SECONDS] and anchored to the
+    first readable ASR segment's start, falling back to
+    _HOOK_NO_SPEECH_SECONDS when no readable segment exists."""
+    first_start = next(
+        (segment.start_seconds for segment in segments if segment.text.strip()), None
+    )
+    if first_start is None:
+        return _HOOK_NO_SPEECH_SECONDS
+    return min(max(float(first_start), _HOOK_MIN_SECONDS), _HOOK_MAX_SECONDS)
 
 
 def escape_subtitles_filter_path(path: Path) -> str:
@@ -103,12 +160,21 @@ def burn_captions(
     video_path: Path,
     output_path: Path,
     segments: list[TranscriptSegment],
+    hook_text: str | None = None,
 ) -> CaptionResult:
     """Burn readable captions from segments onto video_path, writing a new
     local MP4 at output_path (H.264 video, re-encoded; audio stream-copied
     unchanged). Uses ffmpeg's `subtitles` filter (libass) against a
     temporary SRT file - no new heavy dependency, since ffmpeg is already
     bundled via imageio-ffmpeg/moviepy and this build supports libass.
+
+    When an AI-suggested opening hook is supplied, it is burned as the
+    FIRST caption (ahead of the ASR segments) - see segments_to_srt(). The
+    returned segment_count remains the number of ASR segments burned (the
+    hook is not counted as an ASR segment). Captioning still requires at
+    least one readable ASR segment: a hook alone never turns a speechless
+    clip into a captioned one (that stays the pipeline's uncaptioned
+    fallback).
 
     Never modifies video_path. Never overwrites an existing output_path.
     After encoding, the produced file's actual duration, frame dimensions,
@@ -146,7 +212,9 @@ def burn_captions(
         raise CaptionError(
             f"Temporary subtitle file already exists, refusing to overwrite: {srt_path}"
         )
-    srt_path.write_text(segments_to_srt(readable_segments), encoding="utf-8")
+    srt_path.write_text(
+        segments_to_srt(readable_segments, hook_text=hook_text), encoding="utf-8"
+    )
 
     def _cleanup_bad_output() -> None:
         # Only ever removes the output this call just created (or was in

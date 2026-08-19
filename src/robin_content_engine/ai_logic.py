@@ -50,12 +50,17 @@ def extract_game_name(source_title: str) -> str:
     return game or source_title.strip()
 
 
-def build_ai_context(source_title: str) -> str:
+def build_ai_context(source_title: str, hook: str | None = None) -> str:
     """Deterministic context block handed to the metadata generator. Tells
     it the game and that the footage is original and operator-owned so it
-    stays truthful (it never sees the video itself)."""
+    stays truthful (it never sees the video itself).
+
+    When an AI-suggested opening hook is supplied (non-empty after
+    normalization), it is included as a factual input so the generated
+    description references it naturally. A blank/missing hook changes
+    nothing."""
     game = extract_game_name(source_title)
-    return (
+    context = (
         f"Game: {game}\n"
         f"Source title: {source_title}\n"
         "This is ORIGINAL gameplay footage recorded by Robin for the "
@@ -63,6 +68,14 @@ def build_ai_context(source_title: str) -> str:
         "and has the right to publish it. You cannot see the actual video "
         "content."
     )
+    if hook:
+        cleaned = " ".join(hook.split()).strip()
+        if cleaned:
+            context += (
+                f'\nThe selected opening hook for this clip is: "{cleaned}". '
+                "Work it naturally into the description."
+            )
+    return context
 
 
 def validate_generated_metadata(

@@ -9,6 +9,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+from .ai_logic import CLICKBAIT_MARKERS
 from .captioner import CaptionError, burn_captions
 from .capture_scan import CaptureScanResult, scan_captures
 from .clip_selector import (
@@ -28,6 +29,7 @@ from .highlight_features import (
     extract_motion_activity,
     generate_time_windows,
 )
+from .highlight_ranking import transcript_file_for
 from .highlight_scoring import score_windows
 from .publishing import (
     _UPLOAD_STATE_FORMAT_VERSION,
@@ -44,7 +46,11 @@ from .quality_gate import (
     run_quality_gate,
 )
 from .scene_detector import SceneBoundary, SceneDetectionError, detect_scenes
-from .transcription import FasterWhisperRecognizer, TranscriptionError
+from .transcription import (
+    FasterWhisperRecognizer,
+    TranscriptionError,
+    TranscriptSegment,
+)
 from .vertical_reframe import VerticalReframeError, reframe_to_vertical
 
 # Same value as cli.py's own module-level constant (not CLI-exposed there
@@ -58,6 +64,11 @@ _HIGHLIGHT_WINDOW_SECONDS = 1.0
 _DEFAULT_PACKAGE_ROOT = Path("work") / "ready"
 
 _NO_SPEECH_MARKER = "No non-empty transcript segments"
+
+# Format version of the per-rank transcript files this module WRITES for
+# `robin-engine highlight-rank` to consume later - must match
+# highlight_ranking.load_transcript()'s own format version 1.
+_TRANSCRIPT_FORMAT_VERSION = 1
 
 # Local upload-state marker filenames - identical literals to
 # publishing.py's own _ATTEMPT_FILENAME/_RECEIPT_FILENAME
@@ -427,6 +438,94 @@ def _write_caption_segment_count(captioned_path: Path, segment_count: int) -> No
 
 
 # ---------------------------------------------------------------------------
+# Per-rank transcript persistence + AI hook loading (local advisory files)
+# ---------------------------------------------------------------------------
+
+
+def _write_rank_transcript(
+    job_id: int, rank: int, segments: list[TranscriptSegment], transcripts_dir: Path
+) -> Path | None:
+    """Persist the ASR segments for a job/rank to
+    work/transcripts/job-<id>-rank-<n>.json in format version 1 - the exact
+    format highlight_ranking.load_transcript() reads, so a later `robin-
+    engine highlight-rank` re-run for the same job consumes the real
+    transcript instead of ranking blind. Written atomically (tmp +
+    replace), idempotent for a re-run.
+
+    Returns None (writes nothing) when there are no non-empty segments - a
+    speechless clip has no transcript, which load_transcript() treats
+    identically to a missing file. Local advisory output only; never
+    touches the queue database or YouTube."""
+    readable = [segment for segment in segments if segment.text.strip()]
+    if not readable:
+        return None
+    payload = {
+        "format_version": _TRANSCRIPT_FORMAT_VERSION,
+        "job_id": job_id,
+        "rank": rank,
+        "segments": [
+            {
+                "start_seconds": segment.start_seconds,
+                "end_seconds": segment.end_seconds,
+                "text": segment.text,
+            }
+            for segment in readable
+        ],
+    }
+    transcripts_dir.mkdir(parents=True, exist_ok=True)
+    out_path = transcript_file_for(job_id, rank, transcripts_dir)
+    tmp_path = out_path.with_name(out_path.name + ".tmp")
+    tmp_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    tmp_path.replace(out_path)
+    return out_path
+
+
+def _load_rank_hook(job_id: int, rank: int, rankings_dir: Path) -> str | None:
+    """Read the AI-suggested spoken hook for the candidate produced as
+    score-rank <rank>, from the ranking report (work/rankings/job-<id>.json)
+    written by `robin-engine highlight-rank`. The report keys candidates by
+    their ORIGINAL (score) rank, so the hook used is the entry whose
+    original_rank == rank - the candidate actually being produced.
+
+    Purely advisory and read-only. Returns None on ANY problem: a missing
+    or malformed report, no entry for this original rank, an empty hook, or
+    a hook that fails the same banned-phrase safety check the ranking
+    module itself applies (a stale or hand-edited report must never push
+    unsafe text into a burned caption or into publish metadata). None is
+    indistinguishable from "no hook" - it never changes job/rights/upload
+    state."""
+    rankings_path = rankings_dir / f"job-{job_id}.json"
+    try:
+        payload = json.loads(rankings_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    if not isinstance(payload, dict):
+        return None
+    candidates = payload.get("candidates")
+    if not isinstance(candidates, list):
+        return None
+    for entry in candidates:
+        if not isinstance(entry, dict):
+            continue
+        if entry.get("original_rank") != rank:
+            continue
+        hook = entry.get("hook")
+        if not isinstance(hook, str):
+            return None
+        cleaned = " ".join(hook.split()).strip()
+        if not cleaned:
+            return None
+        for marker in CLICKBAIT_MARKERS:
+            if marker in cleaned:
+                logging.getLogger(__name__).warning(
+                    "Ignoring unsafe AI hook for job %s rank %s.", job_id, rank
+                )
+                return None
+        return cleaned
+    return None
+
+
+# ---------------------------------------------------------------------------
 # Deterministic automatic metadata - no LLM, no TTS, no operator input
 # ---------------------------------------------------------------------------
 
@@ -455,7 +554,7 @@ def build_automatic_metadata(source_title: str) -> tuple[str, str]:
 
 
 def build_production_metadata(
-    source_title: str, settings: Settings
+    source_title: str, settings: Settings, hook: str | None = None
 ) -> tuple[str, str, list[str]]:
     """Metadata for a production-run-once upload.
 
@@ -464,7 +563,13 @@ def build_production_metadata(
     ContentGenerator using the same improved prompt as the rest of the
     pipeline. Any AI failure falls back to the deterministic English
     metadata so the scheduled task can never be blocked by the LLM being
-    unavailable. Returns (title, description, tags)."""
+    unavailable. Returns (title, description, tags).
+
+    When an optional AI-suggested hook is supplied, it is used in the
+    metadata: it is passed into the AI context so the generated description
+    references it naturally, and on the deterministic fallback it is
+    prepended as the first line of the description. A missing/blank hook
+    changes nothing."""
     if getattr(settings, "youtube_ai_metadata", False) and settings.deepseek_api_key:
         try:
             from .ai_logic import ContentGenerator, build_ai_context
@@ -475,7 +580,9 @@ def build_production_metadata(
                 settings.deepseek_model,
             )
             language = getattr(settings, "youtube_metadata_language", "arabic")
-            generated = generator.generate(build_ai_context(source_title), language=language)
+            generated = generator.generate(
+                build_ai_context(source_title, hook), language=language
+            )
             return generated.title, generated.description, list(generated.tags)
         except Exception:
             logging.getLogger(__name__).warning(
@@ -484,6 +591,9 @@ def build_production_metadata(
                 exc_info=True,
             )
     title, description = build_automatic_metadata(source_title)
+    cleaned_hook = " ".join(hook.split()).strip() if hook else ""
+    if cleaned_hook:
+        description = f"{cleaned_hook}\n\n{description}"
     return title, description, []
 
 
@@ -506,6 +616,7 @@ class ProductionRunResult:
     final_video_path: Path
     quality_gate: QualityGateResult
     package: PackageValidation | None
+    hook: str | None = None
 
 
 def _run_production_loaded_job(
@@ -596,6 +707,11 @@ def _run_production_loaded_job(
         )
     candidate = selected[rank - 1]
 
+    # Advisory-only: the AI-suggested opening hook for the candidate being
+    # produced, if the operator ran `robin-engine highlight-rank` for this
+    # job. None on any missing/invalid/unsafe input - never an error.
+    hook = _load_rank_hook(job_id, rank, settings.work_dir / "rankings")
+
     output_dir = settings.work_dir / "highlights"
     output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -639,8 +755,18 @@ def _run_production_loaded_job(
         except TranscriptionError as exc:
             raise ProductionRunError(str(exc)) from exc
 
+        # Persist this job/rank's ASR transcript for a later
+        # `robin-engine highlight-rank` re-run to consume (format version
+        # 1, exactly what highlight_ranking.load_transcript() reads). Local
+        # advisory file only; a speechless clip writes nothing.
+        _write_rank_transcript(
+            job_id, rank, segments, settings.work_dir / "transcripts"
+        )
+
         try:
-            caption_result = burn_captions(reframed_path, captioned_path, segments)
+            caption_result = burn_captions(
+                reframed_path, captioned_path, segments, hook_text=hook
+            )
             final_video_path = captioned_path
             has_captions = True
             caption_segment_count = caption_result.segment_count
@@ -722,6 +848,7 @@ def _run_production_loaded_job(
         final_video_path=final_video_path,
         quality_gate=quality_gate,
         package=package,
+        hook=hook,
     )
 
 

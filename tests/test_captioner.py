@@ -320,3 +320,77 @@ def test_escape_subtitles_filter_path_on_windows_style_path() -> None:
 def test_escape_subtitles_filter_path_rejects_literal_single_quote() -> None:
     with pytest.raises(CaptionError, match="single quote"):
         escape_subtitles_filter_path(Path("/tmp/it's-a-path.srt"))
+
+
+# ---------------------------------------------------------------------------
+# AI-suggested opening hook caption
+# ---------------------------------------------------------------------------
+
+
+def test_segments_to_srt_with_hook_renders_hook_as_first_block(
+    segments: list[TranscriptSegment],
+) -> None:
+    srt = segments_to_srt(segments, hook_text="nice clutch")
+
+    assert srt.count("-->") == 3
+    blocks = [block.strip() for block in srt.split("\n\n")]
+    # The hook is the FIRST subtitle block, spanning the opening window.
+    assert blocks[0].startswith("1\n00:00:00,000 --> ")
+    assert blocks[0].endswith("\nnice clutch")
+    # The ASR captions follow, renumbered from 2.
+    assert "2\n00:00:00,000 --> 00:00:02,000\nhello there" in srt
+    assert "3\n00:00:02,000 --> 00:00:04,000\ngeneral kenobi" in srt
+
+
+def test_hook_display_window_clamped_to_first_segment_start() -> None:
+    srt = segments_to_srt(
+        [
+            TranscriptSegment(start_seconds=8.0, end_seconds=10.0, text="late speech"),
+        ],
+        hook_text="clutch",
+    )
+
+    # Hook capped at _HOOK_MAX_SECONDS (3.0), never spanning the gap to 8.0s.
+    assert "00:00:00,000 --> 00:00:03,000" in srt
+    assert "00:00:08,000 --> 00:00:10,000" in srt
+
+
+def test_hook_no_speech_fixed_window() -> None:
+    srt = segments_to_srt([], hook_text="only a hook")
+
+    # No ASR segments: the hook still renders, over the fixed no-speech
+    # window (_HOOK_NO_SPEECH_SECONDS = 2.0).
+    assert srt.count("-->") == 1
+    assert "1\n00:00:00,000 --> 00:00:02,000\nonly a hook" in srt
+
+
+def test_blank_hook_treated_as_no_hook(segments: list[TranscriptSegment]) -> None:
+    plain = segments_to_srt(segments)
+    with_hook = segments_to_srt(segments, hook_text="   \n  ")
+    assert with_hook == plain
+    assert with_hook.startswith("1\n00:00:00,000 --> 00:00:02,000\nhello there")
+
+
+def test_burn_captions_accepts_hook_and_counts_asr_segments_only(
+    source_video: Path, segments: list[TranscriptSegment], tmp_path: Path
+) -> None:
+    output_path = tmp_path / "out-hooked.mp4"
+    result = burn_captions(source_video, output_path, segments, hook_text="nice clutch")
+
+    assert result.segment_count == 2
+    assert result.output_path == output_path
+    assert output_path.is_file()
+    assert output_path.stat().st_size > 0
+
+
+def test_burn_captions_still_rejects_all_empty_segments_with_hook(
+    source_video: Path, tmp_path: Path
+) -> None:
+    # A hook alone never turns a speechless clip into a captioned one.
+    with pytest.raises(CaptionError, match="No non-empty transcript segments"):
+        burn_captions(
+            source_video,
+            tmp_path / "out.mp4",
+            [TranscriptSegment(start_seconds=0.0, end_seconds=1.0, text="   ")],
+            hook_text="nice clutch",
+        )

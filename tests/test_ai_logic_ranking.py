@@ -17,6 +17,7 @@ from robin_content_engine.ai_logic import (  # noqa: E402
     CLICKBAIT_MARKERS,
     ContentGenerationError,
     ContentGenerator,
+    build_ai_context,
     validate_ranking_coverage,
     validate_ranking_hooks,
 )
@@ -157,3 +158,18 @@ def test_rank_candidates_public_method(monkeypatch: pytest.MonkeyPatch) -> None:
 
     assert ranking.ranking[0].candidate == 1
     assert ranking.ranking[0].hook == "best part"
+
+
+def test_build_ai_context_includes_hook_when_present() -> None:
+    context = build_ai_context("Fortnite   2026-08-15 22-20-30", hook="Nice clutch")
+
+    assert "Fortnite" in context
+    assert "Nice clutch" in context
+    assert 'selected opening hook' in context
+
+
+def test_build_ai_context_blank_hook_unchanged() -> None:
+    plain = build_ai_context("Fortnite   2026-08-15 22-20-30")
+    with_hook = build_ai_context("Fortnite   2026-08-15 22-20-30", hook="   ")
+    assert with_hook == plain
+    assert "selected opening hook" not in with_hook
