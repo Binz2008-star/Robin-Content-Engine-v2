@@ -91,7 +91,7 @@ no uncommitted work exists. A new session should pick up the NEXT OPEN PR.
    `feat/quality-gate-decode-integrity` — quality gate now full-decodes every
    artifact and rejects truncated/corrupt files (`decode_integrity_ffmpeg`).
    Tests + ruff green. If merged, base for later PRs.
-2. **PR #21 OPEN (awaiting human review):**
+2. **PR #21 OPEN (merge pending CI, do NOT close):**
    `feat/highlight-ai-ranking` — AI-assisted candidate ranking.
    `robin-engine highlight-rank <job>` re-runs the deterministic highlight
    analysis (same as highlight-scan), asks DeepSeek to reorder the
@@ -100,11 +100,23 @@ no uncommitted work exists. A new session should pick up the NEXT OPEN PR.
    transcripts from `work/transcripts/job-<id>-rank-<n>.json` (format
    version 1) when present. Advice-only (never changes job status/rights/
    upload state); deterministic score-order fallback on ANY AI failure, with
-   the reason recorded. Tests + ruff green; the only failing suite test is
-   pre-existing on base (`test_run_production_corrupt_captioned_artifact_is_
-   rebuilt_not_reused`, environment-related). Ranking report schema:
-   `method` (`ai`|`deterministic-fallback`), per-candidate `new_rank`/
-   `original_rank`/`hook`/`ai_reason`.
+   the reason recorded. Ranking report schema: `method`
+   (`ai`|`deterministic-fallback`), per-candidate `new_rank`/`original_rank`/
+   `hook`/`ai_reason`.
+   - REVIEWED 2026-08-19: all 14 checklist items PASS except item 6's
+     "missing transcript" clause (missing transcript is treated as OPTIONAL
+     input, AI still ranks on signals - matches handoff "if already stored";
+     operator accepted by saying "merge on green").
+   - CI blocker fixed in `1bcc45e`: `test_rejects_zero_top` asserted the
+     literal substring "--top" in typer's colorized "Invalid value" message,
+     which CI (ANSI color enabled) splits with escape codes; now asserts on
+     `click.unstyle(result.output)`.
+   - RESUME: check CI run `32293904605` (in flight at last check) →
+     expected outcome = only pre-existing `test_run_production_corrupt_
+     captioned_artifact_is_rebuilt_not_reused` fails (fails on base too;
+     resolved by PR #20's decode-integrity). If so, **merge PR #21** into
+     `feat/initial-engine` (operator said "merge on green"), then re-run
+     `production-status` if desired. Do NOT start PR 2 until merged.
 3. **PR 2 (NOT started): AI hook integration.** Burn the PR-1 hook as the
    OPENING caption (captioner `segments_to_srt`/`burn_captions` `hook_text`)
    and use it in `build_production_metadata`; persist ASR transcripts to
