@@ -1631,3 +1631,27 @@ Post-upload `production-status`: `uploaded_private=4` (jobs 8, 14, 19, 22), `rig
 Merge authorized: n/a (no code change this entry)
 Deploy authorized: no (local Windows Task Scheduler registration only — no cloud deploy)
 Main merge authorized: no
+
+## RCE-20260820-TRUNK — 2026-08-20
+
+Task ID: RCE-20260820-TRUNK
+Agent: Binz2008-star (CTO session, acting under direct operator "do as u see
+  best" authorization)
+Branch: main / feat/initial-engine (no dedicated feature branch)
+Base SHA: 5387af1f14888964b463b1fcaed8751d40ecbde6 (pre-trunk main)
+PR: #1 (feat/initial-engine → main), #20, #21 (→ feat/initial-engine, now in
+  main), #5 (chore/agent-control-plane → main)
+Status: complete
+Files changed: .github/workflows/ci.yml (timeout 15m → 30m), HANDOFF.md,
+  AI_WORKSPACE/ACTIVE_TASKS.yaml
+Tests: CI green at each step; final trunk run 32303818286 SUCCESS (all
+  engine tests incl. PR #20 decode-integrity + PR #21 highlight ranking)
+CI: PASS
+Known blockers: none. Studio PRs #2/#3 remain open and frozen (task
+  RCE-20260807-STUDIO = review) pending an operator decision.
+Next action: (1) operator switches the X:\content engine\production worktree
+  to main; (2) new work branches from main — PR 2 (AI hook integration),
+  PR 3 (posting-time recommendation), and mypy-as-CI-gate are the queued
+  items; see HANDOFF.md.
+Merge authorized: yes — direct operator delegation this session
+Deploy authorized: no

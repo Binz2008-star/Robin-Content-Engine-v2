@@ -1,6 +1,6 @@
 # Session Handoff — Robin Content Engine
 
-_Updated: 2026-08-19. Read this first in a new session to resume instantly._
+_Updated: 2026-08-20. Read this first in a new session to resume instantly._
 
 ## What this system is
 
@@ -10,12 +10,32 @@ selection → 9:16 reframe + captions → quality gate → AI metadata (Arabic o
 English) → private-first upload → flip to public. **Owned/licensed content
 only - no internet scraping, ever.**
 
-## Repos (same GitHub remote, different branches)
+## Repos and branch strategy (updated 2026-08-20)
 
-- Production (active): `X:\content engine\production` — branch `feat/initial-engine`
+- **`main` is now the trunk.** The entire production engine landed on `main`
+  via PR #1 (2026-08-19) plus PR #5 (governance control plane). All NEW work
+  must branch from `main`, not from `feat/initial-engine`.
+- Production (active): `X:\content engine\production` — switch this worktree
+  to `main` (it currently tracks `feat/initial-engine`; `feat/initial-engine`
+  has been merged into `main`, so a fast-forward/pull then `git switch main`
+  is clean).
 - Legacy v2: `X:\content engine\Robin-Content-Engine-v2` — branch `feat/vertical-captions-mvp`
 - Remote: `https://github.com/Binz2008-star/Robin-Content-Engine-v2.git`
-- All work is committed and pushed to `feat/initial-engine`.
+- CI runs on PRs and on pushes to `main`. Job timeout raised to 30m
+  (2026-08-20) — the full suite + install was flaking out at 15m.
+
+### Merge record (2026-08-20, CTO session)
+
+- PR #1 `feat/initial-engine` → `main` — production trunk landed. Merge commit `bc079b2b`.
+- PR #5 `chore/agent-control-plane` → `main` — governance layer (AGENTS.md,
+  scope guard, task registry). Merge commit `8a5e0a5e`.
+- PR #20 `feat/quality-gate-decode-integrity` → `feat/initial-engine` (now in
+  main) — quality gate full-decodes artifacts, rejects corrupt/truncated
+  files. Merge commit `268b1bbe`.
+- PR #21 `feat/highlight-ai-ranking` → `feat/initial-engine` (now in main) —
+  AI-assisted candidate ranking (advice-only). Merge commit `bd364eef`.
+- CI infra: `.github/workflows/ci.yml` `timeout-minutes` 15 → 30.
+- Mypy is configured (strict) but NOT yet a CI gate — see Open Work.
 
 ## How to start the app
 
@@ -84,50 +104,31 @@ $env:YOUTUBE_EXPECTED_CHANNEL_ID="UCIcvbGsmSwMDXxjWXq4QG8A"
 
 ## IN-PROGRESS WORK — resume here in a new session
 
-The operator paused for a PC restart. Everything below is committed + pushed;
-no uncommitted work exists. A new session should pick up the NEXT OPEN PR.
+Everything on the trunk is committed, pushed, and CI-green. A new session
+should branch from `main`.
 
-1. **PR #20 OPEN (awaiting human review, do NOT merge):**
-   `feat/quality-gate-decode-integrity` — quality gate now full-decodes every
-   artifact and rejects truncated/corrupt files (`decode_integrity_ffmpeg`).
-   Tests + ruff green. If merged, base for later PRs.
-2. **PR #21 OPEN (merge pending CI, do NOT close):**
-   `feat/highlight-ai-ranking` — AI-assisted candidate ranking.
-   `robin-engine highlight-rank <job>` re-runs the deterministic highlight
-   analysis (same as highlight-scan), asks DeepSeek to reorder the
-   already-selected candidates best-first + suggest a short spoken hook per
-   candidate, and writes `work/rankings/job-<id>.json`. Reads per-rank
-   transcripts from `work/transcripts/job-<id>-rank-<n>.json` (format
-   version 1) when present. Advice-only (never changes job status/rights/
-   upload state); deterministic score-order fallback on ANY AI failure, with
-   the reason recorded. Ranking report schema: `method`
-   (`ai`|`deterministic-fallback`), per-candidate `new_rank`/`original_rank`/
-   `hook`/`ai_reason`.
-   - REVIEWED 2026-08-19: all 14 checklist items PASS except item 6's
-     "missing transcript" clause (missing transcript is treated as OPTIONAL
-     input, AI still ranks on signals - matches handoff "if already stored";
-     operator accepted by saying "merge on green").
-   - CI blocker fixed in `1bcc45e`: `test_rejects_zero_top` asserted the
-     literal substring "--top" in typer's colorized "Invalid value" message,
-     which CI (ANSI color enabled) splits with escape codes; now asserts on
-     `click.unstyle(result.output)`.
-   - RESUME: check CI run `32293904605` (in flight at last check) →
-     expected outcome = only pre-existing `test_run_production_corrupt_
-     captioned_artifact_is_rebuilt_not_reused` fails (fails on base too;
-     resolved by PR #20's decode-integrity). If so, **merge PR #21** into
-     `feat/initial-engine` (operator said "merge on green"), then re-run
-     `production-status` if desired. Do NOT start PR 2 until merged.
-3. **PR 2 (NOT started): AI hook integration.** Burn the PR-1 hook as the
+1. **PR 2 (NOT started): AI hook integration.** Burn the PR-21 hook as the
    OPENING caption (captioner `segments_to_srt`/`burn_captions` `hook_text`)
    and use it in `build_production_metadata`; persist ASR transcripts to
-   `work/transcripts/job-<id>-rank-<n>.json` in the format PR-1's
+   `work/transcripts/job-<id>-rank-<n>.json` in the format PR-21's
    `highlight_ranking.load_transcript()` reads (format version 1:
-   `{"format_version":1,"segments":[...]}`), so PR 1 can consume them on
-   re-runs. Fallback = no hook (PR-1 reports `hook: null`). Must NOT touch
-   rights/upload/budget gates.
-4. **PR 3 (NOT started): posting-time recommendation.** Read-only report from
+   `{"format_version":1,"segments":[...]}`), so the ranking can consume them
+   on re-runs. Fallback = no hook (ranking reports `hook: null`). Must NOT
+   touch rights/upload/budget gates.
+2. **PR 3 (NOT started): posting-time recommendation.** Read-only report from
    `youtube_videos` (published_at + view_count) suggesting best posting
    windows. No scheduler, no upload authority.
+3. **Infra (NOT started): make mypy a CI gate.** `mypy strict` is configured
+   but never runs in CI. Add `mypy src` to `.github/workflows/ci.yml`.
+   Expect to fix a handful of pre-existing type issues when first enabled
+   (a numpy-stub/Python-version conflict was noted in Phase 10).
+4. **Open decision (operator): Studio disposition.** PRs #2/#3
+   (`feat/studio-ui`, `feat/studio-api-readiness`) are a React/Vite + FastAPI
+   sub-project frozen since 2026-08-06 and stale relative to the engine. The
+   registered task RCE-20260807-STUDIO is `status: review`, "Frozen pending
+   live FastAPI integration". CTO recommendation: either revive as a separate
+   repo rebased on `main`, or close the PRs and archive the branch. Do not
+   merge into the production lineage as-is.
 
 ## Guardrails — HARD (a prior draft was reverted for violating these)
 

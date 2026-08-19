@@ -62,13 +62,24 @@ tasks:
 
   - id: RCE-20260807-CONTROL
     title: Multi-Agent Repository Control Plane
-    status: active
+    status: complete
     owner: claude
     branch: chore/agent-control-plane
     base_branch: main
     base_sha: 5387af1f14888964b463b1fcaed8751d40ecbde6
     pr: 5
-    pr_state: open (draft)
+    pr_state: merged
+    final_sha: 8a5e0a5e249771e897db92c1a285bc5f394b38aa
+    merged: true
+    merged_into: main
+    merged_at: 2026-08-19T21:43:12Z
+    merge_verified_by: Binz2008-star (CTO session)
+    ci: >-
+      Agent Scope Guard check SUCCESS on the PR head; merged after main was
+      promoted to trunk (PR #1). AGENTS.md, AI_WORKSPACE/**, and the scope
+      guard workflow now live on main. NOTE: the task registry previously
+      listed this task's own allowed_paths as AI_WORKSPACE/** - per
+      AGENTS.md the registry is owned by the control plane itself.
     allowed_paths:
       - AGENTS.md
       - CLAUDE.md
@@ -2284,6 +2295,47 @@ tasks:
       real uploads can occur autonomously in the background and must
       check logs/production-status rather than assume prior queue
       state still holds.
+
+  - id: RCE-20260820-TRUNK
+    title: Trunk consolidation — main becomes the trunk + pending PRs landed
+    status: complete
+    owner: Binz2008-star (CTO session, acting under direct operator
+      "do as u see best" authorization)
+    branch: main / feat/initial-engine (no dedicated feature branch)
+    base_branch: main
+    scope: >-
+      Structural repair only — no engine feature work. (1) Made main the
+      trunk: merged feat/initial-engine into main via PR #1 (merged
+      2026-08-19, merge commit bc079b2b), resolving the README-only main
+      stub. (2) Landed pending work in dependency order: PR #20
+      (feat/quality-gate-decode-integrity, merge commit 268b1bbe) then PR
+      #21 (feat/highlight-ai-ranking, merge commit bd364eef), each CI-green
+      on the updated base. (3) Merged governance layer PR #5
+      (chore/agent-control-plane, merge commit 8a5e0a5e) onto main. (4) CI
+      fix: raised .github/workflows/ci.yml job timeout 15m->30m (full suite
+      + install was timing out). (5) Updated HANDOFF.md + this registry.
+    results: >-
+      main is now the canonical trunk containing the full production engine
+      + governance control plane. PRs #20/#21/#1/#5 merged; CI green at each
+      step (final trunk run 32303818286 SUCCESS). All new work must branch
+      from main. feat/initial-engine is merged into main and kept aligned.
+      The operator's local production worktree at X:\content engine\production
+      still tracks feat/initial-engine and should be switched to main.
+    open_work_recorded_in_HANDOFF: >-
+      PR 2 (AI hook integration), PR 3 (posting-time recommendation), and
+      mypy-as-CI-gate are NOT started; see HANDOFF.md. Studio PRs #2/#3 and
+      task RCE-20260807-STUDIO remain frozen pending operator decision.
+    allowed_paths:
+      - .github/workflows/ci.yml
+      - HANDOFF.md
+      - AI_WORKSPACE/ACTIVE_TASKS.yaml
+    forbidden_paths:
+      - src/**
+      - tests/**
+      - schema.sql
+      - studio/**
+    merge_allowed: false
+    deploy_allowed: false
 
 # Other branches observed on origin at the time this registry was created
 # that are NOT yet registered as tasks (owner/scope unknown to this agent —
