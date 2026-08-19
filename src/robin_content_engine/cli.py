@@ -33,6 +33,11 @@ from .highlight_features import (
     extract_motion_activity,
     generate_time_windows,
 )
+from .highlight_ranking import (
+    HighlightRankingError,
+    rank_highlights,
+    write_ranking_file,
+)
 from .highlight_scoring import score_windows
 from .models import HighlightCandidateResult, HighlightScanResult
 from .pipeline import ContentEngine
@@ -520,6 +525,116 @@ def highlight_scan(
             f"motion={candidate.signals['motion']:.3f} "
             f"scene={candidate.signals['scene']:.3f}"
         )
+
+
+@app.command("highlight-rank")
+def highlight_rank(
+    job_id: Annotated[int, typer.Argument(help="Job ID to rank.")],
+    top: Annotated[
+        int,
+        typer.Option("--top", help="Number of highlight candidates to rank with AI."),
+    ] = 5,
+    as_json: Annotated[
+        bool, typer.Option("--json", help="Print machine-readable JSON instead of a table.")
+    ] = False,
+) -> None:
+    """AI-assisted re-ranking of one job's already-selected highlight
+    candidates.
+
+    Read-only advisory tool: reuses the exact same deterministic highlight
+    analysis as highlight-scan, then asks DeepSeek to reorder the selected
+    candidates best-first for a YouTube Short and suggest a short spoken
+    hook per candidate. Each candidate's per-rank transcript
+    (work/transcripts/job-<id>-rank-<n>.json) is included in the prompt
+    when one is stored. The result - ranked order, per-candidate hooks, and
+    the AI's placement justifications - is written to
+    work/rankings/job-<id>.json.
+
+    The ranking is ADVICE ONLY: it never changes job status, rights state,
+    or upload state, and never auto-approves anything. On ANY AI failure
+    (missing/unusable API key, network error, invalid/partial/unsafe
+    response, exhausted retries) the command falls back to the
+    deterministic score order with no hooks and records the reason.
+    """
+    if top < 1:
+        raise typer.BadParameter("--top must be >= 1.")
+
+    settings = Settings()  # type: ignore[call-arg]
+    job, video_path = _load_rights_confirmed_local_job(job_id)
+
+    try:
+        scenes, selected = _run_highlight_analysis(video_path, top)
+        duration_seconds = scenes[-1].end_seconds
+    except (SceneDetectionError, FeatureExtractionError, ClipSelectionError) as exc:
+        raise typer.BadParameter(str(exc)) from exc
+
+    if not selected:
+        raise typer.BadParameter(f"Job {job_id} has no highlight candidates to rank.")
+
+    generator = ContentGenerator(
+        settings.deepseek_api_key, settings.deepseek_base_url, settings.deepseek_model
+    )
+
+    try:
+        result = rank_highlights(
+            job_id,
+            job["source_title"],
+            duration_seconds,
+            selected,
+            settings,
+            generator,
+            transcripts_dir=settings.work_dir / "transcripts",
+        )
+    except HighlightRankingError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+
+    output_path = write_ranking_file(result, settings.work_dir / "rankings")
+
+    if as_json:
+        payload = {
+            "job_id": result.job_id,
+            "source_title": result.source_title,
+            "duration_seconds": result.duration_seconds,
+            "method": result.method,
+            "ai_failure_reason": result.ai_failure_reason,
+            "output_path": str(output_path),
+            "candidates": [
+                {
+                    "new_rank": ranked.new_rank,
+                    "original_rank": ranked.original_rank,
+                    "start_seconds": ranked.candidate.start_seconds,
+                    "end_seconds": ranked.candidate.end_seconds,
+                    "duration_seconds": ranked.candidate.duration_seconds,
+                    "score": ranked.candidate.score,
+                    "signals": {
+                        "audio": ranked.candidate.audio_score,
+                        "motion": ranked.candidate.motion_score,
+                        "scene": ranked.candidate.scene_signal,
+                    },
+                    "reason": ranked.candidate.reason,
+                    "hook": ranked.hook,
+                    "ai_reason": ranked.ai_reason,
+                }
+                for ranked in result.candidates
+            ],
+        }
+        typer.echo(json.dumps(payload, ensure_ascii=False, indent=2))
+        return
+
+    typer.echo(f"Job {result.job_id}: {result.source_title}")
+    typer.echo(f"Source duration: {result.duration_seconds:.1f}s")
+    typer.echo(f"Method: {result.method}")
+    if result.ai_failure_reason:
+        typer.echo(f"AI failure (fell back to score order): {result.ai_failure_reason}")
+    typer.echo(f"Rankings file: {output_path}")
+    for ranked in result.candidates:
+        hook = ranked.hook or "(no hook - deterministic fallback)"
+        typer.echo(
+            f"  #{ranked.new_rank} (was #{ranked.original_rank}) "
+            f"[{ranked.candidate.start_seconds:.1f}s - {ranked.candidate.end_seconds:.1f}s] "
+            f"score={ranked.candidate.score:.3f} - {ranked.candidate.reason}"
+        )
+        typer.echo(f"      hook: {hook}")
 
 
 @app.command("highlight-cut")
