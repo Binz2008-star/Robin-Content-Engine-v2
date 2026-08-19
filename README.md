@@ -104,6 +104,15 @@ robin-engine channel-long-videos --min-seconds 60 --limit 20
 # and queue it (add --execute-private-upload to publish immediately).
 robin-engine channel-import <VIDEO_ID> [<VIDEO_ID> ...] --no-upload
 
+Without `YOUTUBE_COOKIES_FILE`, yt-dlp can only use the no-cookie
+`android` client and own-channel videos typically download at **360p** (the
+clips still look fine thanks to the 1080x1920 upscale, but HD is better).
+Export a `cookies.txt` from your logged-in browser (e.g. the "Get
+cookies.txt" extension), point `YOUTUBE_COOKIES_FILE` at it, and imports
+download at up to 1080p. Imported jobs record their source resolution in
+the rights note (e.g. "Downloaded at 1920x1080 (HD source)"), and SD
+downloads log a warning with this hint.
+
 # Fix titles/descriptions/tags across the channel with AI metadata.
 # Resumable + quota-aware: state lives in work/metadata_plan.json.
 robin-engine channel-metadata-fix --status
@@ -128,6 +137,7 @@ default capture names (e.g. "Black ops", "Furniture") become neutral
 | `YOUTUBE_PUBLIC_AFTER_UPLOAD` | false | Flip each upload to public after private upload |
 | `YOUTUBE_MAX_UPLOADS_PER_DAY` | 4 | Ban-safety cap on automatic uploads per day |
 | `YOUTUBE_EXPECTED_CHANNEL_ID` | - | Channel pin - uploads abort on mismatch |
+| `YOUTUBE_COOKIES_FILE` | - | Browser cookies.txt for HD yt-dlp downloads (channel-import) |
 | `HIGHLIGHT_MIN_SECONDS` | 15 | Highlight window floor (production 25) |
 | `HIGHLIGHT_MAX_SECONDS` | 60 | Highlight window ceiling (production 45) |
 | `CAPTURE_SOURCE_DIR` | - | Local capture directory to scan |

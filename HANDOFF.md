@@ -33,6 +33,14 @@ only - no internet scraping, ever.**
 - **23 uploaded**, 0 failed, 8 quarantined (non-gaming/rejects + 7s clip).
 - **Daily upload cap: 4/day** (`YOUTUBE_MAX_UPLOADS_PER_DAY=4`) — raised
   from 2 now that YouTube's `uploadLimitExceeded` cool-down has resolved.
+- **HD channel-import downloads (2026-08-19):** imports are capped at
+  360p because the no-cookie android yt-dlp client is the only working
+  path. To get 720p/1080p sources, export a browser `cookies.txt`, set
+  `YOUTUBE_COOKIES_FILE` in `.env`, and re-import. Existing downloads
+  aren't re-fetched (idempotent cache) — delete the specific
+  `work/downloads/<id>.mp4` file first to force a re-download. Imported
+  jobs now record source resolution in the rights note (HD/SD), and SD
+  downloads log a warning.
 - **Video quality overhaul (2026-08-19):** the 9:16 reframe now always
   delivers **1080x1920** (lanczos upscale, CRF 18, was: tiny 200-360p crops
   at a fixed 4000k bitrate), caption burn-in re-encodes at CRF 18 (was 23),

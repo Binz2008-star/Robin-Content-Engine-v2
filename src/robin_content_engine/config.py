@@ -45,6 +45,11 @@ class Settings(BaseSettings):
     youtube_token_file: Path = Path("token.json")
     youtube_category_id: str = "20"
     youtube_expected_channel_id: str | None = None
+    # Optional path to a browser-cookies.txt export for yt-dlp
+    # (channel-import). Without it, yt-dlp falls back to the android
+    # client and own-channel videos typically download at only 360p; with
+    # it, the authenticated web client unlocks 720p/1080p sources.
+    youtube_cookies_file: Path | None = None
     # When True, every successful upload is automatically flipped to
     # "public" immediately after the private upload + receipt complete.
     # The upload itself still goes out private first (the proven path);
@@ -109,10 +114,11 @@ class Settings(BaseSettings):
             "work_dir",
             "youtube_client_secret_file",
             "youtube_token_file",
+            "youtube_cookies_file",
             "capture_source_dir",
         ):
-            path: Path = getattr(self, attribute)
-            if not path.is_absolute():
+            path: Path | None = getattr(self, attribute)
+            if path is not None and not path.is_absolute():
                 setattr(self, attribute, (APP_ROOT / path).resolve())
         return self
 
