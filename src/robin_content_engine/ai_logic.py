@@ -5,7 +5,7 @@ from openai import OpenAI
 from pydantic import ValidationError
 from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 
-from .models import GeneratedContent
+from .models import CandidateRankingResult, GeneratedContent
 
 # Matches the trailing timestamp that capture tooling appends to file names,
 # e.g. "Fortnite   2026-08-15 22-20-30" or "Senua's Saga_ Hellblade 2 ...".
@@ -92,6 +92,54 @@ def validate_generated_metadata(
     for marker in CLICKBAIT_MARKERS:
         if marker in clean_title or marker in clean_description:
             raise MetadataValidationError(f"contains banned phrase {marker!r}.")
+
+
+def validate_ranking_coverage(
+    ranking: CandidateRankingResult, candidate_count: int
+) -> None:
+    """Deterministic safety check for an AI highlight re-ranking: the
+    response must list EVERY candidate exactly once, keyed by the
+    candidate's original 1-based rank, and nothing else. A partial,
+    duplicated, or out-of-range ordering would silently drop or double a
+    highlight, so any of those makes the whole response unusable and raises
+    ContentGenerationError - the caller then falls back to the
+    deterministic score order."""
+    if candidate_count < 1:
+        raise ContentGenerationError(
+            f"Invalid candidate ranking: candidate_count must be >= 1, got {candidate_count}."
+        )
+    seen: set[int] = set()
+    for entry in ranking.ranking:
+        candidate_id = entry.candidate
+        if candidate_id < 1 or candidate_id > candidate_count:
+            raise ContentGenerationError(
+                f"Invalid candidate ranking: candidate id {candidate_id} is outside "
+                f"[1, {candidate_count}]."
+            )
+        if candidate_id in seen:
+            raise ContentGenerationError(
+                f"Invalid candidate ranking: candidate id {candidate_id} is listed more "
+                "than once."
+            )
+        seen.add(candidate_id)
+    if len(seen) != candidate_count:
+        raise ContentGenerationError(
+            f"Invalid candidate ranking: listed {len(seen)} of {candidate_count} "
+            "candidates."
+        )
+
+
+def validate_ranking_hooks(ranking: CandidateRankingResult) -> None:
+    """Deterministic safety check on every suggested hook: a hook that
+    contains a banned clickbait/unverifiable-claim phrase is rejected before
+    it could ever be burned into a caption by a later PR. Applies the same
+    CLICKBAIT_MARKERS the metadata generator is forbidden from producing."""
+    for entry in ranking.ranking:
+        for marker in CLICKBAIT_MARKERS:
+            if marker in entry.hook:
+                raise ContentGenerationError(
+                    f"Unsafe candidate hook: contains banned phrase {marker!r}."
+                )
 
 
 class ContentGenerator:
@@ -317,3 +365,114 @@ class ContentGenerator:
             },
         ]
         return self._complete(messages)
+
+    @staticmethod
+    def _ranking_system_prompt(language: str) -> str:
+        if language == "english":
+            return (
+                "You help rank already-selected highlight clips from ORIGINAL gameplay "
+                "footage for a gaming channel (Robin Life & Gaming) that publishes YouTube "
+                "Shorts for a MIXED audience - UAE/Arabic gamers and international "
+                "English-speaking viewers. Write in clear, natural, casual English that "
+                "works for both.\n"
+                "The pipeline has already selected several highlight candidate windows from "
+                "the source video, each with deterministic, normalized (0-1) scores for "
+                "audio activity, motion, and scene-cut density, plus an optional transcript "
+                "of the clip's speech. You cannot see the video itself.\n"
+                "STRICT rules:\n"
+                "- Reorder ALL candidate windows best-first for a YouTube Short. The "
+                "'ranking' array MUST include every candidate exactly once, keyed by the "
+                "candidate's original number (the 'candidate' field).\n"
+                "- For each candidate, write a short spoken 'hook' line in casual English "
+                "for the mixed audience - the punchy opening line a player would say, 2-120 "
+                "characters. Never reuse the same hook between candidates.\n"
+                "- Base your judgment ONLY on the signal scores and any transcript text. "
+                "NEVER invent specific in-game events, weapon names, characters, "
+                "locations, or results.\n"
+                "- No clickbait, no live-stream or tournament claims, no false promises, no "
+                "guaranteed wins, records, or achievements.\n"
+                "- Keep each 'reason' to one short, specific sentence justifying that "
+                "placement.\n"
+                "- Return one JSON object only."
+            )
+        return (
+            "You help rank already-selected highlight clips from ORIGINAL gameplay footage "
+            "for an Arabic gaming channel (Robin Life & Gaming) that publishes YouTube "
+            "Shorts. Write in natural, casual Gulf/UAE Arabic - exactly how a young Gulf "
+            "gamer talks with friends, NOT formal news Arabic.\n"
+            "The pipeline has already selected several highlight candidate windows from the "
+            "source video, each with deterministic, normalized (0-1) scores for audio "
+            "activity, motion, and scene-cut density, plus an optional transcript of the "
+            "clip's speech. You cannot see the video itself.\n"
+            "STRICT rules:\n"
+            "- Reorder ALL candidate windows best-first for a YouTube Short. The 'ranking' "
+            "array MUST include every candidate exactly once, keyed by the candidate's "
+            "original number (the 'candidate' field).\n"
+            "- For each candidate, write a short spoken 'hook' line in casual Gulf Arabic - "
+            "the punchy opening line a gamer would say, 2-120 characters. Never reuse the "
+            "same hook between candidates.\n"
+            "- Base your judgment ONLY on the signal scores and any transcript text. NEVER "
+            "invent specific in-game events, weapon names, characters, locations, or "
+            "results.\n"
+            "- No clickbait ('شاهد قبل الحذف', 'قبل ما ينحذف'), no live-stream or "
+            "tournament claims ('بث مباشر', 'سحبنا بث', 'بطولة', 'مباراة'), no false "
+            "promises, no guaranteed wins, records, or achievements ('الرقم القياسي', "
+            "'فزنا').\n"
+            "- Keep each 'reason' to one short, specific sentence justifying that "
+            "placement.\n"
+            "- Return one JSON object only."
+        )
+
+    def _complete_ranking(
+        self, messages: list[dict[str, str]], candidate_count: int
+    ) -> CandidateRankingResult:
+        """Mirrors _complete()'s validated-JSON pattern for the highlight
+        re-ranking response: parse, validate via CandidateRankingResult,
+        then enforce the deterministic full-coverage and hook-safety checks.
+        No retry logic here - the public rank_candidates() wraps it with the
+        same tenacity retry the other public methods use."""
+        response = self.client.chat.completions.create(
+            model=self.model,
+            response_format={"type": "json_object"},
+            temperature=0.7,
+            messages=messages,
+        )
+        raw = response.choices[0].message.content
+        if not raw:
+            raise ContentGenerationError("DeepSeek returned an empty response")
+        try:
+            ranking = CandidateRankingResult.model_validate(json.loads(raw))
+        except (ValidationError, TypeError, KeyError) as exc:
+            raise ContentGenerationError(f"Invalid candidate ranking: {exc}") from exc
+        try:
+            validate_ranking_coverage(ranking, candidate_count)
+            validate_ranking_hooks(ranking)
+        except ContentGenerationError:
+            raise
+        return ranking
+
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=1, max=8),
+        retry=retry_if_exception_type((ContentGenerationError, json.JSONDecodeError)),
+        reraise=True,
+    )
+    def rank_candidates(
+        self,
+        context: str,
+        language: str = "arabic",
+        *,
+        candidate_count: int,
+    ) -> CandidateRankingResult:
+        """Ask DeepSeek to re-rank a job's ALREADY-selected highlight
+        candidates and suggest a short spoken hook per candidate. `context`
+        is the fully rendered candidate/transcript block built by
+        highlight_ranking.py; `language` follows the channel's metadata
+        language. Raises ContentGenerationError (after retries) on ANY
+        failure - empty, malformed, partial-coverage, or unsafe response -
+        so the caller's deterministic score-order fallback takes over."""
+        messages = [
+            {"role": "system", "content": self._ranking_system_prompt(language)},
+            {"role": "user", "content": context},
+        ]
+        return self._complete_ranking(messages, candidate_count)

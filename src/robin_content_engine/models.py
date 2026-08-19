@@ -52,6 +52,33 @@ class GeneratedContent(BaseModel):
         return cleaned[:20]
 
 
+class RankedCandidateResult(BaseModel):
+    """One entry of an AI-generated highlight re-ranking response: the
+    candidate's original 1-based rank (as assigned by the deterministic
+    highlight analysis), a short spoken "hook" line (a later PR burns it in
+    as the opening caption), and a short placement justification."""
+
+    candidate: int = Field(ge=1)
+    hook: str = Field(min_length=2, max_length=120)
+    reason: str = Field(min_length=1, max_length=500)
+
+    @field_validator("hook", "reason")
+    @classmethod
+    def normalize_text(cls, value: str) -> str:
+        return " ".join(value.split()).strip()
+
+
+class CandidateRankingResult(BaseModel):
+    """The validated JSON contract for an AI highlight re-ranking: an
+    ordered list of RankedCandidateResult entries, first = best. Full
+    coverage - every candidate listed exactly once - cannot be expressed as
+    a pydantic constraint (the candidate count is only known at call time),
+    so ai_logic.py enforces it with a deterministic validator before the
+    response is accepted."""
+
+    ranking: list[RankedCandidateResult] = Field(min_length=1)
+
+
 class RenderResult(BaseModel):
     output_path: Path
     duration_seconds: float = Field(gt=0, le=60.5)
