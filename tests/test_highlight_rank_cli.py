@@ -11,6 +11,7 @@ SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
+import click  # noqa: E402
 import pytest  # noqa: E402
 from typer.testing import CliRunner  # noqa: E402
 
@@ -194,7 +195,11 @@ def test_rejects_zero_top(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> No
     result = CliRunner().invoke(cli_app, ["highlight-rank", "1", "--top", "0"])
 
     assert result.exit_code != 0
-    assert "--top" in result.output
+    # typer colorizes the option name in the "Invalid value" message with
+    # ANSI codes split across the string (e.g. `\x1b[1;36m-\x1b[0m\x1b[1;36m-top\x1b[0m`),
+    # so the literal substring "--top" is NOT present when color is enabled
+    # (as on CI). Assert on the unstyled message instead.
+    assert "must be >= 1." in click.unstyle(result.output)
 
 
 # ---------------------------------------------------------------------------
