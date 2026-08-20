@@ -37,7 +37,10 @@ only - no internet scraping, ever.**
 - PR #22 `feat/ai-hook-integration` → `main` — AI hook integration (PR 2):
   opening-caption hook, metadata hook, transcript persistence. Merge commit `b1f5b5ae`.
 - PR #23 `feat/mypy-ci-gate` → `main` — mypy is now a blocking CI gate; the
-  whole package is type-clean (32 files, zero errors). Merge commit `323467a5`.
+  whole package is type-clean (33 files, zero errors). Merge commit `323467a5`.
+- PR #24 `feat/posting-time-recommendation` → `main` — PR 3: read-only,
+  advisory `robin-engine posting-report` (weekday/hour windows by median
+  views, default Asia/Dubai). Merge commit `7abcc25`.
 - CI infra: `.github/workflows/ci.yml` `timeout-minutes` 15 → 30, plus a
   blocking `mypy` step.
 - Mypy is configured (strict) and now enforced in CI.
@@ -118,12 +121,14 @@ should branch from `main`.
    persisted to `work/transcripts/job-<id>-rank-<n>.json` (format v1) for
    ranking re-runs. Merge commit `b1f5b5ae`.
 2. **mypy gate (DONE — merged into main as PR #23, 2026-08-20).** `mypy` is
-   now a blocking CI step; the whole package is genuinely type-clean (32
-   files, zero errors). All five pre-existing findings fixed with real types
-   (no exclusions / type-ignore / casts). Merge commit `323467a5`.
-3. **PR 3 (NOT started): posting-time recommendation.** Read-only report from
-   `youtube_videos` (published_at + view_count) suggesting best posting
-   windows. No scheduler, no upload authority.
+   now a blocking CI step; the whole package is genuinely type-clean (33
+   files, zero errors). All pre-existing findings fixed with real types (no
+   exclusions / type-ignore / casts). Merge commit `323467a5`.
+3. **PR 3 (DONE — merged into main as PR #24, 2026-08-20).** Posting-time
+   recommendation: `robin-engine posting-report` is a read-only, advisory
+   analysis of the channel's own PUBLIC-video history (weekday/hour windows,
+   ranked by median views, default Asia/Dubai). No scheduler, no upload
+   authority. Merge commit `7abcc25`.
 4. **Open decision (operator): Studio disposition.** PRs #2/#3
    (`feat/studio-ui`, `feat/studio-api-readiness`) are a React/Vite + FastAPI
    sub-project frozen since 2026-08-06 and stale relative to the engine. The

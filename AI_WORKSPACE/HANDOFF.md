@@ -1828,3 +1828,22 @@ Deploy authorized: no
 Guardrails honored: zero DB writes, zero YouTube writes, no schema change,
 no rights/upload/budget-gate behavior touched, deterministic pure analysis
 fully tested without a database, mypy + ruff clean.
+
+## RCE-20260820-POSTTIME3 — 2026-08-20 (MERGED / CLOSED)
+
+Task ID: RCE-20260820-POSTTIME3
+Agent: Binz2008-star (CTO session)
+Branch: feat/posting-time-recommendation
+PR: #24 — marked ready for review, then merge-merged into main. Merge
+  commit 7abcc25acc5c9ad83cc42939bc144a5ad4b463a0, 2026-08-20T03:16:42Z.
+Status: complete
+Files changed: unchanged from the implementation entry (5 files)
+Tests: 570 passed / 8 skipped / 0 failed locally (13 new tests)
+CI: PASS — run 32326425295 (CI incl. mypy + ruff) + run 32326425384
+  (scope guard)
+Known blockers: none
+Next action: All three queued engine items (PR 2 hook integration, mypy
+  gate, PR 3 posting-time) are now merged into main. The only remaining
+  open item is the Studio disposition decision (operator's call).
+Merge authorized: yes — operator standing authorization + explicit "do it"
+Deploy authorized: no

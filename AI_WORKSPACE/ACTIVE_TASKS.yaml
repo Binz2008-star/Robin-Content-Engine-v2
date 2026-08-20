@@ -2461,12 +2461,25 @@ tasks:
 
   - id: RCE-20260820-POSTTIME3
     title: PR 3 — posting-time recommendation (read-only advisory report)
-    status: active
+    status: complete
     owner: Binz2008-star (CTO session, direct operator "do it" for the
       recommended PR 3 order)
     branch: feat/posting-time-recommendation
     base_branch: main
     base_sha: 736fe6f7ea7c94107bd69a68ac1f21d8d7e2f837
+    pr: 24
+    pr_state: merged
+    merged: true
+    merge_method: merge
+    merge_commit_sha: 7abcc25acc5c9ad83cc42939bc144a5ad4b463a0
+    merged_into: main
+    merged_at: 2026-08-20T03:16:42Z
+    ci: >-
+      Both checks green on PR #24: CI run 32326425295 SUCCESS (full suite
+      incl. blocking mypy + ruff) and Agent Scope Guard 32326425384 SUCCESS.
+      Locally 570 passed / 8 skipped / 0 failed, mypy Success (33 files),
+      ruff clean. Operator standing authorization "merge on green; you
+      review and merge yourself as well" + explicit "do it".
     scope: >-
       Read-only, advisory analysis of the channel's OWN published-video
       history (youtube_videos published_at + view_count for current PUBLIC
