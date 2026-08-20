@@ -2459,6 +2459,48 @@ tasks:
       - `pytest` and `ruff` must stay green
       - CI workflow gains a blocking `mypy` step
 
+  - id: RCE-20260820-POSTTIME3
+    title: PR 3 — posting-time recommendation (read-only advisory report)
+    status: active
+    owner: Binz2008-star (CTO session, direct operator "do it" for the
+      recommended PR 3 order)
+    branch: feat/posting-time-recommendation
+    base_branch: main
+    base_sha: 736fe6f7ea7c94107bd69a68ac1f21d8d7e2f837
+    scope: >-
+      Read-only, advisory analysis of the channel's OWN published-video
+      history (youtube_videos published_at + view_count for current PUBLIC
+      videos): bucket by local weekday/hour (default Asia/Dubai), rank
+      windows by median views, and print a report (text or --json) with a
+      suggested posting recommendation. New `robin-engine posting-report`
+      command. PURELY ADVISORY: no scheduler, no upload authority, no DB
+      writes, no change to any job/rights/upload state.
+    allowed_paths:
+      - src/robin_content_engine/posting_time.py
+      - src/robin_content_engine/cli.py
+      - tests/test_posting_time.py
+      - AI_WORKSPACE/ACTIVE_TASKS.yaml
+      - AI_WORKSPACE/HANDOFF.md
+      - HANDOFF.md
+    forbidden_paths:
+      - schema.sql
+      - studio/**
+      - src/robin_content_engine/database.py
+      - src/robin_content_engine/publishing.py
+      - src/robin_content_engine/upload_budget.py
+      - src/robin_content_engine/production_runner.py
+      - .env
+      - client_secret*.json
+      - token*.json
+    merge_allowed: false
+    deploy_allowed: false
+    stop_conditions:
+      - read-only SELECT only - zero DB writes, zero YouTube writes
+      - no scheduler, no auto-publish, no changes to rights/upload/budget
+        gates
+      - analysis must be deterministic and pure (testable without DB)
+      - full `mypy` + `ruff` + `pytest` must stay green
+
 # Other branches observed on origin at the time this registry was created
 # that are NOT yet registered as tasks (owner/scope unknown to this agent —
 # not fabricated here). Whoever owns them should add a task entry above
