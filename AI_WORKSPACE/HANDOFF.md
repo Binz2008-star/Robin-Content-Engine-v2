@@ -1705,3 +1705,21 @@ Deploy authorized: no
 Guardrails honored: no schema.sql/database.py/upload_budget.py/publishing.py
 change; no rights/upload/budget-gate behavior touched; hooks and transcripts
 are local advisory files only; no real YouTube/network/LLM in tests.
+
+## RCE-20260820-HOOK2 — 2026-08-20 (MERGED / CLOSED)
+
+Task ID: RCE-20260820-HOOK2
+Agent: Binz2008-star (CTO session)
+Branch: feat/ai-hook-integration
+PR: #22 — marked ready for review, then merge-merged into main. Merge
+  commit b1f5b5ae85e91374ba511d5d9f495465dd75463e, 2026-08-20T01:34:43Z.
+Status: complete
+Files changed: unchanged from the implementation entry (10 files)
+Tests: 555 passed / 8 skipped / 0 failed locally (18 new tests)
+CI: PASS — run 32309704746 (CI, full suite) + run 32309704740 (scope guard)
+Known blockers: none
+Next action: PR 3 (posting-time recommendation) and the mypy-as-CI-gate
+  infra task remain queued; see HANDOFF.md.
+Merge authorized: yes — operator explicit "merge on green; you review and
+  merge yourself as well"
+Deploy authorized: no

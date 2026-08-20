@@ -32,8 +32,10 @@ only - no internet scraping, ever.**
 - PR #20 `feat/quality-gate-decode-integrity` → `feat/initial-engine` (now in
   main) — quality gate full-decodes artifacts, rejects corrupt/truncated
   files. Merge commit `268b1bbe`.
-- PR #21 `feat/highlight-ai-ranking` → `feat/initial-engine` (now in main) —
-  AI-assisted candidate ranking (advice-only). Merge commit `bd364eef`.
+- PR #21 `feat/highlight-ai-ranking` → `feat/initial-engine` (now in
+  main) — AI-assisted candidate ranking (advice-only). Merge commit `bd364eef`.
+- PR #22 `feat/ai-hook-integration` → `main` — AI hook integration (PR 2):
+  opening-caption hook, metadata hook, transcript persistence. Merge commit `b1f5b5ae`.
 - CI infra: `.github/workflows/ci.yml` `timeout-minutes` 15 → 30.
 - Mypy is configured (strict) but NOT yet a CI gate — see Open Work.
 
@@ -107,21 +109,19 @@ $env:YOUTUBE_EXPECTED_CHANNEL_ID="UCIcvbGsmSwMDXxjWXq4QG8A"
 Everything on the trunk is committed, pushed, and CI-green. A new session
 should branch from `main`.
 
-1. **PR 2 (NOT started): AI hook integration.** Burn the PR-21 hook as the
-   OPENING caption (captioner `segments_to_srt`/`burn_captions` `hook_text`)
-   and use it in `build_production_metadata`; persist ASR transcripts to
-   `work/transcripts/job-<id>-rank-<n>.json` in the format PR-21's
-   `highlight_ranking.load_transcript()` reads (format version 1:
-   `{"format_version":1,"segments":[...]}`), so the ranking can consume them
-   on re-runs. Fallback = no hook (ranking reports `hook: null`). Must NOT
-   touch rights/upload/budget gates.
+1. **PR 2 (DONE — merged into main as PR #22, 2026-08-20).** AI hook
+   integration is live: `highlight-rank` hooks are burned as the opening
+   caption, used in `build_production_metadata`, and ASR transcripts are
+   persisted to `work/transcripts/job-<id>-rank-<n>.json` (format v1) for
+   ranking re-runs. Merge commit `b1f5b5ae`.
 2. **PR 3 (NOT started): posting-time recommendation.** Read-only report from
    `youtube_videos` (published_at + view_count) suggesting best posting
    windows. No scheduler, no upload authority.
 3. **Infra (NOT started): make mypy a CI gate.** `mypy strict` is configured
    but never runs in CI. Add `mypy src` to `.github/workflows/ci.yml`.
-   Expect to fix a handful of pre-existing type issues when first enabled
-   (a numpy-stub/Python-version conflict was noted in Phase 10).
+   Expect a handful of pre-existing findings to fix on first enablement
+   (upload_budget.py:49; ai_logic.py:325/447 OpenAI overloads; channel_import.py:104
+   yt_dlp stubs).
 4. **Open decision (operator): Studio disposition.** PRs #2/#3
    (`feat/studio-ui`, `feat/studio-api-readiness`) are a React/Vite + FastAPI
    sub-project frozen since 2026-08-06 and stale relative to the engine. The
