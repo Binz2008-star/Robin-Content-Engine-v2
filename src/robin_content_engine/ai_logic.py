@@ -2,6 +2,8 @@ import json
 import re
 
 from openai import OpenAI
+from openai.types.chat import ChatCompletionMessageParam
+from openai.types.shared_params import ResponseFormatJSONObject
 from pydantic import ValidationError
 from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 
@@ -30,6 +32,11 @@ CLICKBAIT_MARKERS: tuple[str, ...] = (
 _TITLE_MAX_LENGTH = 100
 _DESCRIPTION_MAX_LENGTH = 5000
 _TAG_MAX_COUNT = 20
+
+# The DeepSeek API accepts the same JSON-object response format the OpenAI
+# SDK types as a TypedDict; a module-level typed constant keeps every call
+# site passing the correctly-typed object instead of an untyped dict.
+_JSON_RESPONSE_FORMAT: ResponseFormatJSONObject = {"type": "json_object"}
 
 
 class ContentGenerationError(RuntimeError):
@@ -321,10 +328,10 @@ class ContentGenerator:
             "{\n" + fields + "\n}"
         )
 
-    def _complete(self, messages: list[dict[str, str]]) -> GeneratedContent:
+    def _complete(self, messages: list[ChatCompletionMessageParam]) -> GeneratedContent:
         response = self.client.chat.completions.create(
             model=self.model,
-            response_format={"type": "json_object"},
+            response_format=_JSON_RESPONSE_FORMAT,
             temperature=0.85,
             messages=messages,
         )
@@ -351,7 +358,7 @@ class ContentGenerator:
         """Generate gaming metadata. `language` is 'arabic' (Gulf Arabic, the
         default) or 'english' (clear English aimed at a mixed UAE/AE +
         international audience, with mixed EN/AR hashtags)."""
-        messages = [
+        messages: list[ChatCompletionMessageParam] = [
             {"role": "system", "content": self._system_prompt(language)},
             {"role": "user", "content": self._game_user_prompt(video_context, language)},
         ]
@@ -370,7 +377,7 @@ class ContentGenerator:
         default/junk and whose content cannot be seen. The prompt is forced
         to stay neutral - it never names a game, person, or event it cannot
         verify, so an unknown-content clip is never mislabeled."""
-        messages = [
+        messages: list[ChatCompletionMessageParam] = [
             {"role": "system", "content": self._archive_system_prompt(language)},
             {
                 "role": "user",
@@ -437,7 +444,7 @@ class ContentGenerator:
         )
 
     def _complete_ranking(
-        self, messages: list[dict[str, str]], candidate_count: int
+        self, messages: list[ChatCompletionMessageParam], candidate_count: int
     ) -> CandidateRankingResult:
         """Mirrors _complete()'s validated-JSON pattern for the highlight
         re-ranking response: parse, validate via CandidateRankingResult,
@@ -446,7 +453,7 @@ class ContentGenerator:
         same tenacity retry the other public methods use."""
         response = self.client.chat.completions.create(
             model=self.model,
-            response_format={"type": "json_object"},
+            response_format=_JSON_RESPONSE_FORMAT,
             temperature=0.7,
             messages=messages,
         )
@@ -484,7 +491,7 @@ class ContentGenerator:
         language. Raises ContentGenerationError (after retries) on ANY
         failure - empty, malformed, partial-coverage, or unsafe response -
         so the caller's deterministic score-order fallback takes over."""
-        messages = [
+        messages: list[ChatCompletionMessageParam] = [
             {"role": "system", "content": self._ranking_system_prompt(language)},
             {"role": "user", "content": context},
         ]

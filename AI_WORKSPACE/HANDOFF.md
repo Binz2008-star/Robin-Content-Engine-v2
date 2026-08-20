@@ -1723,3 +1723,51 @@ Next action: PR 3 (posting-time recommendation) and the mypy-as-CI-gate
 Merge authorized: yes — operator explicit "merge on green; you review and
   merge yourself as well"
 Deploy authorized: no
+
+## RCE-20260820-MYPY — 2026-08-20
+
+Task ID: RCE-20260820-MYPY
+Agent: Binz2008-star (CTO session, under operator direction: infrastructure
+  hardening, NOT refactoring)
+Branch: feat/mypy-ci-gate
+PR: draft (against main)
+Status: review — implementation complete, mypy clean, tests green locally,
+  CI pending
+Files changed: pyproject.toml, .github/workflows/ci.yml,
+  src/robin_content_engine/{upload_budget.py, ai_logic.py, channel_import.py},
+  tests/test_upload_budget.py, ACTIVE_TASKS.yaml
+Tests: 557 passed / 8 skipped / 0 failed locally (2 new upload_budget tests)
+CI: pending on the draft PR (new blocking `mypy` step added)
+Known blockers: none
+Next action: CI green → operator review → merge into main. Then PR 3
+  (posting-time recommendation) remains the only queued engine item.
+Merge authorized: no (draft PR; operator to approve)
+Deploy authorized: no
+
+### What was fixed (each finding understood, not suppressed)
+
+1. **upload_budget.py:49** — `int(payload.get("count", 0))` was coercing
+   `object` into int. Now: the count is narrowed via isinstance to
+   `int | float | str` (bool explicitly rejected since bool subclasses int),
+   then `int()` on the narrowed value. Corrupt/non-numeric state reads as 0,
+   exactly as before.
+2. **ai_logic.py:325 & :447** — the OpenAI SDK's `create()` requires the
+   request TypedDicts: `messages` is now `list[ChatCompletionMessageParam]`
+   (imported from `openai.types.chat`) and `response_format` uses a
+   module-level typed constant `_JSON_RESPONSE_FORMAT:
+   ResponseFormatJSONObject` (the shared_params TypedDict variant the SDK's
+   overload actually declares). The three message-building sites are
+   annotated so the literals infer against the union. Runtime behavior is
+   byte-identical.
+3. **channel_import.py:104 (+:138)** — installed the OFFICIAL `types-yt-dlp`
+   stubs in the dev extra (not a mypy exclusion). The options dict is now
+   typed as yt-dlp's `_Params` TypedDict, imported under TYPE_CHECKING (a
+   `@type_check_only` type — this is the sanctioned pattern, not a
+   suppression).
+4. **.github/workflows/ci.yml** — added a blocking `mypy` step between Lint
+   and Test; dev extra now includes `types-yt-dlp>=2026.7,<2027` so CI
+   installs the stubs.
+
+Verified: `mypy` (whole package) = Success, 32 source files, zero errors;
+`ruff check .` clean; `pytest` 557 passed / 8 skipped / 0 failed. Diff
+contains NO `# type: ignore`, NO new mypy exclusions, NO casts.

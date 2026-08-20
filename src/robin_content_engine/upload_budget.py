@@ -45,8 +45,15 @@ def daily_uploads_used(settings: Settings) -> int:
     payload = _load(settings)
     if payload.get("date") != date.today().isoformat():
         return 0
+    count = payload.get("count", 0)
+    # The JSON file is written by this module with an integer count, so a
+    # stored value of any other shape is corrupt/malformed data - reject it
+    # (bool is explicitly rejected because bool subclasses int) rather than
+    # coercing an object into an int, which could never be a valid count.
+    if isinstance(count, bool) or not isinstance(count, (int, float, str)):
+        return 0
     try:
-        return int(payload.get("count", 0))
+        return int(count)
     except (TypeError, ValueError):
         return 0
 
