@@ -1771,3 +1771,22 @@ Deploy authorized: no
 Verified: `mypy` (whole package) = Success, 32 source files, zero errors;
 `ruff check .` clean; `pytest` 557 passed / 8 skipped / 0 failed. Diff
 contains NO `# type: ignore`, NO new mypy exclusions, NO casts.
+
+## RCE-20260820-MYPY — 2026-08-20 (MERGED / CLOSED)
+
+Task ID: RCE-20260820-MYPY
+Agent: Binz2008-star (CTO session)
+Branch: feat/mypy-ci-gate
+PR: #23 — marked ready for review, then merge-merged into main. Merge
+  commit 323467a548e2c66a5ecb3359efeb3676664e3fa1, 2026-08-20T02:33:11Z.
+Status: complete
+Files changed: unchanged from the implementation entry (8 files)
+Tests: 557 passed / 8 skipped / 0 failed locally; mypy whole-package clean
+CI: PASS — run 32323827282 (CI incl. blocking mypy step) + run 32323827124
+  (scope guard)
+Known blockers: none
+Next action: PR 3 (posting-time recommendation) is the only remaining queued
+  engine item; Studio disposition still open (operator decision).
+Merge authorized: yes — operator standing authorization + explicit
+  "keep going"
+Deploy authorized: no

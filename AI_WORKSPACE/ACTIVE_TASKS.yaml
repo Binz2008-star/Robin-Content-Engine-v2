@@ -2400,12 +2400,26 @@ tasks:
 
   - id: RCE-20260820-MYPY
     title: Infrastructure hardening — make mypy a blocking CI gate
-    status: active
+    status: complete
     owner: Binz2008-star (CTO session, direct operator direction: treat as
       infrastructure hardening, NOT refactoring)
     branch: feat/mypy-ci-gate
     base_branch: main
     base_sha: a680f14dfb7654a65ba24a38f79543cebae8f6ca
+    pr: 23
+    pr_state: merged
+    merged: true
+    merge_method: merge
+    merge_commit_sha: 323467a548e2c66a5ecb3359efeb3676664e3fa1
+    merged_into: main
+    merged_at: 2026-08-20T02:33:11Z
+    ci: >-
+      Both checks green on PR #23: CI test run 32323827282 SUCCESS (now
+      includes the blocking mypy step) and Agent Scope Guard 32323827124
+      SUCCESS. Locally mypy whole-package Success (32 files), ruff clean,
+      557 passed / 8 skipped / 0 failed. Operator standing authorization
+      "merge on green; you review and merge yourself as well" + explicit
+      "keep going".
     scope: >-
       Make the existing production code genuinely mypy-clean and add mypy
       to CI as a blocking gate. Fix the 5 known pre-existing findings

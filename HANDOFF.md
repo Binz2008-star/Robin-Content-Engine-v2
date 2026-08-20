@@ -36,8 +36,11 @@ only - no internet scraping, ever.**
   main) — AI-assisted candidate ranking (advice-only). Merge commit `bd364eef`.
 - PR #22 `feat/ai-hook-integration` → `main` — AI hook integration (PR 2):
   opening-caption hook, metadata hook, transcript persistence. Merge commit `b1f5b5ae`.
-- CI infra: `.github/workflows/ci.yml` `timeout-minutes` 15 → 30.
-- Mypy is configured (strict) but NOT yet a CI gate — see Open Work.
+- PR #23 `feat/mypy-ci-gate` → `main` — mypy is now a blocking CI gate; the
+  whole package is type-clean (32 files, zero errors). Merge commit `323467a5`.
+- CI infra: `.github/workflows/ci.yml` `timeout-minutes` 15 → 30, plus a
+  blocking `mypy` step.
+- Mypy is configured (strict) and now enforced in CI.
 
 ## How to start the app
 
@@ -114,14 +117,13 @@ should branch from `main`.
    caption, used in `build_production_metadata`, and ASR transcripts are
    persisted to `work/transcripts/job-<id>-rank-<n>.json` (format v1) for
    ranking re-runs. Merge commit `b1f5b5ae`.
-2. **PR 3 (NOT started): posting-time recommendation.** Read-only report from
+2. **mypy gate (DONE — merged into main as PR #23, 2026-08-20).** `mypy` is
+   now a blocking CI step; the whole package is genuinely type-clean (32
+   files, zero errors). All five pre-existing findings fixed with real types
+   (no exclusions / type-ignore / casts). Merge commit `323467a5`.
+3. **PR 3 (NOT started): posting-time recommendation.** Read-only report from
    `youtube_videos` (published_at + view_count) suggesting best posting
    windows. No scheduler, no upload authority.
-3. **Infra (NOT started): make mypy a CI gate.** `mypy strict` is configured
-   but never runs in CI. Add `mypy src` to `.github/workflows/ci.yml`.
-   Expect a handful of pre-existing findings to fix on first enablement
-   (upload_budget.py:49; ai_logic.py:325/447 OpenAI overloads; channel_import.py:104
-   yt_dlp stubs).
 4. **Open decision (operator): Studio disposition.** PRs #2/#3
    (`feat/studio-ui`, `feat/studio-api-readiness`) are a React/Vite + FastAPI
    sub-project frozen since 2026-08-06 and stale relative to the engine. The
