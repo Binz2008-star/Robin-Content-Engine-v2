@@ -1790,3 +1790,41 @@ Next action: PR 3 (posting-time recommendation) is the only remaining queued
 Merge authorized: yes — operator standing authorization + explicit
   "keep going"
 Deploy authorized: no
+
+## RCE-20260820-POSTTIME3 — 2026-08-20
+
+Task ID: RCE-20260820-POSTTIME3
+Agent: Binz2008-star (CTO session)
+Branch: feat/posting-time-recommendation
+PR: draft (against main)
+Status: review — implementation complete, tests green locally, CI pending
+Files changed: src/robin_content_engine/posting_time.py (new),
+  src/robin_content_engine/cli.py, tests/test_posting_time.py (new),
+  ACTIVE_TASKS.yaml
+Tests: 570 passed / 8 skipped / 0 failed locally (13 new tests)
+CI: pending on the draft PR
+Known blockers: none
+Next action: CI green → operator review → merge into main. Studio
+  disposition remains the only open item (operator decision).
+Merge authorized: no (draft PR; operator to approve)
+Deploy authorized: no
+
+### What was implemented
+
+1. **posting_time.py (new)**: pure, deterministic `analyze_posting_windows()`
+   that buckets a channel's published-video history into local weekday/hour
+   windows (default Asia/Dubai, no-DST UAE timezone), ranks windows by median
+   views (mean as information), produces weekday + hour aggregates, and a
+   short advisory recommendation. `fetch_published_video_stats()` is a pure
+   read-only SELECT over youtube_videos (is_current + published_at +
+   view_count + privacy_status='public'), and `build_posting_report()`
+   composes them. An empty history is a valid "not enough data yet" report,
+   never an error.
+2. **cli.py**: new `robin-engine posting-report [--json] [--top N]
+   [--min-count N] [--timezone TZ]` command. Advisory, read-only, no
+   scheduler/upload authority; rejects unknown IANA timezones with a clear
+   message; JSON output serializes datetimes as ISO-8601.
+
+Guardrails honored: zero DB writes, zero YouTube writes, no schema change,
+no rights/upload/budget-gate behavior touched, deterministic pure analysis
+fully tested without a database, mypy + ruff clean.

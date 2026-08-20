@@ -3,8 +3,10 @@ import dataclasses
 import json
 import logging
 import tempfile
+from datetime import datetime
 from pathlib import Path
 from typing import Annotated, Any
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import structlog
 import typer
@@ -41,6 +43,7 @@ from .highlight_ranking import (
 from .highlight_scoring import score_windows
 from .models import HighlightCandidateResult, HighlightScanResult
 from .pipeline import ContentEngine
+from .posting_time import WEEKDAY_NAMES, PostingTimeError, build_posting_report
 from .production_runner import (
     ProductionRunError,
     build_production_metadata,
@@ -1465,6 +1468,105 @@ def channel_long_videos_command(
             f"  {video['video_id']}  {minutes}:{seconds:02d}  "
             f"{video['view_count'] or 0} views  {video['title'][:60]}"
         )
+
+
+@app.command("posting-report")
+def posting_report_command(
+    as_json: Annotated[
+        bool, typer.Option("--json", help="Print machine-readable JSON instead of text.")
+    ] = False,
+    top: Annotated[
+        int,
+        typer.Option("--top", help="How many best posting windows to show (>= 1)."),
+    ] = 5,
+    min_count: Annotated[
+        int,
+        typer.Option(
+            "--min-count",
+            help="Only consider windows backed by at least this many videos (>= 1).",
+        ),
+    ] = 1,
+    timezone_name: Annotated[
+        str,
+        typer.Option(
+            "--timezone",
+            help="IANA timezone used for local weekday/hour bucketing (default Asia/Dubai).",
+        ),
+    ] = "Asia/Dubai",
+) -> None:
+    """Advisory posting-time recommendation - read-only.
+
+    Analyses the channel's OWN published-video history (the stored
+    youtube-videos snapshot: published_at + view_count of current PUBLIC
+    videos) and reports which day-of-week/hour windows have historically
+    performed best by median views, plus a short recommendation.
+
+    PURELY ADVISORY and read-only: no scheduler, no upload, no database
+    write, and no change to any job/rights/upload state. Run
+    'robin-engine youtube-sync' first to refresh the snapshot.
+    """
+    try:
+        timezone = ZoneInfo(timezone_name)
+    except ZoneInfoNotFoundError as exc:
+        raise typer.BadParameter(
+            f"Unknown IANA timezone {timezone_name!r}. Example: Asia/Dubai."
+        ) from exc
+
+    settings = Settings()  # type: ignore[call-arg]
+    try:
+        report = build_posting_report(settings, timezone=timezone, min_count=min_count, top_n=top)
+    except PostingTimeError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+
+    if as_json:
+        typer.echo(
+            json.dumps(
+                dataclasses.asdict(report),
+                ensure_ascii=False,
+                indent=2,
+                default=_json_datetime_default,
+            )
+        )
+        return
+
+    typer.echo(
+        f"Posting report ({report.timezone}) - {report.sample_count} public videos, "
+        f"{report.total_views} total views"
+    )
+    if not report.best_windows:
+        typer.echo(report.recommendation)
+        return
+
+    typer.echo("Best windows (median views):")
+    for index, window in enumerate(report.best_windows, start=1):
+        typer.echo(
+            f"  #{index}  {WEEKDAY_NAMES[window.weekday - 1]} {window.hour:02d}:00 - "
+            f"{window.count} video(s), median {window.median_views} "
+            f"(mean {window.mean_views:.0f})"
+        )
+    if report.by_weekday:
+        typer.echo("By weekday (median views):")
+        for stat in report.by_weekday:
+            typer.echo(
+                f"  {WEEKDAY_NAMES[stat.weekday - 1]} - median {stat.median_views} "
+                f"({stat.count} video(s))"
+            )
+    if report.by_hour:
+        typer.echo("By hour (median views):")
+        for hour_stat in report.by_hour:
+            typer.echo(
+                f"  {hour_stat.hour:02d}:00 - median {hour_stat.median_views} "
+                f"({hour_stat.count} video(s))"
+            )
+    typer.echo(f"Recommendation: {report.recommendation}")
+
+
+def _json_datetime_default(value: Any) -> str:
+    """json.dumps default: datetimes render as ISO-8601 strings; anything
+    else is a genuine serialization error."""
+    if isinstance(value, datetime):
+        return value.isoformat()
+    raise TypeError(f"Object of type {type(value).__name__} is not JSON serializable")
 
 
 @app.command("channel-import")
