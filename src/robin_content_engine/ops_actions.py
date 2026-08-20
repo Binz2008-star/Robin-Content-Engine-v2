@@ -149,7 +149,9 @@ def _run_once_inner(settings: Settings, upload: bool) -> str:
         return "\n".join(lines)
     assert result.package is not None
     lines.append(f"Package: {result.package.package_dir}")
-    title, description, tags = build_production_metadata(result.source_title, settings)
+    title, description, tags = build_production_metadata(
+        result.source_title, settings, hook=result.hook
+    )
     lines.append(f"Title: {title}")
     if not upload:
         dry_run(result.package.package_dir, title, description, tags)
@@ -270,7 +272,7 @@ def import_video(settings: Settings, video_id: str, upload: bool = False) -> dic
                 lines.append(upload_budget_summary(settings))
             else:
                 title, description, tags = build_production_metadata(
-                    result.source_title, settings
+                    result.source_title, settings, hook=result.hook
                 )
                 upload_result = execute_private_upload(
                     result.package.package_dir,

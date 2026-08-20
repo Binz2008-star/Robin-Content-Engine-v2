@@ -307,6 +307,258 @@ def test_run_production_happy_path_with_captions(
 
 
 # ---------------------------------------------------------------------------
+# Per-rank transcript persistence + AI hook integration (PR 2)
+# ---------------------------------------------------------------------------
+
+
+def _write_ranking_report(
+    work_dir: Path, job_id: int, entries: list[dict[str, Any]]
+) -> None:
+    """Write a minimal work/rankings/job-<id>.json report the way
+    robin-engine highlight-rank would - enough for _load_rank_hook()."""
+    rankings_dir = work_dir / "rankings"
+    rankings_dir.mkdir(parents=True, exist_ok=True)
+    (rankings_dir / f"job-{job_id}.json").write_text(
+        json.dumps({"format_version": 1, "job_id": job_id, "candidates": entries}),
+        encoding="utf-8",
+    )
+
+
+def test_rank_transcript_persisted_for_ranking_reuse(
+    speech_video: Path, tmp_path: Path, patched_recognizer: type[FakeRecognizer]
+) -> None:
+    repo = FakeRepository()
+    repo.seed(job_id=1, source_path=str(speech_video), rights_confirmed=True)
+    settings = _fake_settings(tmp_path / "work")
+
+    run_production(1, 1, repo, settings)
+
+    transcript_path = tmp_path / "work" / "transcripts" / "job-1-rank-1.json"
+    assert transcript_path.is_file()
+    payload = json.loads(transcript_path.read_text(encoding="utf-8"))
+    assert payload["format_version"] == 1
+    assert payload["job_id"] == 1
+    assert payload["rank"] == 1
+    assert payload["segments"] == [
+        {"start_seconds": 0.0, "end_seconds": 2.0, "text": "hello there"},
+        {"start_seconds": 2.0, "end_seconds": 4.0, "text": "general kenobi"},
+    ]
+
+
+def test_no_transcript_file_when_no_speech(
+    silent_video: Path, tmp_path: Path, patched_recognizer: type[FakeRecognizer]
+) -> None:
+    FakeRecognizer.segments = []
+    repo = FakeRepository()
+    repo.seed(job_id=2, source_path=str(silent_video), rights_confirmed=True)
+    settings = _fake_settings(tmp_path / "work")
+
+    run_production(2, 1, repo, settings)
+
+    transcript_path = tmp_path / "work" / "transcripts" / "job-2-rank-1.json"
+    assert not transcript_path.exists()
+
+
+def test_hook_from_ranking_report_burned_and_reported(
+    speech_video: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    patched_recognizer: type[FakeRecognizer],
+) -> None:
+    real_burn = pr_module.burn_captions
+    captured: dict[str, Any] = {}
+
+    def recording_burn(
+        video_path: Path, output_path: Path, segments: list[TranscriptSegment], hook_text=None
+    ):
+        captured["hook_text"] = hook_text
+        return real_burn(video_path, output_path, segments, hook_text=hook_text)
+
+    monkeypatch.setattr(pr_module, "burn_captions", recording_burn)
+
+    settings = _fake_settings(tmp_path / "work")
+    _write_ranking_report(
+        settings.work_dir,
+        1,
+        [{"new_rank": 1, "original_rank": 1, "hook": "Nice clutch!", "ai_reason": "best"}],
+    )
+    repo = FakeRepository()
+    repo.seed(job_id=1, source_path=str(speech_video), rights_confirmed=True)
+
+    result = run_production(1, 1, repo, settings)
+
+    assert captured["hook_text"] == "Nice clutch!"
+    assert result.hook == "Nice clutch!"
+
+
+def test_no_ranking_report_hook_is_none(
+    speech_video: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    patched_recognizer: type[FakeRecognizer],
+) -> None:
+    real_burn = pr_module.burn_captions
+    captured: dict[str, Any] = {}
+
+    def recording_burn(
+        video_path: Path, output_path: Path, segments: list[TranscriptSegment], hook_text=None
+    ):
+        captured["hook_text"] = hook_text
+        return real_burn(video_path, output_path, segments, hook_text=hook_text)
+
+    monkeypatch.setattr(pr_module, "burn_captions", recording_burn)
+
+    repo = FakeRepository()
+    repo.seed(job_id=1, source_path=str(speech_video), rights_confirmed=True)
+    settings = _fake_settings(tmp_path / "work")
+
+    result = run_production(1, 1, repo, settings)
+
+    assert result.hook is None
+    assert captured["hook_text"] is None
+
+
+def test_hook_missing_for_requested_rank_is_none(
+    speech_video: Path, tmp_path: Path, patched_recognizer: type[FakeRecognizer]
+) -> None:
+    settings = _fake_settings(tmp_path / "work")
+    _write_ranking_report(
+        settings.work_dir,
+        1,
+        [{"new_rank": 1, "original_rank": 2, "hook": "other candidate", "ai_reason": "x"}],
+    )
+    repo = FakeRepository()
+    repo.seed(job_id=1, source_path=str(speech_video), rights_confirmed=True)
+
+    result = run_production(1, 1, repo, settings)
+
+    assert result.hook is None
+
+
+def test_unsafe_hook_ignored(
+    speech_video: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    patched_recognizer: type[FakeRecognizer],
+) -> None:
+    real_burn = pr_module.burn_captions
+    captured: dict[str, Any] = {}
+
+    def recording_burn(
+        video_path: Path, output_path: Path, segments: list[TranscriptSegment], hook_text=None
+    ):
+        captured["hook_text"] = hook_text
+        return real_burn(video_path, output_path, segments, hook_text=hook_text)
+
+    monkeypatch.setattr(pr_module, "burn_captions", recording_burn)
+
+    settings = _fake_settings(tmp_path / "work")
+    # "بطولة" (tournament) is a banned unverifiable-claim marker.
+    _write_ranking_report(
+        settings.work_dir,
+        1,
+        [{"new_rank": 1, "original_rank": 1, "hook": "شاهد هذه البطولة", "ai_reason": "x"}],
+    )
+    repo = FakeRepository()
+    repo.seed(job_id=1, source_path=str(speech_video), rights_confirmed=True)
+
+    result = run_production(1, 1, repo, settings)
+
+    assert result.hook is None
+    assert captured["hook_text"] is None
+
+
+def test_resume_reports_hook_and_keeps_transcript(
+    speech_video: Path, tmp_path: Path, patched_recognizer: type[FakeRecognizer]
+) -> None:
+    settings = _fake_settings(tmp_path / "work")
+    _write_ranking_report(
+        settings.work_dir,
+        1,
+        [{"new_rank": 1, "original_rank": 1, "hook": "Nice clutch!", "ai_reason": "best"}],
+    )
+    repo = FakeRepository()
+    repo.seed(job_id=1, source_path=str(speech_video), rights_confirmed=True)
+
+    first = run_production(1, 1, repo, settings)
+    transcript_path = tmp_path / "work" / "transcripts" / "job-1-rank-1.json"
+    assert transcript_path.is_file()
+
+    second = run_production(1, 1, repo, settings)
+
+    # The second run reuses the already-captioned artifact (no new
+    # transcription) but still reports the hook for publish metadata.
+    assert first.hook == "Nice clutch!"
+    assert second.hook == "Nice clutch!"
+    assert len(FakeRecognizer.instances) == 1
+
+
+def test_build_production_metadata_deterministic_prepends_hook(tmp_path: Path) -> None:
+    settings = _fake_settings(tmp_path / "work")
+    title, description, tags = pr_module.build_production_metadata(
+        "Fortnite match", settings, hook="  Nice  clutch  "
+    )
+    assert title == "Fortnite match — Highlight"
+    assert description.startswith("Nice clutch\n\n")
+    assert tags == []
+
+
+def test_build_production_metadata_blank_hook_unchanged(tmp_path: Path) -> None:
+    settings = _fake_settings(tmp_path / "work")
+    plain = pr_module.build_production_metadata("Fortnite match", settings)
+    with_hook = pr_module.build_production_metadata("Fortnite match", settings, hook="   ")
+    assert with_hook == plain
+
+
+def test_build_production_metadata_ai_path_passes_hook_to_context(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from robin_content_engine import ai_logic as ai_logic_module
+    from robin_content_engine.models import GeneratedContent
+
+    captured: dict[str, Any] = {}
+
+    class FakeGenerator:
+        def __init__(self, *_args: Any, **_kwargs: Any) -> None:
+            pass
+
+        def generate(self, context: str, language: str) -> GeneratedContent:
+            captured["context"] = context
+            captured["language"] = language
+            return GeneratedContent(
+                title="Fortnite clutch highlight",
+                description="A natural description mentioning the hook.",
+                tags=["fortnite"],
+                script="This is a longer script text for the generated content model.",
+            )
+
+    monkeypatch.setattr(ai_logic_module, "ContentGenerator", FakeGenerator)
+    monkeypatch.setattr(
+        ai_logic_module,
+        "build_ai_context",
+        lambda source_title, hook=None: f"ctx|{source_title}|{hook}",
+    )
+
+    settings = SimpleNamespace(
+        work_dir=tmp_path / "work",
+        youtube_ai_metadata=True,
+        deepseek_api_key="k",
+        deepseek_base_url="b",
+        deepseek_model="m",
+        youtube_metadata_language="english",
+    )
+    title, description, tags = pr_module.build_production_metadata(
+        "Fortnite match", settings, hook="Nice clutch!"
+    )
+
+    assert captured["context"] == "ctx|Fortnite match|Nice clutch!"
+    assert captured["language"] == "english"
+    assert title == "Fortnite clutch highlight"
+    assert description == "A natural description mentioning the hook."
+    assert tags == ["fortnite"]
+
+
+# ---------------------------------------------------------------------------
 # No-speech fallback
 # ---------------------------------------------------------------------------
 

@@ -1655,3 +1655,53 @@ Next action: (1) operator switches the X:\content engine\production worktree
   items; see HANDOFF.md.
 Merge authorized: yes — direct operator delegation this session
 Deploy authorized: no
+
+## RCE-20260820-HOOK2 — 2026-08-20
+
+Task ID: RCE-20260820-HOOK2
+Agent: Binz2008-star (CTO session)
+Branch: feat/ai-hook-integration (from main @ 3e9974c)
+PR: draft (opened against main)
+Status: review — implementation complete, tests green locally, CI pending
+Files changed: src/robin_content_engine/captioner.py, ai_logic.py,
+  production_runner.py, cli.py, ops_actions.py; tests/test_captioner.py,
+  test_production_runner.py, test_ai_logic_ranking.py; ACTIVE_TASKS.yaml
+Tests: 555 passed / 8 skipped / 0 failed locally (baseline 537 + 18 new)
+CI: pending on the draft PR
+Known blockers: none. mypy findings in upload_budget.py / ai_logic.py:325,447
+  / channel_import.py are all pre-existing and untouched by this change.
+Next action: CI green → operator review → merge into main. Then PR 3
+  (posting-time recommendation) and the mypy-as-CI-gate infra task are the
+  remaining queued items.
+Merge authorized: no (draft PR; operator to approve)
+Deploy authorized: no
+
+### What was implemented
+
+1. **captioner.py**: `segments_to_srt()` and `burn_captions()` accept an
+   optional `hook_text`. When present, the hook is burned as the FIRST
+   subtitle block (opening caption) spanning 0.0s to a bounded deterministic
+   window (1-3s, anchored to the first ASR segment's start; 2.0s when there
+   is no speech). A blank hook behaves exactly like no hook. Burning still
+   requires at least one readable ASR segment (a hook alone never converts a
+   speechless clip into a captioned one). `segment_count` counts ASR segments
+   only, never the hook.
+2. **ai_logic.py**: `build_ai_context()` accepts an optional hook and, when
+   present, includes it as a factual input for the metadata generator.
+3. **production_runner.py**: after transcription, the job/rank's ASR segments
+   are persisted to `work/transcripts/job-<id>-rank-<n>.json` (format
+   version 1 — exactly what `highlight_ranking.load_transcript()` reads), so
+   a later `highlight-rank` re-run ranks on real transcripts. The AI hook for
+   the candidate being produced is loaded from `work/rankings/job-<id>.json`
+   (matched by `original_rank`), re-validated against the same banned-phrase
+   markers the ranking module uses, burned as the opening caption, and
+   exposed as `ProductionRunResult.hook` for publish metadata. Any
+   missing/invalid/unsafe hook → None (fallback = no hook), never an error.
+   `build_production_metadata()` now takes the hook and uses it in the AI
+   context and (on the deterministic fallback) as the first description line.
+4. **cli.py / ops_actions.py**: all `build_production_metadata(...)` call
+   sites pass `hook=result.hook`.
+
+Guardrails honored: no schema.sql/database.py/upload_budget.py/publishing.py
+change; no rights/upload/budget-gate behavior touched; hooks and transcripts
+are local advisory files only; no real YouTube/network/LLM in tests.

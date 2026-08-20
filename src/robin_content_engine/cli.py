@@ -1279,7 +1279,9 @@ def production_run_once_command(
     assert result.package is not None
     typer.echo(f"Package: {result.package.package_dir}")
 
-    title, description, tags = build_production_metadata(result.source_title, settings)
+    title, description, tags = build_production_metadata(
+        result.source_title, settings, hook=result.hook
+    )
     typer.echo(f"Title: {title}")
 
     if not execute_upload:
@@ -1537,7 +1539,9 @@ def channel_import_command(
             typer.echo(upload_budget_summary(settings))
             continue
 
-        title, description, tags = build_production_metadata(result.source_title, settings)
+        title, description, tags = build_production_metadata(
+            result.source_title, settings, hook=result.hook
+        )
         typer.echo(f"Title: {title}")
         try:
             upload_result = execute_private_upload(
