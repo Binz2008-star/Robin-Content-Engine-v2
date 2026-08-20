@@ -35,6 +35,10 @@ dev = [
   "pytest>=8.3,<9",
   "pytest-asyncio>=0.25,<1",
   "ruff>=0.9,<1",
+  # Official type stubs for the optional yt-dlp dependency, so mypy can
+  # type-check channel_import.py's lazy `import yt_dlp` instead of being
+  # told to ignore it.
+  "types-yt-dlp>=2026.7,<2027",
 ]
 # Optional: downloading own-channel videos for `robin-engine channel-import`.
 download = [

@@ -50,3 +50,31 @@ def test_budget_resets_next_day(tmp_path: Path) -> None:
     payload_path.write_text(__import__("json").dumps(payload), encoding="utf-8")
     assert daily_uploads_used(s) == 0
     assert upload_allowed(s) is True
+
+
+def _write_budget(tmp_path: Path, payload: dict[str, object]) -> None:
+    from datetime import date
+
+    state = {"date": date.today().isoformat(), **payload}
+    (tmp_path / "upload_budget.json").write_text(
+        __import__("json").dumps(state), encoding="utf-8"
+    )
+
+
+def test_count_parsing_accepts_int_float_and_numeric_string(tmp_path: Path) -> None:
+    s = _settings(tmp_path)
+    _write_budget(tmp_path, {"count": 3})
+    assert daily_uploads_used(s) == 3
+    _write_budget(tmp_path, {"count": "2"})
+    assert daily_uploads_used(s) == 2
+    _write_budget(tmp_path, {"count": 2.5})
+    assert daily_uploads_used(s) == 2
+
+
+def test_count_parsing_rejects_bool_and_non_numeric_values(tmp_path: Path) -> None:
+    # bool is rejected explicitly (bool subclasses int, so it would otherwise
+    # coerce to 1); dict/list/None/empty-string are corrupt state, not counts.
+    for corrupt in (True, False, {"n": 1}, [3], None, "not-a-number"):
+        s = _settings(tmp_path)
+        _write_budget(tmp_path, {"count": corrupt})
+        assert daily_uploads_used(s) == 0, f"count {corrupt!r} must read as 0"

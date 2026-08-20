@@ -2398,6 +2398,53 @@ tasks:
       - hooks/transcripts are local advisory files only - never a DB column
       - fall back to "no hook" on ANY missing/invalid/unsafe hook input
 
+  - id: RCE-20260820-MYPY
+    title: Infrastructure hardening — make mypy a blocking CI gate
+    status: active
+    owner: Binz2008-star (CTO session, direct operator direction: treat as
+      infrastructure hardening, NOT refactoring)
+    branch: feat/mypy-ci-gate
+    base_branch: main
+    base_sha: a680f14dfb7654a65ba24a38f79543cebae8f6ca
+    scope: >-
+      Make the existing production code genuinely mypy-clean and add mypy
+      to CI as a blocking gate. Fix the 5 known pre-existing findings
+      (2 in upload_budget.py daily_uploads_used object->int; 2 in ai_logic.py
+      OpenAI create() overload mismatch - messages/response_format need the
+      SDK's TypedDict types, no casts/no type-ignore; 1 in channel_import.py
+      yt_dlp import - install the official types-yt-dlp stubs in the dev
+      extra, NOT a mypy exclusion). Run full mypy + pytest + ruff, add a
+      "Type check" step to .github/workflows/ci.yml. NO new exclusions and
+      NO new `# type: ignore` anywhere; no behavioral change to the pipeline.
+    allowed_paths:
+      - src/robin_content_engine/upload_budget.py
+      - src/robin_content_engine/ai_logic.py
+      - src/robin_content_engine/channel_import.py
+      - tests/test_upload_budget.py
+      - pyproject.toml
+      - .github/workflows/ci.yml
+      - AI_WORKSPACE/ACTIVE_TASKS.yaml
+      - AI_WORKSPACE/HANDOFF.md
+      - HANDOFF.md
+    forbidden_paths:
+      - schema.sql
+      - studio/**
+      - src/robin_content_engine/database.py
+      - src/robin_content_engine/publishing.py
+      - .env
+      - client_secret*.json
+      - token*.json
+    merge_allowed: false
+    deploy_allowed: false
+    stop_conditions:
+      - no new `# type: ignore` comments anywhere in the diff
+      - no new mypy exclusion/override entries in pyproject.toml
+      - no behavioral change to upload counting, metadata generation, or
+        channel import (type-only fixes)
+      - full `mypy` on the whole package must pass with zero errors
+      - `pytest` and `ruff` must stay green
+      - CI workflow gains a blocking `mypy` step
+
 # Other branches observed on origin at the time this registry was created
 # that are NOT yet registered as tasks (owner/scope unknown to this agent —
 # not fabricated here). Whoever owns them should add a task entry above
