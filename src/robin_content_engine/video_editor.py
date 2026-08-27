@@ -53,11 +53,11 @@ class ShortsRenderer:
                 codec="libx264",
                 audio_codec="aac",
                 fps=fps,
-                preset="slow",  # Better quality encoding
+                preset="medium",  # Balance between quality and speed
                 threads=4,
                 pixel_format="yuv420p",
-                # Better quality tuning
-                ffmpeg_params=["-movflags", "+faststart", "-tune", "film", "-b:v", "4000k"],
+                # High quality settings
+                ffmpeg_params=["-movflags", "+faststart", "-tune", "film", "-b:v", "8000k", "-b:a", "192k"],
                 logger=None,
             )
 

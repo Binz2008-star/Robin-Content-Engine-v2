@@ -1,6 +1,16 @@
 # Session Handoff — Robin Content Engine
 
-_Updated: 2026-08-19. Read this first in a new session to resume instantly._
+_Updated: 2026-08-21. Read this first in a new session to resume instantly._
+
+## MAJOR CHANGE (2026-08-21): Switched from DeepSeek API to Local Ollama
+
+**DeepSeek API credits exhausted.** System now uses **local Ollama model (qwen2.5:7b)** for all AI metadata generation.
+
+- Ollama running at `http://127.0.0.1:11434/v1` (started via `ollama serve`)
+- Model: `qwen2.5:7b` (4.7 GB, Q4_K_M quantized)
+- Configured in `.env`: `DEEPSEEK_API_KEY=not-needed`, `DEEPSEEK_BASE_URL=http://127.0.0.1:11434/v1`, `DEEPSEEK_MODEL=qwen2.5:7b`
+- Ops scripts updated: `ops/run_production_once.ps1`, `ops/start_control_panel.cmd`
+- Tested and working: successfully processed Job 51 (Fortnite), uploaded as private (YouTube ID: `3vsmb_h-Xnc`)
 
 ## What this system is
 
@@ -27,34 +37,14 @@ only - no internet scraping, ever.**
 
 ## Current state (snapshot)
 
-- **Queue: 109 pending Shorts** (jobs #34→#145), all rights-confirmed, cut
-  from the channel's own long videos. First in queue: #34 Roblox, #36 CoD
-  Zombies, #37-41 Apex, #42/44 neutral "Archived gameplay".
-- **23 uploaded**, 0 failed, 8 quarantined (non-gaming/rejects + 7s clip).
-- **Daily upload cap: 4/day** (`YOUTUBE_MAX_UPLOADS_PER_DAY=4`) — raised
-  from 2 now that YouTube's `uploadLimitExceeded` cool-down has resolved.
-- **HD channel-import downloads (2026-08-19):** imports are capped at
-  360p because the no-cookie android yt-dlp client is the only working
-  path. To get 720p/1080p sources, export a browser `cookies.txt`, set
-  `YOUTUBE_COOKIES_FILE` in `.env`, and re-import. Existing downloads
-  aren't re-fetched (idempotent cache) — delete the specific
-  `work/downloads/<id>.mp4` file first to force a re-download. Imported
-  jobs now record source resolution in the rights note (HD/SD), and SD
-  downloads log a warning.
-- **Video quality overhaul (2026-08-19):** the 9:16 reframe now always
-  delivers **1080x1920** (lanczos upscale, CRF 18, was: tiny 200-360p crops
-  at a fixed 4000k bitrate), caption burn-in re-encodes at CRF 18 (was 23),
-  and the quality gate now **requires >=1080x1920** (`min_resolution`).
-  Old low-resolution artifacts fail the gate and are auto-rebuilt at full
-  resolution on the next run — no manual cleanup needed.
-- **YouTube `uploadLimitExceeded` resolved** — the earlier daily-limit
-  throttle cleared after the cool-down; uploads are back to the normal
-  cap. If it ever returns, verify the channel in YouTube Studio (Settings →
-  Channel → Feature eligibility → Verification); do NOT try to bypass.
-- **Metadata corrections: DONE on YouTube** — 24 "Furniture" + 12 "Black
-  ops" captures retitled to neutral archive titles; 2 verified-Apex videos
-  (`N1IMHGr3Lx0`, `sQert_40bmc`) retitled to Apex. Metadata plan is cleared.
-- **Snapshot refreshed** (192 videos). Panel running on 127.0.0.1:8765.
+- **Queue: 115 jobs total** — 2 rights-approved eligible, 7 processing, 94 packaged, 36 uploaded (private), 4 rejected, 4 inactive
+- **Daily upload cap: 4/day** (`YOUTUBE_MAX_UPLOADS_PER_DAY=4`)
+- **Video quality:** 9:16 reframe delivers **1080x1920** (lanczos upscale, CRF 18), quality gate requires >=1080x1920
+- **AI Model:** Local Ollama (qwen2.5:7b) — DeepSeek API credits exhausted, switched to local
+- **YouTube Channel:** Robin (UCIcvbGsmSwMDXxjWXq4QG8A) — authenticated, 26 subscribers, 6,056 views
+- **Channel videos:** 204 long videos discovered, 15 >= 60s available for Shorts creation
+- **Last test:** Job 51 (Fortnite) processed successfully via local Ollama, uploaded private (YouTube ID: `3vsmb_h-Xnc`)
+- **Panel:** Available at 127.0.0.1:8765 via `ops/start_control_panel.cmd`
 
 ## Key paths
 
@@ -69,10 +59,18 @@ only - no internet scraping, ever.**
 ## Useful commands (run from `production`)
 
 ```powershell
-$env:ROBIN_APP_ROOT="X:\content engine\production"; $env:PYTHONPATH="X:\content engine\production\src"
+$env:ROBIN_APP_ROOT="X:\content engine\production"
+$env:PYTHONPATH="X:\content engine\production\src"
 $env:YOUTUBE_EXPECTED_CHANNEL_ID="UCIcvbGsmSwMDXxjWXq4QG8A"
+$env:DEEPSEEK_API_KEY="not-needed"
+$env:DEEPSEEK_BASE_URL="http://127.0.0.1:11434/v1"
+$env:DEEPSEEK_MODEL="qwen2.5:7b"
 & "X:\content engine\.venv\Scripts\python.exe" -m robin_content_engine.cli <command>
 ```
+
+**Or use the pre-configured ops scripts:**
+- `ops/run_production_once.ps1` — includes all env vars, runs production pipeline
+- `ops/start_control_panel.cmd` — launches control panel with local model config
 
 - `production-status` / `production-status --json` — queue overview
 - `production-run-once --execute-private-upload` — process + upload next job

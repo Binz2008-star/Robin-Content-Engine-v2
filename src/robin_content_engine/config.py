@@ -32,9 +32,9 @@ class Settings(BaseSettings):
     )
 
     database_url: str
-    deepseek_api_key: str
-    deepseek_base_url: str = "https://api.deepseek.com"
-    deepseek_model: str = "deepseek-chat"
+    deepseek_api_key: str = "not-needed"  # Placeholder for local model
+    deepseek_base_url: str = "http://127.0.0.1:11434/v1"  # Ollama local endpoint
+    deepseek_model: str = "qwen2.5:7b"  # Local model
 
     tts_voice: str = "ar-AE-HamdanNeural"
     tts_rate: str = "+0%"

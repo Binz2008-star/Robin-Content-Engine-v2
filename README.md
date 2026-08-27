@@ -28,9 +28,10 @@ fingerprint evasion.
    Short instead of a tiny postage-stamp clip YouTube would have to upscale.
 5. **Quality-gate and package** (duration/aspect/decodability/black-frame
    checks, a 1080x1920 minimum resolution, SHA-256 manifest).
-6. **Generate metadata** via DeepSeek - natural Gulf-Arabic or English-for-a-
-   mixed-UAE/international audience (`YOUTUBE_METADATA_LANGUAGE`), with a
-   deterministic safety validation (no clickbait, no unverifiable claims).
+6. **Generate metadata** via AI (DeepSeek API or local Ollama model) - natural
+   Gulf-Arabic or English-for-a-mixed-UAE/international audience
+   (`YOUTUBE_METADATA_LANGUAGE`), with a deterministic safety validation
+   (no clickbait, no unverifiable claims).
 7. **Publish** - private-first, then flipped to public
    (`YOUTUBE_PUBLIC_AFTER_UPLOAD`), at most N times per day
    (`YOUTUBE_MAX_UPLOADS_PER_DAY`, ban-safety cap).
@@ -39,7 +40,7 @@ fingerprint evasion.
 
 ```text
 src/robin_content_engine/
-  ai_logic.py         DeepSeek metadata generation + safety validation
+  ai_logic.py         AI metadata generation (DeepSeek API or local Ollama) + safety validation
   channel_import.py   download own-channel videos -> cut Shorts (yt-dlp)
   channel_metadata.py resumable, quota-aware channel metadata fixer
   cli.py              command-line interface
@@ -68,7 +69,13 @@ copy .env.example .env
 ```
 
 Run `schema.sql` in the Neon SQL editor, then configure `.env` (database URL,
-DeepSeek key, YouTube OAuth files, expected channel ID).
+AI model configuration, YouTube OAuth files, expected channel ID).
+
+**AI Model Configuration:**
+
+- **Option 1 (DeepSeek API):** Set `DEEPSEEK_API_KEY`, `DEEPSEEK_BASE_URL=https://api.deepseek.com`, `DEEPSEEK_MODEL=deepseek-chat`
+- **Option 2 (Local Ollama):** Set `DEEPSEEK_API_KEY=not-needed`, `DEEPSEEK_BASE_URL=http://127.0.0.1:11434/v1`, `DEEPSEEK_MODEL=qwen2.5:7b` (or other installed model)
+- The ops scripts (`run_production_once.ps1`, `start_control_panel.cmd`) are pre-configured for local Ollama
 
 ## Operation
 
@@ -129,10 +136,12 @@ default capture names (e.g. "Black ops", "Furniture") become neutral
 ## Configuration
 
 | Variable | Default | Purpose |
-|---|---|---|
+| --- | --- | --- |
 | `DATABASE_URL` | - | Neon PostgreSQL connection |
-| `DEEPSEEK_API_KEY` | - | AI metadata/script generation |
-| `YOUTUBE_AI_METADATA` | false | Use DeepSeek metadata for uploads |
+| `DEEPSEEK_API_KEY` | - | AI metadata/script generation (DeepSeek API key or "not-needed" for local Ollama) |
+| `DEEPSEEK_BASE_URL` | <https://api.deepseek.com> | AI API endpoint (DeepSeek or <http://127.0.0.1:11434/v1> for local Ollama) |
+| `DEEPSEEK_MODEL` | deepseek-chat | AI model name (deepseek-chat or qwen2.5:7b for local Ollama) |
+| `YOUTUBE_AI_METADATA` | false | Use AI metadata for uploads |
 | `YOUTUBE_METADATA_LANGUAGE` | arabic | `arabic` or `english` (mixed UAE/international) |
 | `YOUTUBE_PUBLIC_AFTER_UPLOAD` | false | Flip each upload to public after private upload |
 | `YOUTUBE_MAX_UPLOADS_PER_DAY` | 4 | Ban-safety cap on automatic uploads per day |
