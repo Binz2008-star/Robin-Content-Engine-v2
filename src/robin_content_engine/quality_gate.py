@@ -4,12 +4,14 @@ import hashlib
 import json
 import math
 import shutil
+import subprocess
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 import cv2
+import imageio_ffmpeg
 import numpy as np
 from moviepy import VideoFileClip
 
@@ -40,6 +42,11 @@ _DEFAULT_BLACK_FRAME_LUMA_THRESHOLD = 8.0
 
 _DEFAULT_SAMPLE_FRAME_COUNT = 5
 
+# Upper bound on the full ffmpeg decode-integrity pass. A ~1-minute 1080p
+# short decodes in a few seconds even on modest hardware; the bound exists
+# only so a hung decode can never block the pipeline forever.
+_FFMPEG_DECODE_TIMEOUT_SECONDS = 120
+
 # The minimum delivered resolution for a publishable Short - the standard
 # YouTube Shorts size. A clip below this (e.g. a 200x360 crop from a low-
 # resolution source that was never upscaled) is far too small to look good
@@ -51,6 +58,7 @@ _ALL_CHECK_NAMES = (
     "file_exists",
     "file_non_empty",
     "video_decodable",
+    "decode_integrity_ffmpeg",
     "duration_within_bounds",
     "aspect_ratio_9_16",
     "valid_dimensions",
@@ -117,6 +125,38 @@ def _is_finite(value: float | None) -> bool:
 def _mean_luma(frame: np.ndarray) -> float:
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
     return float(np.mean(gray))
+
+
+def _ffmpeg_decode_error_count(path: Path) -> int:
+    """Fully decode the file with ffmpeg at error verbosity and count
+    emitted error lines. This catches corruption the lenient sampling-based
+    checks miss - e.g. a TRUNCATED mp4 whose moov atom (faststart) survives
+    and whose few sampled frames still decode, but whose stream is actually
+    broken mid-file. A healthy file emits zero error lines; anything else
+    is a corrupted/partial artifact and must never be published or reused.
+    Returns -1 when the decode could not be verified at all (subprocess
+    failure or timeout) - treated as a failed check, conservatively."""
+    ffmpeg = imageio_ffmpeg.get_ffmpeg_exe()
+    try:
+        result = subprocess.run(
+            [
+                ffmpeg,
+                "-nostdin",
+                "-v",
+                "error",
+                "-i",
+                str(path),
+                "-f",
+                "null",
+                "-",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=_FFMPEG_DECODE_TIMEOUT_SECONDS,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return -1
+    return len([line for line in result.stderr.splitlines() if line.strip()])
 
 
 def _read_frame_at(cap: cv2.VideoCapture, frame_index: int) -> np.ndarray | None:
@@ -273,6 +313,26 @@ def run_quality_gate(path: Path, config: QualityGateConfig | None = None) -> Qua
         f"duration={duration}, size={width}x{height}, fps={fps}, has_audio={has_audio}",
     )
     media = MediaMetadata(duration, width, height, fps, has_audio)
+
+    error_count = _ffmpeg_decode_error_count(path)
+    if error_count < 0:
+        record(
+            "decode_integrity_ffmpeg",
+            False,
+            "Full ffmpeg decode could not be verified (subprocess error or timeout).",
+        )
+    elif error_count == 0:
+        record(
+            "decode_integrity_ffmpeg",
+            True,
+            "Full ffmpeg decode completed with zero errors.",
+        )
+    else:
+        record(
+            "decode_integrity_ffmpeg",
+            False,
+            f"Full ffmpeg decode reported {error_count} error line(s) - corrupted/partial file.",
+        )
 
     if duration is None:
         record("duration_within_bounds", False, "No duration metadata available.")

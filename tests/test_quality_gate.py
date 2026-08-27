@@ -235,6 +235,59 @@ def test_corrupt_file_fails(tmp_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
+# 4b. Truncated file (moov intact via +faststart) -> FAIL decode_integrity_ffmpeg
+# ---------------------------------------------------------------------------
+
+
+def test_truncated_file_fails_ffmpeg_decode_integrity(tmp_path: Path) -> None:
+    """A file truncated in the middle keeps its (faststart) moov atom and its
+    earliest frames, so moviepy/cv2 still 'open' it and sampled frames
+    decode - the lenient checks pass. The full ffmpeg decode must still
+    detect the broken stream and fail the gate, so a corrupt/partial
+    artifact is never packaged, reused, or published."""
+    ffmpeg = imageio_ffmpeg.get_ffmpeg_exe()
+    source = _make_simple_video(
+        tmp_path / "full.mp4", width=1080, height=1920, duration=6.0
+    )
+    # re-encode with faststart so the moov atom is at the front and survives
+    # a mid-file truncation (the exact layout the pipeline's captioned
+    # artifacts use)
+    faststart = tmp_path / "faststart.mp4"
+    _run_ffmpeg(
+        [
+            ffmpeg,
+            "-y",
+            "-i",
+            str(source),
+            "-c:v",
+            "libx264",
+            "-crf",
+            "18",
+            "-pix_fmt",
+            "yuv420p",
+            "-c:a",
+            "aac",
+            "-movflags",
+            "+faststart",
+            str(faststart),
+        ]
+    )
+    data = faststart.read_bytes()
+    truncated = tmp_path / "truncated.mp4"
+    truncated.write_bytes(data[: len(data) // 2])
+
+    result = run_quality_gate(
+        truncated,
+        QualityGateConfig(min_clip_seconds=2.0, max_clip_seconds=8.0),
+    )
+
+    checks = _checks_by_name(result)
+    assert checks["video_decodable"].passed is True
+    assert checks["decode_integrity_ffmpeg"].passed is False
+    assert result.passed is False
+
+
+# ---------------------------------------------------------------------------
 # 5. Landscape video -> FAIL aspect ratio
 # ---------------------------------------------------------------------------
 

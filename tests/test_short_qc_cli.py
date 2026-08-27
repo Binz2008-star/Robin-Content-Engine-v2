@@ -81,7 +81,7 @@ def test_json_output_contract(valid_vertical_video: Path) -> None:
     assert payload["passed"] is True
     assert payload["path"] == str(valid_vertical_video)
     assert isinstance(payload["checks"], list)
-    assert len(payload["checks"]) == 13
+    assert len(payload["checks"]) == 14
     for check in payload["checks"]:
         assert set(check.keys()) == {"name", "passed", "detail"}
     media = payload["media"]
