@@ -12,7 +12,7 @@ import typer
 from . import __version__
 from .ai_logic import ContentGenerator
 from .captioner import CaptionError, burn_captions
-from .capture_scan import CaptureScanError, scan_captures
+from .capture_scan import CaptureScanError, scan_capture_directories
 from .channel_import import ChannelImportError, import_video_as_short, list_long_videos
 from .channel_metadata import ChannelMetadataError, ChannelMetadataFixer
 from .channel_repository import ChannelRepository
@@ -226,26 +226,36 @@ def capture_scan(
     queue candidates. Never renders, uploads, moves, renames, or deletes
     the original files."""
     settings = Settings()  # type: ignore[call-arg]
-    directory = path or settings.capture_source_dir
+    directories = [path] if path else settings.capture_directories()
 
     repository = JobRepository(settings.database_url, settings.max_job_attempts)
     try:
         with repository.running():
-            result = scan_captures(
-                directory,
+            summary = scan_capture_directories(
+                directories,
                 repository,
                 stability_wait_seconds=settings.capture_stability_wait_seconds,
+                fail_fast=bool(path),
             )
     except CaptureScanError as exc:
         raise typer.BadParameter(str(exc)) from exc
 
     typer.echo("Capture scan completed.")
-    typer.echo(f"Directory: {result.directory}")
-    typer.echo(f"Videos discovered: {result.videos_discovered}")
-    typer.echo(f"New captures registered: {result.new_registered}")
-    typer.echo(f"Already known: {result.already_known}")
-    typer.echo(f"Skipped unstable: {result.skipped_unstable}")
-    typer.echo(f"Skipped unsupported: {result.skipped_unsupported}")
+    for result in summary.results:
+        typer.echo(f"  Directory: {result.directory}")
+        typer.echo(f"    Videos discovered: {result.videos_discovered}")
+        typer.echo(f"    New captures registered: {result.new_registered}")
+        typer.echo(f"    Already known: {result.already_known}")
+        typer.echo(f"    Skipped unstable: {result.skipped_unstable}")
+        typer.echo(f"    Skipped unsupported: {result.skipped_unsupported}")
+    for error in summary.errors:
+        typer.echo(f"  Error: {error}")
+    typer.echo("Totals:")
+    typer.echo(f"  Videos discovered: {summary.videos_discovered}")
+    typer.echo(f"  New captures registered: {summary.new_registered}")
+    typer.echo(f"  Already known: {summary.already_known}")
+    typer.echo(f"  Skipped unstable: {summary.skipped_unstable}")
+    typer.echo(f"  Skipped unsupported: {summary.skipped_unsupported}")
 
 
 def _print_job_rights_summary(job: dict[str, Any]) -> None:
@@ -1248,7 +1258,12 @@ def production_run_once_command(
 
     scan = once_result.capture_scan
     typer.echo("Capture scan completed.")
-    typer.echo(f"Directory: {scan.directory}")
+    for scanned in scan.results:
+        typer.echo(f"  Directory: {scanned.directory}")
+        typer.echo(f"    Videos discovered: {scanned.videos_discovered}")
+        typer.echo(f"    New captures registered: {scanned.new_registered}")
+    for error in scan.errors:
+        typer.echo(f"  Error: {error}")
     typer.echo(f"Videos discovered: {scan.videos_discovered}")
     typer.echo(f"New captures registered: {scan.new_registered}")
 

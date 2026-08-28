@@ -54,7 +54,7 @@ class Settings(BaseSettings):
     # "public" immediately after the private upload + receipt complete.
     # The upload itself still goes out private first (the proven path);
     # this only adds the post-upload publish step.
-    youtube_public_after_upload: bool = False
+    youtube_public_after_upload: bool = True
     # When True, production-run-once generates Arabic titles/descriptions
     # via DeepSeek (natural Gulf-Arabic style) instead of the deterministic
     # English " — Highlight" metadata. Falls back to the deterministic
@@ -85,7 +85,28 @@ class Settings(BaseSettings):
     youtube_max_uploads_per_day: int = Field(default=4, ge=1, le=20)
 
     capture_source_dir: Path = Path(r"C:\Users\loyal\Videos\Captures")
+    # Optional additional local capture directories to scan in addition to
+    # (or instead of) capture_source_dir. Configure via CAPTURE_SOURCE_DIRS
+    # as a `;`- or newline-separated list of absolute paths, e.g.
+    # "C:\Users\loyal\Videos\Captures\Call of Duty;C:\Users\loyal\Videos\Captures\Fortnite"
+    capture_source_dirs: str = ""
     capture_stability_wait_seconds: float = Field(default=2.0, ge=0.0, le=60.0)
+
+    def capture_directories(self) -> list[Path]:
+        """All configured local capture directories (capture_source_dir plus
+        any paths listed in capture_source_dirs), de-duplicated, resolved,
+        and never empty."""
+        directories: list[Path] = [self.capture_source_dir]
+        if self.capture_source_dirs.strip():
+            for item in self.capture_source_dirs.replace("\n", ";").split(";"):
+                item = item.strip()
+                if not item:
+                    continue
+                path = Path(item).expanduser()
+                path = (APP_ROOT / path).resolve() if not path.is_absolute() else path.resolve()
+                if path not in directories:
+                    directories.append(path)
+        return directories
 
     @field_validator("youtube_expected_channel_id", mode="before")
     @classmethod

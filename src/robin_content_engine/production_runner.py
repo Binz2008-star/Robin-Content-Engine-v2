@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from .captioner import CaptionError, burn_captions
-from .capture_scan import CaptureScanResult, scan_captures
+from .capture_scan import CaptureScanSummary, scan_capture_directories
 from .clip_selector import (
     ClipSelectionError,
     HighlightCandidate,
@@ -968,7 +968,7 @@ class TerminalFailure:
 
 @dataclass(frozen=True)
 class ProductionRunOnceResult:
-    capture_scan: CaptureScanResult
+    capture_scan: CaptureScanSummary
     selected_job_id: int | None
     run: ProductionRunResult | None
     skipped: list[SkippedCandidate] = field(default_factory=list)
@@ -1082,8 +1082,13 @@ def run_production_once(
     reframe/ASR/captioning never holds a database connection open.
     """
     with repository.running():
-        scan_result = scan_captures(
-            capture_scan_directory or settings.capture_source_dir,
+        scan_directories = (
+            [capture_scan_directory]
+            if capture_scan_directory
+            else settings.capture_directories()
+        )
+        scan_result = scan_capture_directories(
+            scan_directories,
             repository,
             stability_wait_seconds=settings.capture_stability_wait_seconds,
         )

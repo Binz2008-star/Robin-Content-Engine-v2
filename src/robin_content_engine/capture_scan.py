@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import time
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -22,6 +23,73 @@ class CaptureScanResult:
     already_known: int
     skipped_unstable: int
     skipped_unsupported: int
+
+
+@dataclass(frozen=True)
+class CaptureScanSummary:
+    """Aggregated result across one or more scanned capture directories."""
+
+    directories: tuple[Path, ...]
+    results: tuple[CaptureScanResult, ...]
+    videos_discovered: int
+    new_registered: int
+    already_known: int
+    skipped_unstable: int
+    skipped_unsupported: int
+    errors: tuple[str, ...]
+
+
+def scan_capture_directories(
+    directories: Iterable[Path],
+    repository: JobRepository,
+    *,
+    stability_wait_seconds: float = DEFAULT_STABILITY_WAIT_SECONDS,
+    fail_fast: bool = False,
+) -> CaptureScanSummary:
+    """Scan every provided capture directory and aggregate the results.
+
+    A single directory failing (e.g. missing path) is normally recorded in
+    `errors` and does not abort the remaining directories (suitable for the
+    multi-directory configured scan). When `fail_fast` is True (used for an
+    explicit single `--path` override), the first failure is re-raised as a
+    CaptureScanError instead. Idempotent overall."""
+    unique: list[Path] = []
+    for directory in directories:
+        resolved = Path(directory).expanduser().resolve()
+        if resolved not in unique:
+            unique.append(resolved)
+
+    results: list[CaptureScanResult] = []
+    errors: list[str] = []
+    totals = {
+        "videos_discovered": 0,
+        "new_registered": 0,
+        "already_known": 0,
+        "skipped_unstable": 0,
+        "skipped_unsupported": 0,
+    }
+    for directory in unique:
+        try:
+            result = scan_captures(
+                directory,
+                repository,
+                stability_wait_seconds=stability_wait_seconds,
+            )
+        except CaptureScanError as exc:
+            if fail_fast:
+                raise
+            errors.append(str(exc))
+            continue
+        results.append(result)
+        for key in totals:
+            totals[key] += getattr(result, key)
+
+    return CaptureScanSummary(
+        directories=tuple(unique),
+        results=tuple(results),
+        errors=tuple(errors),
+        **totals,
+    )
 
 
 def _is_stable(path: Path, wait_seconds: float) -> bool:

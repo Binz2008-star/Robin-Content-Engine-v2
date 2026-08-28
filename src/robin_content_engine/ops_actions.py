@@ -12,7 +12,7 @@ import contextlib
 from typing import Any
 
 from .ai_logic import ContentGenerator
-from .capture_scan import scan_captures
+from .capture_scan import scan_capture_directories
 from .channel_import import import_video_as_short, list_long_videos
 from .channel_metadata import ChannelMetadataError, ChannelMetadataFixer
 from .config import Settings
@@ -84,7 +84,7 @@ def status(settings: Settings) -> dict[str, Any]:
 def scan(settings: Settings) -> dict[str, Any]:
     def run() -> str:
         with _repo(settings).running() as repo:
-            result = scan_captures(settings.capture_source_dir, repo)
+            result = scan_capture_directories(settings.capture_directories(), repo)
         return (
             f"Videos discovered: {result.videos_discovered}\n"
             f"New captures registered: {result.new_registered}\n"

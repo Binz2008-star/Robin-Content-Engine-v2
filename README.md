@@ -149,7 +149,8 @@ default capture names (e.g. "Black ops", "Furniture") become neutral
 | `YOUTUBE_COOKIES_FILE` | - | Browser cookies.txt for HD yt-dlp downloads (channel-import) |
 | `HIGHLIGHT_MIN_SECONDS` | 15 | Highlight window floor (production 25) |
 | `HIGHLIGHT_MAX_SECONDS` | 60 | Highlight window ceiling (production 45) |
-| `CAPTURE_SOURCE_DIR` | - | Local capture directory to scan |
+| `CAPTURE_SOURCE_DIR` | - | Primary local capture directory to scan |
+| `CAPTURE_SOURCE_DIRS` | - | Extra capture directories (`;`- or newline-separated); all are scanned |
 
 ## Automation & ban-safety
 
