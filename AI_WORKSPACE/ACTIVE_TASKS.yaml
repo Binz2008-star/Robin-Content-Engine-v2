@@ -2517,11 +2517,29 @@ tasks:
 
   - id: RCE-20260830-TAGSFIX
     title: Tolerate AI returning `tags` as a comma-separated string in GeneratedContent
-    status: active
+    status: complete
     owner: opencode
     branch: fix/tags-string-coercion
     base_branch: main
     base_sha: 4f87399492c680eecd96d9d96c6b1de318aad6d2
+    pr: 25
+    merged: true
+    merge_method: merge
+    merge_commit_sha: 0118115393ad34d101b38b30eef73ddd34af3c50
+    merged_into: main
+    merged_at: 2026-08-29T23:18:44Z
+    merged_by: Binz2008-star (via opencode under explicit operator "merge and run the system" authorization)
+    ci: >-
+      Both checks green on PR #25: check run "test" PASS (run 33279842962,
+      18m59s - ruff + mypy + full pytest suite) and "Check branch scope
+      boundaries" PASS (run 33279842966). Independently verified locally at
+      the same head: ruff clean on committed files, mypy Success (34 source
+      files), tests/test_models.py 5 passed.
+    deployment: >-
+      no deploy performed (task deploy_allowed: false). The fix is live in
+      the production runtime because the production runner pins PYTHONPATH to
+      X:\content engine\production\src, where the same models.py change was
+      applied in the working tree.
     allowed_paths:
       - src/robin_content_engine/models.py
       - tests/test_models.py
