@@ -1847,3 +1847,27 @@ Next action: All three queued engine items (PR 2 hook integration, mypy
   open item is the Studio disposition decision (operator's call).
 Merge authorized: yes — operator standing authorization + explicit "do it"
 Deploy authorized: no
+---
+
+## RCE-20260830-TAGSFIX — 2026-08-30
+
+Task ID: RCE-20260830-TAGSFIX
+Agent: opencode
+Branch: fix/tags-string-coercion
+Base SHA: 4f87399492c680eecd96d9d96c6b1de318aad6d2
+PR: (opened against main — see PR link)
+Status: active (awaiting human review)
+Files changed: src/robin_content_engine/models.py, tests/test_models.py, AI_WORKSPACE/ACTIVE_TASKS.yaml, AI_WORKSPACE/HANDOFF.md
+Tests: tests/test_models.py 5 passed; ruff clean on models.py + test_models.py
+CI: not yet run on the PR
+Known blockers: none introduced by this task; NOTE a pre-existing YAML
+  scanner error exists in ACTIVE_TASKS.yaml at line 2404
+  (owner: "Binz2008-star (CTO session, direct operator direction: treat as
+  infrastructure hardening, NOT refactoring)" — the raw ": " inside the
+  unquoted scalar breaks strict YAML parse). That defect predates this task
+  and is out of this task's narrow scope; flagged for the registry owner,
+  not silently edited here.
+Next action: human review of the PR; do not merge or deploy without
+  explicit authorization.
+Merge authorized: no
+Deploy authorized: no

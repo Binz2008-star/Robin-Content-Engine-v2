@@ -2514,6 +2514,41 @@ tasks:
       - analysis must be deterministic and pure (testable without DB)
       - full `mypy` + `ruff` + `pytest` must stay green
 
+  - id: RCE-20260830-TAGSFIX
+    title: Tolerate AI returning `tags` as a comma-separated string in GeneratedContent
+    status: active
+    owner: opencode
+    branch: fix/tags-string-coercion
+    base_branch: main
+    base_sha: 4f87399492c680eecd96d9d96c6b1de318aad6d2
+    allowed_paths:
+      - src/robin_content_engine/models.py
+      - tests/test_models.py
+      - AI_WORKSPACE/ACTIVE_TASKS.yaml
+      - AI_WORKSPACE/HANDOFF.md
+    forbidden_paths:
+      - studio/**
+      - schema.sql
+      - .env
+      - client_secret*.json
+      - token*.json
+    merge_allowed: false
+    deploy_allowed: false
+    scope: >-
+      The metadata generator occasionally returns `tags` as a single
+      comma-separated string (e.g. "ApexLegends, gameplay, liveplay") instead
+      of a JSON list. GeneratedContent.tags is list[str], so Pydantic rejects
+      the string, ai_logic.generate() raises after retries, and the production
+      runner falls back to deterministic metadata with exit code 1. Fix: add a
+      mode="before" validator that coerces a comma-separated string into a
+      list before the existing normalize_tags runs, preserving valid tag
+      content. Includes a regression test.
+    stop_conditions:
+      - do not merge PR, do not deploy
+      - do not change clickbait/bounds validation or tag semantics beyond
+        accepting a comma-separated list
+      - full `mypy` + `ruff` + `pytest` must stay green
+
 # Other branches observed on origin at the time this registry was created
 # that are NOT yet registered as tasks (owner/scope unknown to this agent —
 # not fabricated here). Whoever owns them should add a task entry above

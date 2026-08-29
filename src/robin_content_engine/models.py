@@ -38,6 +38,16 @@ class GeneratedContent(BaseModel):
     def normalize_text(cls, value: str) -> str:
         return " ".join(value.split()).strip()
 
+    @field_validator("tags", mode="before")
+    @classmethod
+    def coerce_tags_to_list(cls, value: object) -> object:
+        """Tolerate the model occasionally returning `tags` as a single
+        comma-separated string instead of a JSON list. Normalize it to a list
+        so downstream list validation doesn't reject valid tag content."""
+        if isinstance(value, str):
+            return [tag for tag in (part.strip() for part in value.split(",")) if tag]
+        return value
+
     @field_validator("tags")
     @classmethod
     def normalize_tags(cls, values: list[str]) -> list[str]:
