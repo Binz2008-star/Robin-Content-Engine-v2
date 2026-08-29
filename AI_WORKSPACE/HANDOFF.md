@@ -1847,3 +1847,55 @@ Next action: All three queued engine items (PR 2 hook integration, mypy
   open item is the Studio disposition decision (operator's call).
 Merge authorized: yes — operator standing authorization + explicit "do it"
 Deploy authorized: no
+---
+
+## RCE-20260830-TAGSFIX — 2026-08-30
+
+Task ID: RCE-20260830-TAGSFIX
+Agent: opencode
+Branch: fix/tags-string-coercion
+Base SHA: 4f87399492c680eecd96d9d96c6b1de318aad6d2
+PR: (opened against main — see PR link)
+Status: active (awaiting human review)
+Files changed: src/robin_content_engine/models.py, tests/test_models.py, AI_WORKSPACE/ACTIVE_TASKS.yaml, AI_WORKSPACE/HANDOFF.md
+Tests: tests/test_models.py 5 passed; ruff clean on models.py + test_models.py
+CI: not yet run on the PR
+Known blockers: none introduced by this task; NOTE a pre-existing YAML
+  scanner error exists in ACTIVE_TASKS.yaml at line 2404
+  (owner: "Binz2008-star (CTO session, direct operator direction: treat as
+  infrastructure hardening, NOT refactoring)" — the raw ": " inside the
+  unquoted scalar breaks strict YAML parse). That defect predates this task
+  and is out of this task's narrow scope; flagged for the registry owner,
+  not silently edited here.
+Next action: human review of the PR; do not merge or deploy without
+  explicit authorization.
+Merge authorized: no
+Deploy authorized: no
+---
+
+## RCE-20260830-TAGSFIX — 2026-08-30 (follow-up: registry YAML repair)
+
+Task ID: RCE-20260830-TAGSFIX
+Agent: opencode
+Branch: fix/tags-string-coercion
+Base SHA: 4f87399492c680eecd96d9d96c6b1de318aad6d2
+PR: 25 (draft)
+Status: active (awaiting human review)
+Files changed (this follow-up): AI_WORKSPACE/ACTIVE_TASKS.yaml only
+Change: two PRE-EXISTING YAML defects in ACTIVE_TASKS.yaml that predate this
+  task and made the registry unparseable:
+  1. RCE-20260820-MYPY owner: value contained an unquoted ": " (broke the
+     YAML parse at former line 2404) -> converted to a >- block scalar.
+  2. RCE-20260820-MYPY stop_conditions item "`pytest` and `ruff` must stay
+     green" started with a backtick (invalid plain scalar) -> double-quoted.
+  Both are within RCE-20260830-TAGSFIX allowed_paths
+  (AI_WORKSPACE/ACTIVE_TASKS.yaml); done under explicit operator direction
+  ("do the out of scope fixes"). NOTE: no other registry entries' content was
+  altered; the whole file now loads via yaml.safe_load (23 tasks, unique IDs).
+Tests: PyYAML yaml.safe_load -> OK (previously failed at line 2404 then 2460)
+CI: not yet re-run on PR 25
+Known blockers: none
+Next action: human review of PR 25 (tags fix + YAML repair); do not merge or
+  deploy without explicit authorization.
+Merge authorized: no
+Deploy authorized: no
