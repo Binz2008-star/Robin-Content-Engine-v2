@@ -2401,7 +2401,8 @@ tasks:
   - id: RCE-20260820-MYPY
     title: Infrastructure hardening — make mypy a blocking CI gate
     status: complete
-    owner: Binz2008-star (CTO session, direct operator direction: treat as
+    owner: >-
+      Binz2008-star (CTO session, direct operator direction: treat as
       infrastructure hardening, NOT refactoring)
     branch: feat/mypy-ci-gate
     base_branch: main
@@ -2456,7 +2457,7 @@ tasks:
       - no behavioral change to upload counting, metadata generation, or
         channel import (type-only fixes)
       - full `mypy` on the whole package must pass with zero errors
-      - `pytest` and `ruff` must stay green
+      - "`pytest` and `ruff` must stay green"
       - CI workflow gains a blocking `mypy` step
 
   - id: RCE-20260820-POSTTIME3
@@ -2548,6 +2549,17 @@ tasks:
       - do not change clickbait/bounds validation or tag semantics beyond
         accepting a comma-separated list
       - full `mypy` + `ruff` + `pytest` must stay green
+    note: >-
+      Additionally repaired two PRE-EXISTING YAML defects in this registry
+      (present on main before this task, flagged in the previous handoff) under
+      explicit operator direction ("do the out of scope fixes"): (1) the
+      RCE-20260820-MYPY `owner:` value contained an unquoted ": " that broke the
+      YAML parse at line 2404 - now a `>-` block scalar; (2) the
+      RCE-20260820-MYPY stop_conditions item started with a backtick
+      ("`pytest` and `ruff`..."), which YAML rejects as a plain scalar - now
+      double-quoted. Verified `yaml.safe_load` passes with all 23 tasks intact
+      and unique IDs. Both stanzas are within this task's allowed_paths.
+
 
 # Other branches observed on origin at the time this registry was created
 # that are NOT yet registered as tasks (owner/scope unknown to this agent —
