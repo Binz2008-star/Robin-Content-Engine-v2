@@ -10,7 +10,7 @@ package is ready for the next allowed day.
 from __future__ import annotations
 
 import json
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 
 from .config import Settings
@@ -73,3 +73,54 @@ def upload_budget_summary(settings: Settings) -> str:
     if used >= cap:
         return f"Daily upload cap reached ({used}/{cap}) - new uploads resume tomorrow."
     return f"Daily uploads: {used}/{cap} used."
+
+
+# --- New day-aware budget functions ---
+
+def load_budget(settings: Settings) -> dict[str, object]:
+    """Load budget from work/upload_budget.json. Auto-resets if new calendar
+    day: if the stored date differs from today, daily_count resets to 0 and
+    last_reset_utc is updated. Returns a dict with keys 'daily_count',
+    'last_reset_utc', 'date', 'cap'. """
+    path = _budget_path(settings)
+    now = datetime.utcnow()
+    payload = _load(settings)
+    stored_date = payload.get("date")
+    if stored_date != date.today().isoformat():
+        # New day — reset counter, keep historical record
+        payload["daily_count"] = 0
+        payload["last_reset_utc"] = now.isoformat()
+        payload["date"] = now.date().isoformat()
+    payload.setdefault("cap", settings.youtube_max_uploads_per_day)
+    return payload
+
+
+def increment_and_check(cap: int | None = None) -> tuple[bool, str]:
+    """Increment today's upload count and return (allowed, message).
+
+    If daily cap is reached, allowed=False and message explains the situation.
+    The budget file is only written when a new upload is recorded.
+    """
+    from .config import Settings as _Settings
+    settings = _Settings() if cap is None else _Settings(youtube_max_uploads_per_day=cap)
+    budget = load_budget(settings)
+    used = budget.get("daily_count", 0)
+    if cap is None:
+        cap = budget.get("cap", settings.youtube_max_uploads_per_day)
+    if used >= cap:
+        reset_date = budget.get("last_reset_utc", "")
+        reset_local = (
+            datetime.fromisoformat(reset_date).strftime("%Y-%m-%d")
+            if reset_date
+            else "tomorrow"
+        )
+        allowed = False
+        message = (
+            f"Daily cap reached ({used}/{cap}) - new uploads resume {reset_local}."
+        )
+    else:
+        budget["daily_count"] = used + 1
+        _save(settings, budget)
+        allowed = True
+        message = f"Upload {used + 1}/{cap} recorded. Resets {datetime.now().strftime('%Y-%m-%d')}."
+    return allowed, message

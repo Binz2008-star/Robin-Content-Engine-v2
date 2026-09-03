@@ -1,4 +1,5 @@
 import json
+import time
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
@@ -46,6 +47,26 @@ class JobRepository:
 
     def close(self) -> None:
         self.pool.close()
+
+    def warm_pool(self, attempts: int = 3, delay: float = 2.0) -> bool:
+        """Probe the database pool with retries.
+
+        Returns True if the pool responds to a simple SELECT 1; False if
+        the pool cannot be opened after the given attempts. Designed to be
+        called at job-startup time so that the cold-connect timeout (~30s)
+        is spread across retries rather than blocking the first job
+        submission."""
+        for i in range(attempts):
+            try:
+                with self.pool.connection() as conn:
+                    conn.execute("SELECT 1")
+                return True
+            except Exception:
+                if i < attempts - 1:
+                    time.sleep(delay * (i + 1))  # 2s, 4s
+                else:
+                    return False
+        return False
 
     @contextmanager
     def running(self) -> Iterator["JobRepository"]:

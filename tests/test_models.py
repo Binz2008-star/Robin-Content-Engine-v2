@@ -19,6 +19,17 @@ def test_generated_content_normalizes_text_and_tags() -> None:
     assert "  " not in content.script
 
 
+def test_generated_content_accepts_comma_separated_string_tags() -> None:
+    content = GeneratedContent(
+        title="لقطة مستحيلة في فورتنايت",
+        description="وصف مفيد ومفصل للمشهد الأصلي داخل اللعبة.",
+        tags="ApexLegends, gameplay, liveplay, battlesfun",
+        script="شوفوا كيف تغيرت المباراة في آخر لحظة بطريقة ما كانت متوقعة.",
+    )
+
+    assert content.tags == ["ApexLegends", "gameplay", "liveplay", "battlesfun"]
+
+
 def test_video_job_requires_a_source() -> None:
     with pytest.raises(ValidationError):
         VideoJob(

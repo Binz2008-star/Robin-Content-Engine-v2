@@ -62,6 +62,17 @@ from .youtube_sync import YouTubeChannelSync, YouTubeSyncError
 
 app = typer.Typer(no_args_is_help=True, help="Robin Content Engine")
 
+# The Robin Brain (local tool-using AI ops assistant) is registered as the
+# `brain` command group. It is an OPT-IN layer (ROBIN_BRAIN_ENABLED=false by
+# default) and is imported lazily so importing this module never pays the
+# (heavy) Brain dependency/agent-construction cost unless the group is used.
+try:
+    from .brain.cli import register_brain
+
+    register_brain(app)
+except Exception:  # the Brain must never break the core CLI
+    structlog.get_logger().warning("brain command group unavailable", exc_info=True)
+
 # Fixed analysis-grid granularity for highlight-scan. Not CLI-exposed in this
 # MVP to keep the command surface narrow; detector/window/scoring tunables
 # remain configurable at the module level via their respective Config
