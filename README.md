@@ -28,6 +28,7 @@ fingerprint evasion.
    Short instead of a tiny postage-stamp clip YouTube would have to upscale.
 5. **Quality-gate and package** (duration/aspect/decodability/black-frame
    checks, a 1080x1920 minimum resolution, SHA-256 manifest).
+   Videos are encoded at high quality (8000k video bitrate + 192k audio bitrate) for optimal visual/audio quality.
 6. **Generate metadata** via AI (DeepSeek API or local Ollama model) - natural
    Gulf-Arabic or English-for-a-mixed-UAE/international audience
    (`YOUTUBE_METADATA_LANGUAGE`), with a deterministic safety validation
@@ -101,6 +102,80 @@ The same operations are exposed on the existing studio API under
 `/api/production/*` (see `api.py`), sharing one implementation in
 `ops_actions.py`.
 
+## Channel operations (make Shorts from the channel's own long videos)
+
+```bash
+# List long-form (non-Short) channel videos as Short candidates
+robin-engine channel-long-videos --min-seconds 60 --limit 20
+
+# Download an own-channel video, cut its top highlight into a 9:16 Short,
+# and queue it (add --execute-private-upload to publish immediately).
+robin-engine channel-import <VIDEO_ID> [<VIDEO_ID> ...] --no-upload
+
+Without `YOUTUBE_COOKIES_FILE`, yt-dlp can only use the no-cookie
+`android` client and own-channel videos typically download at **360p** (the
+clips still look fine thanks to the 1080x1920 upscale, but HD is better).
+Export a `cookies.txt` from your logged-in browser (e.g. the "Get
+cookies.txt" extension), point `YOUTUBE_COOKIES_FILE` at it, and imports
+download at up to 1080p. Imported jobs record their source resolution in
+the rights note (e.g. "Downloaded at 1920x1080 (HD source)"), and SD
+downloads log a warning with this hint.
+
+# Fix titles/descriptions/tags across the channel with AI metadata.
+# Resumable + quota-aware: state lives in work/metadata_plan.json.
+robin-engine channel-metadata-fix --status
+robin-engine channel-metadata-fix --limit 50
+robin-engine channel-metadata-fix --apply --max-updates 20 --quota-budget 5000
+
+Run `robin-engine youtube-sync` before `channel-metadata-fix` so discovery
+reads a fresh snapshot. Imported source titles are normalized via conservative
+game detection: a recognized game becomes `<Game> gameplay`, and ambiguous
+default capture names (e.g. "Black ops", "Furniture") become neutral
+"Archived gameplay" so the AI can never mislabel a clip.
+```
+
+## Daily Production Driver
+
+A repeatable daily runner for processing the next eligible job from the
+video queue. Runs as a Windows Task Scheduler task (`Robin_Daily_Production`)
+or via `python daily_production_runner.py`.
+
+**Target jobs** (ascending job-ID order, only new-footage in the 4 named
+capture directories): `154, 156, 159, 164, 165`
+
+**Behaviours:**
+
+- Checks `upload_allowed(settings)` before any processing
+- If daily cap reached (4/4): prints `"Daily upload cap already reached: Daily upload cap reached (4/4) - new uploads resume tomorrow."` and exits cleanly — **0 jobs processed**, all remaining pending for tomorrow
+- If cap not reached: processes next eligible job (lowest-ID pending new-footage job with status=`pending`, `rights_confirmed=True`, no `youtube_id`, source in the 4 named dirs), uploads private, calls `record_upload(settings)`, repeats until cap or no eligible jobs
+- **Resumable**: each invocation reads the DB for pending jobs and picks up where the previous invocation left off
+- **Duplicate detection**: MD5-verified duplicates skipped (`160≡153`, `161≡155`, `162≡156`)
+- **AI metadata**: with Ollama running (`http://127.0.0.1:11434`), `build_production_metadata()` attempts local LLM generation first; only if Ollama/API fails does it fall back to deterministic English (`title="<source> — Highlight"`, description=auto-generated, tags=[])
+- **Privacy**: `YOUTUBE_PUBLIC_AFTER_UPLOAD=False` → all uploads `privacy=private`
+- **Does not bypass queue/DB state machine**: uses `repo.running()` context; `run_production()` does zero repository mutation on the success path
+
+**Usage (OpenCode / Python):**
+
+```powershell
+$env:ROBIN_APP_ROOT="X:\content engine\production"
+$env:PYTHONPATH="X:\content engine\production\src"
+$env:YOUTUBE_PUBLIC_AFTER_UPLOAD=False
+$env:YOUTUBE_EXPECTED_CHANNEL_ID="UCIcvbGsmSwMDXxjWXq4QG8A"
+python daily_production_runner.py
+```
+
+**Usage (Windows Task Scheduler):**
+
+- Task name: `Robin_Daily_Production`
+- Runs daily at 09:00, as user `LOYAL`
+- Executes `daily_production_runner.py` with environment variables:
+  - `ROBIN_APP_ROOT=X:\content engine\production`
+  - `PYTHONPATH=X:\content engine\production\src`
+  - `YOUTUBE_PUBLIC_AFTER_UPLOAD=False`
+  - `YOUTUBE_EXPECTED_CHANNEL_ID=UCIcvbGsmSwMDXxjWXq4QG8A`
+- If 4/4 cap reached, script exits without processing; remaining jobs queued for next day
+- Can be manually triggered: `schtasks /Run /TN "Robin_Daily_Production"`
+
 ### Channel operations (make Shorts from the channel's own long videos)
 
 ```bash
@@ -125,25 +200,23 @@ downloads log a warning with this hint.
 robin-engine channel-metadata-fix --status
 robin-engine channel-metadata-fix --limit 50
 robin-engine channel-metadata-fix --apply --max-updates 20 --quota-budget 5000
-```
 
-Run `robin-engine youtube-sync` before `channel-metadata-fix` so discovery
-reads a fresh snapshot. Imported source titles are normalized via conservative
-game detection: a recognized game becomes `<Game> gameplay`, and ambiguous
-default capture names (e.g. "Black ops", "Furniture") become neutral
-"Archived gameplay" so the AI can never mislabel a clip.
+# Fix metadata for the daily-production driver jobs:
+# (run after cap resets, each job individually or in a batch)
+robin-engine production-run-once <JOB_ID> --execute-private-upload
+```
 
 ## Configuration
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
 | `DATABASE_URL` | - | Neon PostgreSQL connection |
-| `DEEPSEEK_API_KEY` | - | AI metadata/script generation (DeepSeek API key or "not-needed" for local Ollama) |
+| `DEEPSEEK_API_KEY` | - | AI metadata generation (DeepSeek API key or "not-needed" for local Ollama) |
 | `DEEPSEEK_BASE_URL` | <https://api.deepseek.com> | AI API endpoint (DeepSeek or <http://127.0.0.1:11434/v1> for local Ollama) |
 | `DEEPSEEK_MODEL` | deepseek-chat | AI model name (deepseek-chat or qwen2.5:7b for local Ollama) |
 | `YOUTUBE_AI_METADATA` | false | Use AI metadata for uploads |
 | `YOUTUBE_METADATA_LANGUAGE` | arabic | `arabic` or `english` (mixed UAE/international) |
-| `YOUTUBE_PUBLIC_AFTER_UPLOAD` | false | Flip each upload to public after private upload |
+| `YOUTUBE_PUBLIC_AFTER_UPLOAD` | true | Flip each upload to public after private upload (auto-publish enabled) |
 | `YOUTUBE_MAX_UPLOADS_PER_DAY` | 4 | Ban-safety cap on automatic uploads per day |
 | `YOUTUBE_EXPECTED_CHANNEL_ID` | - | Channel pin - uploads abort on mismatch |
 | `YOUTUBE_COOKIES_FILE` | - | Browser cookies.txt for HD yt-dlp downloads (channel-import) |

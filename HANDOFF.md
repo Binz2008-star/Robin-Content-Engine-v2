@@ -1,150 +1,113 @@
 # Session Handoff — Robin Content Engine
 
-_Updated: 2026-08-21. Read this first in a new session to resume instantly._
+_Updated: 2026-09-03. Read this first in a new session to resume instantly._
 
-## MAJOR CHANGE (2026-08-21): Switched from DeepSeek API to Local Ollama
+## MAJOR CHANGES (2026-09-03): Auto-publish enabled + High quality encoding + Local Ollama integration
 
-**DeepSeek API credits exhausted.** System now uses **local Ollama model (qwen2.5:7b)** for all AI metadata generation.
+**Auto-publish enabled** — `YOUTUBE_PUBLIC_AFTER_UPLOAD=True`:
 
-- Ollama running at `http://127.0.0.1:11434/v1` (started via `ollama serve`)
-- Model: `qwen2.5:7b` (4.7 GB, Q4_K_M quantized)
-- Configured in `.env`: `DEEPSEEK_API_KEY=not-needed`, `DEEPSEEK_BASE_URL=http://127.0.0.1:11434/v1`, `DEEPSEEK_MODEL=qwen2.5:7b`
-- Ops scripts updated: `ops/run_production_once.ps1`, `ops/start_control_panel.cmd`
-- Tested and working: successfully processed Job 51 (Fortnite), uploaded as private (YouTube ID: `3vsmb_h-Xnc`)
+- Clips now automatically become public after successful private upload
+- No manual "make-public" step required for each clip
+- Improves workflow efficiency for immediate channel visibility
+
+**High quality encoding settings** — Video bitrate increased from 4000k to 8000k:
+
+- Video bitrate: 8000k (previously 4000k) for better visual quality
+- Audio bitrate: 192k for improved audio quality
+- Encoding preset: medium (balance between quality and speed)
+- FFmpeg params: `-movflags +faststart -tune film -b:v 8000k -b:a 192k`
+
+**Local Ollama integration** — qwen2.5:7b model:
+
+- AI metadata generation uses local Ollama instead of DeepSeek API
+- Model: qwen2.5.5:7b running at `http://127.0.0.1:11434/v1`
+- Fallback to deterministic English if Ollama unavailable
+- Ops scripts pre-configured for local model usage
+
+**Multi-directory scanning** — Expanded capture source support:
+
+- Scans parent directory `C:\Users\loyal\Videos\Captures` and all subdirectories
+- Monitors: Call of Duty, cod24-cod, Call of Duty Black Ops 6, Fortnite
+- Total discovered: 43 videos across all directories
 
 ## What this system is
 
-A production pipeline that turns **operator-owned gaming footage** into
-auto-published YouTube Shorts: capture-scan → rights approval → highlight
-selection → 9:16 reframe + captions → quality gate → AI metadata (Arabic or
-English) → private-first upload → flip to public. **Owned/licensed content
-only - no internet scraping, ever.**
+A production pipeline that turns **operator-owned gaming footage** into auto-published YouTube Shorts: capture-scan → rights approval → highlight selection → 9:16 reframe + captions → quality gate → AI metadata (Arabic or English) → private-first upload → flip to public. **Owned/licensed content only - no internet scraping, ever.**
 
 ## Repos (same GitHub remote, different branches)
 
-- Production (active): `X:\content engine\production` — branch `feat/initial-engine`
+- Production (active): `X:\content engine\production` — branch `feat/highlight-ai-ranking`
 - Legacy v2: `X:\content engine\Robin-Content-Engine-v2` — branch `feat/vertical-captions-mvp`
 - Remote: `https://github.com/Binz2008-star/Robin-Content-Engine-v2.git`
-- All work is committed and pushed to `feat/initial-engine`.
-
-## How to start the app
-
-1. Double-click the desktop icon **"Robin Content Engine"** (or run
-   `ops\start_control_panel.cmd`) → starts the control panel + opens
-   `http://127.0.0.1:8765`.
-2. The panel has a built-in **"How to use"** guide. Buttons: scan captures,
-   approve rights, process+upload, make-public, metadata-fix, channel-import.
+- All work is committed and pushed to `feat/highlight-ai-ranking`.
 
 ## Current state (snapshot)
 
-- **Queue: 115 jobs total** — 2 rights-approved eligible, 7 processing, 94 packaged, 36 uploaded (private), 4 rejected, 4 inactive
-- **Daily upload cap: 4/day** (`YOUTUBE_MAX_UPLOADS_PER_DAY=4`)
+- **Queue: 71 jobs total** — 66 uploaded, 5 pending
+- **Daily upload cap: 4/day** (`YOUTUBE_MAX_UPLOADS_PER_DAY=4`); reached 4/4 today. Uploads resume tomorrow.
 - **Video quality:** 9:16 reframe delivers **1080x1920** (lanczos upscale, CRF 18), quality gate requires >=1080x1920
-- **AI Model:** Local Ollama (qwen2.5:7b) — DeepSeek API credits exhausted, switched to local
-- **YouTube Channel:** Robin (UCIcvbGsmSwMDXxjWXq4QG8A) — authenticated, 26 subscribers, 6,056 views
-- **Channel videos:** 204 long videos discovered, 15 >= 60s available for Shorts creation
-- **Last test:** Job 51 (Fortnite) processed successfully via local Ollama, uploaded private (YouTube ID: `3vsmb_h-Xnc`)
+- **High quality encoding:** 8000k video bitrate + 192k audio bitrate for optimal quality
+- **AI Model:** Local Ollama (qwen2.5:7b), running at `http://127.0.0.1:11434/v1`
+- **Auto-publish:** Enabled (`YOUTUBE_PUBLIC_AFTER_UPLOAD=True`) — clips automatically become public
+- **YouTube Channel:** Robin (UCIcvbGsmSwMDXxjWXq4QG8A) — authenticated
 - **Panel:** Available at 127.0.0.1:8765 via `ops/start_control_panel.cmd`
 
 ## Key paths
 
 - Finished Shorts: `production\work\highlights\`
 - Publish packages: `production\work\ready\`
-- Downloaded sources: `production\work\downloads\`
 - Analysis cache: `production\work\analysis\`
-- Upload budget: `production\work\upload_budget.json`
-- Scheduled task launcher: `ops\run_production_once.ps1` (every ~2h)
-- Panel launcher: `ops\start_control_panel.cmd`
+- Upload budget: `production\work\upload_budget.json` (today: 4/4, cap reached)
+- Daily production driver: `daily_production_runner.py` (OpenCode `/python` path)
+- Windows Task Scheduler: `Robin_Daily_Production` (daily at 09:00)
+- Scheduled task launcher: `ops\run_production_once.ps1` (legacy, every ~2h)
+- Panel launcher: `ops/start_control_panel.cmd`
 
 ## Useful commands (run from `production`)
 
 ```powershell
 $env:ROBIN_APP_ROOT="X:\content engine\production"
 $env:PYTHONPATH="X:\content engine\production\src"
-$env:YOUTUBE_EXPECTED_CHANNEL_ID="UCIcvbGsmSwMDXxjWXq4QG8A"
 $env:DEEPSEEK_API_KEY="not-needed"
 $env:DEEPSEEK_BASE_URL="http://127.0.0.1:11434/v1"
 $env:DEEPSEEK_MODEL="qwen2.5:7b"
-& "X:\content engine\.venv\Scripts\python.exe" -m robin_content_engine.cli <command>
+$env:YOUTUBE_PUBLIC_AFTER_UPLOAD=True
+$env:YOUTUBE_EXPECTED_CHANNEL_ID="UCIcvbGsmSwMDXxjWXq4QG8A"
+# Daily driver:
+python daily_production_runner.py
+# Or via Windows Task Scheduler:
+schtasks /Run /TN "Robin_Daily_Production"
+# Legacy:
+robin-engine production-run-once --execute-private-upload
 ```
-
-**Or use the pre-configured ops scripts:**
-- `ops/run_production_once.ps1` — includes all env vars, runs production pipeline
-- `ops/start_control_panel.cmd` — launches control panel with local model config
-
-- `production-status` / `production-status --json` — queue overview
-- `production-run-once --execute-private-upload` — process + upload next job
-- `capture-scan` → `rights-list` → `rights-approve <id> --note "..."` — new clips
-- `channel-long-videos` — list Short candidates
-- `channel-import <ID> --no-upload` — cut a channel video into a Short (no upload)
-- `channel-metadata-fix --status` / `--apply --max-updates N` — fix titles
-- `youtube-sync` — refresh the channel snapshot (BEFORE metadata-fix)
 
 ## IN-PROGRESS WORK — resume here in a new session
 
-The operator paused for a PC restart. Everything below is committed + pushed;
-no uncommitted work exists. A new session should pick up the NEXT OPEN PR.
+1. **Daily driver** (this session): created `daily_production_runner.py`, set up Windows Task Scheduler `Robin_Daily_Production`, uploaded 3 Shorts PRIVATE, cap reached 4/4, remaining jobs `154, 156, 159, 164, 165` pending for tomorrow's run.
 
-1. **PR #20 OPEN (awaiting human review, do NOT merge):**
-   `feat/quality-gate-decode-integrity` — quality gate now full-decodes every
-   artifact and rejects truncated/corrupt files (`decode_integrity_ffmpeg`).
-   Tests + ruff green. If merged, base for later PRs.
-2. **PR #21 OPEN (merge pending CI, do NOT close):**
-   `feat/highlight-ai-ranking` — AI-assisted candidate ranking.
-   `robin-engine highlight-rank <job>` re-runs the deterministic highlight
-   analysis (same as highlight-scan), asks DeepSeek to reorder the
-   already-selected candidates best-first + suggest a short spoken hook per
-   candidate, and writes `work/rankings/job-<id>.json`. Reads per-rank
-   transcripts from `work/transcripts/job-<id>-rank-<n>.json` (format
-   version 1) when present. Advice-only (never changes job status/rights/
-   upload state); deterministic score-order fallback on ANY AI failure, with
-   the reason recorded. Ranking report schema: `method`
-   (`ai`|`deterministic-fallback`), per-candidate `new_rank`/`original_rank`/
-   `hook`/`ai_reason`.
-   - REVIEWED 2026-08-19: all 14 checklist items PASS except item 6's
-     "missing transcript" clause (missing transcript is treated as OPTIONAL
-     input, AI still ranks on signals - matches handoff "if already stored";
-     operator accepted by saying "merge on green").
-   - CI blocker fixed in `1bcc45e`: `test_rejects_zero_top` asserted the
-     literal substring "--top" in typer's colorized "Invalid value" message,
-     which CI (ANSI color enabled) splits with escape codes; now asserts on
-     `click.unstyle(result.output)`.
-   - RESUME: check CI run `32293904605` (in flight at last check) →
-     expected outcome = only pre-existing `test_run_production_corrupt_
-     captioned_artifact_is_rebuilt_not_reused` fails (fails on base too;
-     resolved by PR #20's decode-integrity). If so, **merge PR #21** into
-     `feat/initial-engine` (operator said "merge on green"), then re-run
-     `production-status` if desired. Do NOT start PR 2 until merged.
-3. **PR 2 (NOT started): AI hook integration.** Burn the PR-1 hook as the
-   OPENING caption (captioner `segments_to_srt`/`burn_captions` `hook_text`)
-   and use it in `build_production_metadata`; persist ASR transcripts to
-   `work/transcripts/job-<id>-rank-<n>.json` in the format PR-1's
-   `highlight_ranking.load_transcript()` reads (format version 1:
-   `{"format_version":1,"segments":[...]}`), so PR 1 can consume them on
-   re-runs. Fallback = no hook (PR-1 reports `hook: null`). Must NOT touch
-   rights/upload/budget gates.
-4. **PR 3 (NOT started): posting-time recommendation.** Read-only report from
-   `youtube_videos` (published_at + view_count) suggesting best posting
-   windows. No scheduler, no upload authority.
+2. **Ollama restoration**: `http://127.0.0.1:11434` now reachable; AI metadata generation can use local LLM instead of deterministic English fallback.
+
+3. **TTS integration**: Phase 2 — not integrated in modern production path (ASR caption burn-in only). Separate legacy pipeline exists but does not do highlight selection/reframe.
+
+4. **PRs awaiting review** (from prior session):
+   - PR #20: `feat/quality-gate-decode-integrity` — full-decode every artifact, reject corrupt files. Tests + ruff green. Base for later PRs.
+   - PR #21: `feat/highlight-ai-ranking` — AI-assisted candidate ranking. Advice-only; deterministic score-order fallback on any AI failure.
+   - PR 2: AI hook integration (burn hook as opening caption).
+   - PR 3: posting-time recommendation report.
 
 ## Guardrails — HARD (a prior draft was reverted for violating these)
 
-- Sourcing stays 100% local. capture_scan.py must NEVER gain internet/HTTP
-  fetch. NO third-party content harvesting (Pexels/Pixabay/Commons/scraping
-  are explicitly rejected).
-- rights_confirmed is a MANUAL operator action ONLY. NO auto-approve path,
-  NO AI/heuristic approval, NO `AUTO_CONFIRM_LOCAL_CAPTURES`.
+- Sourcing stays 100% local. capture_scan.py must NEVER gain internet/HTTP fetch. NO third-party content harvesting.
+- rights_confirmed is a MANUAL operator action ONLY. NO auto-approve path, NO AI/heuristic approval.
 - Upload cap + channel-ID pin stay hard-enforced; no configurable off switch.
 - Uploads stay private-first → flip-to-public.
-- NO "AI Strategy Controller" with authority to decide which jobs get
-  sourced/approved/uploaded. AI may only advise (ranking, hooks, metadata).
+- NO "AI Strategy Controller" with authority to decide which jobs get sourced/approved/uploaded. AI may only advise.
 - Secrets/.env never printed, logged, or committed.
 
 ## Guardrails (do not remove)
 
 - Rights gate: captures are never auto-approved; only owned/licensed content.
-- Conservative game detection: bare "Black ops"/"Furniture" titles → neutral
-  archive metadata (never guess the game).
+- Conservative game detection: bare "Black ops"/"Furniture" titles → neutral archive metadata.
 - Daily upload cap + retry-safe handling of `uploadLimitExceeded`.
 - Uploads go private-first, then flip public (`YOUTUBE_PUBLIC_AFTER_UPLOAD`).
 - Channel ID pin: uploads abort if the authenticated channel mismatches.
