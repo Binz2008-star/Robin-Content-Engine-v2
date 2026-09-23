@@ -16,10 +16,12 @@ from .database import JobRepository
 from .production_runner import ProductionRunError, run_production
 
 if TYPE_CHECKING:
-    # Type-check-only: yt-dlp's _Params TypedDict exists only in the
-    # types-yt-dlp stubs (never at runtime), so it is imported under
+    # Type-check-only: yt-dlp's _YoutubeDLOptions TypedDict exists only in
+    # the types-yt-dlp stubs (never at runtime), so it is imported under
     # TYPE_CHECKING and used purely as the static type of the options dict.
-    from yt_dlp import _Params
+    # It is a PRIVATE stub name (renamed from _Params in the 2026-09-12 stub
+    # release), which is why pyproject.toml pins types-yt-dlp exactly.
+    from yt_dlp import _YoutubeDLOptions
 
 log = structlog.get_logger()
 
@@ -121,7 +123,7 @@ def download_channel_video(
         return DownloadResult(video_path=output_path, width=width, height=height)
 
     client_order = _CLIENTS_WITH_COOKIES if cookies_file else _CLIENTS_NO_COOKIES
-    opts: _Params = {
+    opts: _YoutubeDLOptions = {
         "outtmpl": str(dest_dir / f"{video_id}.%(ext)s"),
         "format": _FORMAT,
         "merge_output_format": "mp4",

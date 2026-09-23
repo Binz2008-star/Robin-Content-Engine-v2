@@ -1923,3 +1923,31 @@ Next action: none for this task. Merge authorized: yes (explicit operator
   where the same models.py change is applied in the working tree.
 Merge authorized: yes
 Deploy authorized: no
+---
+
+## RCE-20260923-STUBPIN — 2026-09-23
+
+Task ID: RCE-20260923-STUBPIN
+Agent: claude
+Branch: claude/gaming-youtube-automation-rtl9xw
+Base SHA: 6ee22491391e2e312f797b2da414b11f75c6f06a
+Current HEAD: (set at commit time — see PR)
+PR: draft against main (see PR link)
+Status: review
+Files changed: src/robin_content_engine/channel_import.py, pyproject.toml,
+  AI_WORKSPACE/ACTIVE_TASKS.yaml, AI_WORKSPACE/HANDOFF.md
+Tests: clean venv, Python 3.11. Reproduced on base: `mypy` -> "channel_import.py:22:
+  error: Module "yt_dlp" has no attribute "_Params"" with types-yt-dlp
+  2026.8.19.20260912; bisected: 2026.8.19.20260827 passes, 20260912 fails.
+  After fix: `mypy` Success (33 source files); `ruff check .` clean; full
+  `pytest` run recorded in the PR body.
+CI: pending on the PR.
+Known blockers: none. Context: this surfaced during a discovery pass for the
+  proposed "gaming YouTube automation factory"; most of that pipeline already
+  exists on main (capture-scan -> rights -> highlight -> cut/reframe/caption ->
+  quality gate -> AI metadata -> private-first publish -> posting-report). The
+  missing piece is a performance feedback loop; proposed as the next task, not
+  started.
+Next action: human review; do not merge or deploy without explicit authorization.
+Merge authorized: no
+Deploy authorized: no
