@@ -11,6 +11,7 @@ SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
+import click  # noqa: E402
 import pytest  # noqa: E402
 from typer.testing import CliRunner  # noqa: E402
 
@@ -350,4 +351,6 @@ def test_game_report_cli_rejects_unknown_format(monkeypatch: pytest.MonkeyPatch)
     result = CliRunner().invoke(cli_app, ["game-report", "--format", "vertical"])
 
     assert result.exit_code != 0
-    assert "--format must be one of" in result.output
+    # typer colorizes the option name with ANSI codes when color is enabled
+    # (as on CI), so assert on the unstyled message, not the "--format" token.
+    assert "one of: all, short, long." in click.unstyle(result.output)

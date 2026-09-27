@@ -1978,3 +1978,32 @@ Known blockers: none.
 Next action: human review; do not merge or deploy without explicit authorization.
 Merge authorized: no
 Deploy authorized: no
+
+---
+
+## RCE-20260927-GAMEREPORT — 2026-09-27 (CI fix + correction)
+
+Task ID: RCE-20260927-GAMEREPORT
+Agent: claude
+Branch: claude/gaming-youtube-automation-rtl9xw
+Base SHA: 6ee22491391e2e312f797b2da414b11f75c6f06a
+Current HEAD: (set at commit time — see PR)
+PR: 26
+Status: review
+Files changed: tests/test_game_performance.py, AI_WORKSPACE/HANDOFF.md
+Change: CI run 36349063579 failed test_game_report_cli_rejects_unknown_format
+  (1 failed, 588 passed, 8 skipped). On CI typer colorizes the "--format"
+  option token with ANSI codes, so the literal substring was absent; locally
+  (no color) it passed. Reproduced with GITHUB_ACTIONS=true FORCE_COLOR=1.
+  Fix follows the existing repo convention (test_highlight_rank_cli.py):
+  click.unstyle(output) and assert on the message text, not the option name.
+  Test-only change; no production code touched.
+Correction: the previous entry said 19 new tests; the file has 18.
+Tests: with GITHUB_ACTIONS=true FORCE_COLOR=1: test_game_performance.py +
+  test_posting_time.py -> 31 passed; without color -> 18 passed; ruff clean;
+  mypy Success (34 source files).
+CI: pending on the new head.
+Known blockers: none.
+Next action: human review; do not merge or deploy without explicit authorization.
+Merge authorized: no
+Deploy authorized: no
