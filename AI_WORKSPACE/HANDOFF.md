@@ -1951,3 +1951,30 @@ Known blockers: none. Context: this surfaced during a discovery pass for the
 Next action: human review; do not merge or deploy without explicit authorization.
 Merge authorized: no
 Deploy authorized: no
+
+---
+
+## RCE-20260927-GAMEREPORT — 2026-09-27
+
+Task ID: RCE-20260927-GAMEREPORT
+Agent: claude
+Branch: claude/gaming-youtube-automation-rtl9xw
+Base SHA: 6ee22491391e2e312f797b2da414b11f75c6f06a (stacked on RCE-20260923-STUBPIN commit fd4d606)
+Current HEAD: (set at commit time — see PR)
+PR: 26 (shared with RCE-20260923-STUBPIN; separate commit)
+Status: review
+Files changed: src/robin_content_engine/game_performance.py (new),
+  src/robin_content_engine/cli.py (game-report command),
+  tests/test_game_performance.py (new, 19 tests), README.md,
+  AI_WORKSPACE/ACTIVE_TASKS.yaml, AI_WORKSPACE/HANDOFF.md
+Tests: clean venv, Python 3.11: `pytest tests/test_game_performance.py
+  tests/test_posting_time.py` -> 31 passed; `ruff check .` clean; `mypy`
+  Success (34 source files). Real-schema check: throwaway local Postgres 16
+  loaded with schema.sql + 4 seeded videos -> private video excluded, Arabic
+  AI title classified via engine source_title, JSONB tags parsed, bare
+  "Black ops" left Unclassified, small-sample caveat shown. Instance deleted.
+CI: pending on the PR.
+Known blockers: none.
+Next action: human review; do not merge or deploy without explicit authorization.
+Merge authorized: no
+Deploy authorized: no
