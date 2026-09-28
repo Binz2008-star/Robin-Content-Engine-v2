@@ -2056,3 +2056,31 @@ Next action: owner decision on footage source. Recommended: one-time Google
   Cookies rejected (expiry + account risk).
 Merge authorized: no
 Deploy authorized: no
+
+---
+
+## RCE-20260928-DRIVESRC — 2026-09-28
+
+Task ID: RCE-20260928-DRIVESRC
+Agent: claude
+Branch: claude/gaming-youtube-automation-rtl9xw
+Base SHA: 2ceee2bdd067d1882ccefbb6518d6dc844937a5c
+Current HEAD: (set at commit time — see PR)
+PR: 27 (shared branch; separate commit)
+Status: review
+Files changed: src/robin_content_engine/drive_source.py (new),
+  tests/test_drive_source.py (new, 18 tests), AI_WORKSPACE/ACTIVE_TASKS.yaml,
+  AI_WORKSPACE/HANDOFF.md
+Tests: with GITHUB_ACTIONS=true FORCE_COLOR=1: tests/test_drive_source.py ->
+  18 passed; `ruff check .` clean; `mypy` Success (35 source files).
+CI: pending on the PR.
+Known blockers: owner must run the one-time Google Takeout ("Add to Drive",
+  videos only, 4 GB .zip parts) and later share that folder with a service
+  account (Viewer). Drive has no gameplay videos today (checked via connector;
+  only a 1.5 MB 2024 Takeout zip).
+Next action: phase 1b - headless runner command: pick an unused segment from
+  a matched long video (used-segment ledger in video_queue.source_url, no
+  schema change), run the existing highlight/reframe/caption/quality-gate
+  pipeline, verify game from frames vs title.
+Merge authorized: no
+Deploy authorized: no

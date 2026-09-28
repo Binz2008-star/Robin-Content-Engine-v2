@@ -2714,6 +2714,41 @@ tasks:
       YouTube OAuth (device code) + GitHub Secrets wiring; 3 scheduled
       workflow, private-first publishing, 1-2/day cap.
 
+  - id: RCE-20260928-DRIVESRC
+    title: "Cloud runner phase 1a: Google Drive (Takeout) footage source"
+    status: review
+    owner: claude
+    branch: claude/gaming-youtube-automation-rtl9xw
+    base_branch: main
+    base_sha: 2ceee2bdd067d1882ccefbb6518d6dc844937a5c
+    depends_on: RCE-20260928-CLOUDPROBE
+    allowed_paths:
+      - src/robin_content_engine/drive_source.py
+      - tests/test_drive_source.py
+      - AI_WORKSPACE/ACTIVE_TASKS.yaml
+      - AI_WORKSPACE/HANDOFF.md
+    forbidden_paths:
+      - studio/**
+      - schema.sql
+      - .env
+      - client_secret*.json
+      - token*.json
+    merge_allowed: false
+    deploy_allowed: false
+    scope: >-
+      Owner chose Google Drive as the footage source (2026-09-28) after the
+      probe showed YouTube blocks cloud downloads. New read-only module:
+      service-account Drive client (drive.readonly), paginated Takeout
+      archive listing, chunked archive download with partial-file cleanup,
+      zip-slip-safe extraction of video files only, and conservative
+      file-to-channel-video matching (normalized title incl. Arabic; duplicate
+      titles resolved only by an unambiguous duration; two files claiming one
+      video are both refused). Not wired into any runner yet; no secrets,
+      no DB writes, no uploads.
+    stop_conditions:
+      - no uploads, no DB writes, no secrets committed
+      - full `mypy` + `ruff` + `pytest` must stay green
+
 # Other branches observed on origin at the time this registry was created
 # that are NOT yet registered as tasks (owner/scope unknown to this agent —
 # not fabricated here). Whoever owns them should add a task entry above
