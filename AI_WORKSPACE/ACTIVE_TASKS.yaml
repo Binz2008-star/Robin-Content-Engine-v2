@@ -2669,7 +2669,7 @@ tasks:
 
   - id: RCE-20260928-CLOUDPROBE
     title: "Cloud runner phase 0: GitHub-runner YouTube download probe"
-    status: active
+    status: complete
     owner: claude
     branch: claude/gaming-youtube-automation-rtl9xw
     base_branch: main
@@ -2694,6 +2694,16 @@ tasks:
       requested: a read-only workflow that tries to download the first 20s of
       two of the channel's OWN public videos with several yt-dlp player
       clients and reports pass/fail. No secrets, no DB, no upload, no writes.
+    result: >-
+      Run 36367070647 on b16ac35: 0/10 downloads succeeded. Every player
+      client (android, web, tv, ios, mweb) on both videos was refused with
+      "Sign in to confirm you're not a bot". GitHub-hosted runners cannot
+      pull the channel's videos from YouTube without browser cookies, which
+      are rejected as a foundation (expire, account-flag risk on datacenter
+      IPs). Decision: source footage from Google Drive instead (owner's
+      one-time Google Takeout export of their own YouTube videos, delivered
+      to Drive), read with the Drive API under the same one-time Google
+      sign-in used for YouTube uploads.
     stop_conditions:
       - no secrets, OAuth, database access or uploads in this phase
       - if every client fails, stop and report; the design must change

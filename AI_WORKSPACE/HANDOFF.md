@@ -2032,3 +2032,27 @@ Merge authorized: yes (explicit owner "Yes, merge now", 2026-09-28)
 Deploy authorized: no — no deploy performed. The production runner pins
   PYTHONPATH to a local working tree; game-report reaches it only when the
   owner updates that tree. It is read-only, so there is no runtime risk.
+
+---
+
+## RCE-20260928-CLOUDPROBE — 2026-09-28
+
+Task ID: RCE-20260928-CLOUDPROBE
+Agent: claude
+Branch: claude/gaming-youtube-automation-rtl9xw
+Base SHA: 2ceee2bdd067d1882ccefbb6518d6dc844937a5c
+Current HEAD: (set at commit time — see PR)
+PR: 27 (shared with the #26 governance close-out; separate commits)
+Status: complete (probe answered its question)
+Files changed: .github/workflows/youtube-download-probe.yml (new, read-only,
+  no secrets), AI_WORKSPACE/ACTIVE_TASKS.yaml, AI_WORKSPACE/HANDOFF.md
+Tests: probe run 36367070647 -> SUMMARY 0/10. All five yt-dlp player clients
+  refused on both own-channel videos: "Sign in to confirm you're not a bot".
+CI: probe job itself green (it reports, it does not gate).
+Known blockers: YouTube bot-check on cloud IPs blocks yt-dlp without cookies.
+Next action: owner decision on footage source. Recommended: one-time Google
+  Takeout of own YouTube videos delivered to Google Drive; engine reads from
+  Drive (Drive API) under the same one-time Google OAuth used for uploads.
+  Cookies rejected (expiry + account risk).
+Merge authorized: no
+Deploy authorized: no
