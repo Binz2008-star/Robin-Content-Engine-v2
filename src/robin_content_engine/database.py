@@ -121,7 +121,16 @@ class JobRepository:
             counts["total"] += count
         return counts
 
-    def enqueue_local(self, source_path: Path, source_title: str, rights_note: str) -> int:
+    def enqueue_local(
+        self,
+        source_path: Path,
+        source_title: str,
+        rights_note: str,
+        source_url: str | None = None,
+    ) -> int:
+        """`source_url` optionally records where the footage came from (e.g.
+        a segment_ledger URL naming the own-channel video and the exact
+        segment used). It uses the existing column - no schema change."""
         resolved_path = source_path.expanduser().resolve()
         if not resolved_path.is_file():
             raise FileNotFoundError(f"Source file does not exist: {resolved_path}")
@@ -130,12 +139,12 @@ class JobRepository:
             row = conn.execute(
                 """
                 INSERT INTO video_queue (
-                    source_path, source_title, rights_confirmed, rights_note
+                    source_path, source_url, source_title, rights_confirmed, rights_note
                 )
-                VALUES (%s, %s, TRUE, %s)
+                VALUES (%s, %s, %s, TRUE, %s)
                 RETURNING id
                 """,
-                (str(resolved_path), source_title.strip(), rights_note.strip()),
+                (str(resolved_path), source_url, source_title.strip(), rights_note.strip()),
             ).fetchone()
         if not row:
             raise RuntimeError("Queue insert returned no job ID")

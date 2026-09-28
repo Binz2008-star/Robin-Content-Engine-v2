@@ -2749,6 +2749,50 @@ tasks:
       - no uploads, no DB writes, no secrets committed
       - full `mypy` + `ruff` + `pytest` must stay green
 
+  - id: RCE-20260928-LEDGER
+    title: "Cloud runner phase 1b: used-segment ledger (no schema change)"
+    status: review
+    owner: claude
+    branch: claude/gaming-youtube-automation-rtl9xw
+    base_branch: main
+    base_sha: 2ceee2bdd067d1882ccefbb6518d6dc844937a5c
+    depends_on: RCE-20260928-DRIVESRC
+    allowed_paths:
+      - src/robin_content_engine/segment_ledger.py
+      - src/robin_content_engine/database.py
+      - tests/test_segment_ledger.py
+      - tests/test_database.py
+      - AI_WORKSPACE/ACTIVE_TASKS.yaml
+      - AI_WORKSPACE/HANDOFF.md
+    forbidden_paths:
+      - studio/**
+      - schema.sql
+      - .env
+      - client_secret*.json
+      - token*.json
+    merge_allowed: false
+    deploy_allowed: false
+    scope: >-
+      Guarantees every new Short is cut from footage never used before.
+      JobRepository.enqueue_local gains an optional source_url (existing
+      column, backward compatible, default NULL). New segment_ledger module
+      records the used segment as
+      https://www.youtube.com/watch?v=<id>#segment=<start>-<end>, reads all
+      recorded segments for a video (read-only SELECT, any status), and picks
+      the best-ranked highlight candidate that does not overlap any of them
+      (<= 0.5s rounding overlap allowed). Not wired into a runner yet.
+    stop_conditions:
+      - no schema change, no uploads
+      - full `mypy` + `ruff` + `pytest` must stay green
+    note: >-
+      Pre-existing finding (NOT caused by this task, reproduced on
+      origin/main 2ceee2b against a local Postgres 16 with schema.sql):
+      tests/test_database_integration.py has 2 failing tests
+      (test_mark_failed_exhausts_attempts_before_retryable,
+      test_mark_deterministic_failure_clears_claimed_at_of_in_flight_job).
+      CI never runs them (no ROBIN_TEST_DATABASE_URL), so the drift went
+      unnoticed. Needs its own task.
+
 # Other branches observed on origin at the time this registry was created
 # that are NOT yet registered as tasks (owner/scope unknown to this agent —
 # not fabricated here). Whoever owns them should add a task entry above

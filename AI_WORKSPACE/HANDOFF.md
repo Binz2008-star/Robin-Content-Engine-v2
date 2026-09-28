@@ -2084,3 +2084,31 @@ Next action: phase 1b - headless runner command: pick an unused segment from
   pipeline, verify game from frames vs title.
 Merge authorized: no
 Deploy authorized: no
+
+---
+
+## RCE-20260928-LEDGER — 2026-09-28
+
+Task ID: RCE-20260928-LEDGER
+Agent: claude
+Branch: claude/gaming-youtube-automation-rtl9xw
+Base SHA: 2ceee2bdd067d1882ccefbb6518d6dc844937a5c
+Current HEAD: (set at commit time — see PR)
+PR: 27 (shared branch; separate commit)
+Status: review
+Files changed: src/robin_content_engine/segment_ledger.py (new),
+  src/robin_content_engine/database.py (enqueue_local optional source_url),
+  tests/test_segment_ledger.py (new), tests/test_database.py (+2 tests),
+  AI_WORKSPACE/ACTIVE_TASKS.yaml, AI_WORKSPACE/HANDOFF.md
+Tests: with GITHUB_ACTIONS=true FORCE_COLOR=1: segment_ledger + database +
+  capture_scan + channel_import + drive_source -> 80 passed; ruff clean; mypy
+  Success (36 source files). Real Postgres 16 + schema.sql: enqueue_local with
+  source_url inserts and fetch_used_segments reads it back.
+CI: pending on the PR.
+Known blockers: none for this task. FINDING (pre-existing, not this task):
+  2 tests in tests/test_database_integration.py fail identically on
+  origin/main 2ceee2b against a real Postgres; CI skips them (no DB URL).
+Next action: phase 1c - headless runner command wiring drive_source +
+  segment_ledger + existing run_production, with frame-vs-title game check.
+Merge authorized: no
+Deploy authorized: no
