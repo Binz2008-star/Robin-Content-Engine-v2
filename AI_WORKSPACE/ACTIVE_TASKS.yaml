@@ -2667,6 +2667,43 @@ tasks:
       tasks can be reviewed commit by commit. It depends on STUBPIN anyway:
       without that fix, CI cannot pass on any branch.
 
+  - id: RCE-20260928-CLOUDPROBE
+    title: "Cloud runner phase 0: GitHub-runner YouTube download probe"
+    status: active
+    owner: claude
+    branch: claude/gaming-youtube-automation-rtl9xw
+    base_branch: main
+    base_sha: 2ceee2bdd067d1882ccefbb6518d6dc844937a5c
+    allowed_paths:
+      - .github/workflows/youtube-download-probe.yml
+      - AI_WORKSPACE/ACTIVE_TASKS.yaml
+      - AI_WORKSPACE/HANDOFF.md
+    forbidden_paths:
+      - src/**
+      - studio/**
+      - schema.sql
+      - .env
+      - client_secret*.json
+      - token*.json
+    merge_allowed: false
+    deploy_allowed: false
+    scope: >-
+      The operator PC that ran production is no longer available; the owner
+      approved (2026-09-28) moving the engine to a scheduled GitHub-hosted
+      runner. Phase 0 de-risks the plan before any secrets or OAuth are
+      requested: a read-only workflow that tries to download the first 20s of
+      two of the channel's OWN public videos with several yt-dlp player
+      clients and reports pass/fail. No secrets, no DB, no upload, no writes.
+    stop_conditions:
+      - no secrets, OAuth, database access or uploads in this phase
+      - if every client fails, stop and report; the design must change
+    note: >-
+      Phase plan (each its own reviewable change): 0 probe (this); 1 headless
+      runner command that cuts NEW Shorts from long own-channel videos with a
+      used-segment ledger and game-title verification; 2 one-time phone-friendly
+      YouTube OAuth (device code) + GitHub Secrets wiring; 3 scheduled
+      workflow, private-first publishing, 1-2/day cap.
+
 # Other branches observed on origin at the time this registry was created
 # that are NOT yet registered as tasks (owner/scope unknown to this agent —
 # not fabricated here). Whoever owns them should add a task entry above
