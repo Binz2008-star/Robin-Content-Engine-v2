@@ -5,9 +5,12 @@ name: YouTube download probe
 # can a GitHub runner download the channel's OWN public videos with yt-dlp,
 # and with which player client?
 #
-# Safety: no secrets, no OAuth, no database, no upload, no repository write.
-# It downloads at most the first 20 seconds of two of the channel's own
-# public videos into the runner's temp disk and discards them.
+# Safety: no OAuth, no database, no upload, no repository write. The only
+# secret used is the optional YOUTUBE_COOKIES (a cookies.txt export from a
+# SECONDARY Google account, never the channel account); it is written to a
+# 0600 temp file, never echoed, and deleted at the end. It downloads at most
+# the first 20 seconds of two of the channel's own public videos into the
+# runner's temp disk and discards them.
 
 on:
   workflow_dispatch:
@@ -35,7 +38,18 @@ jobs:
           sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg >/dev/null
           yt-dlp --version
       - name: Probe own-channel downloads per player client
+        env:
+          YOUTUBE_COOKIES: ${{ secrets.YOUTUBE_COOKIES }}
         run: |
+          COOKIE_ARGS=""
+          if [ -n "$YOUTUBE_COOKIES" ]; then
+            umask 077
+            printf '%s\n' "$YOUTUBE_COOKIES" > "$RUNNER_TEMP/cookies.txt"
+            COOKIE_ARGS="--cookies $RUNNER_TEMP/cookies.txt"
+            echo "cookies: present (from secret YOUTUBE_COOKIES)"
+          else
+            echo "cookies: absent"
+          fi
           # Channel-owned public videos with PS5-native Fortnite tags (the
           # game is confirmed by the console, not guessed from a title).
           VIDEOS="XWxoxeeiZ0U EKEXAJjRJ0Y"
@@ -45,7 +59,8 @@ jobs:
             for client in $CLIENTS; do
               total=$((total+1))
               out="$RUNNER_TEMP/$vid-$client"
-              if timeout 120 yt-dlp --no-warnings --no-progress \
+              # shellcheck disable=SC2086
+              if timeout 120 yt-dlp --no-warnings --no-progress $COOKIE_ARGS \
                   --extractor-args "youtube:player_client=$client" \
                   -f "bv*[height<=1080]+ba/b" --merge-output-format mp4 \
                   --download-sections "*0-20" \
@@ -61,4 +76,4 @@ jobs:
           done
           echo "SUMMARY: $ok/$total downloads succeeded"
           echo "### YouTube download probe: $ok/$total succeeded" >> "$GITHUB_STEP_SUMMARY"
-          rm -f "$RUNNER_TEMP"/*.mp4 "$RUNNER_TEMP"/*.webm "$RUNNER_TEMP"/*.m4a
+          rm -f "$RUNNER_TEMP"/*.mp4 "$RUNNER_TEMP"/*.webm "$RUNNER_TEMP"/*.m4a "$RUNNER_TEMP/cookies.txt"
