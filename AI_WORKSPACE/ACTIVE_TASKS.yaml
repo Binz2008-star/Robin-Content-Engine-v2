@@ -2581,11 +2581,18 @@ tasks:
 
   - id: RCE-20260923-STUBPIN
     title: Restore the mypy CI gate broken by a types-yt-dlp stub rename
-    status: review
+    status: complete
     owner: claude
     branch: claude/gaming-youtube-automation-rtl9xw
     base_branch: main
     base_sha: 6ee22491391e2e312f797b2da414b11f75c6f06a
+    pr: 26
+    merged: true
+    merge_method: merge
+    merge_commit_sha: 2ceee2bdd067d1882ccefbb6518d6dc844937a5c
+    merged_into: main
+    merged_at: 2026-09-28
+    merged_by: claude, under explicit owner authorization ("Yes, merge now")
     allowed_paths:
       - src/robin_content_engine/channel_import.py
       - pyproject.toml
@@ -2614,12 +2621,19 @@ tasks:
 
   - id: RCE-20260927-GAMEREPORT
     title: Read-only per-game performance report (game-report)
-    status: review
+    status: complete
     owner: claude
     branch: claude/gaming-youtube-automation-rtl9xw
     base_branch: main
     base_sha: 6ee22491391e2e312f797b2da414b11f75c6f06a
     depends_on: RCE-20260923-STUBPIN
+    pr: 26
+    merged: true
+    merge_method: merge
+    merge_commit_sha: 2ceee2bdd067d1882ccefbb6518d6dc844937a5c
+    merged_into: main
+    merged_at: 2026-09-28
+    merged_by: claude, under explicit owner authorization ("Yes, merge now")
     allowed_paths:
       - src/robin_content_engine/game_performance.py
       - src/robin_content_engine/cli.py

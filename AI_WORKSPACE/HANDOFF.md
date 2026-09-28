@@ -2007,3 +2007,28 @@ Known blockers: none.
 Next action: human review; do not merge or deploy without explicit authorization.
 Merge authorized: no
 Deploy authorized: no
+
+---
+
+## RCE-20260923-STUBPIN + RCE-20260927-GAMEREPORT — 2026-09-28 (MERGED / CLOSED)
+
+Task ID: RCE-20260923-STUBPIN, RCE-20260927-GAMEREPORT
+Agent: claude
+Branch: claude/gaming-youtube-automation-rtl9xw
+Base SHA: 6ee22491391e2e312f797b2da414b11f75c6f06a
+PR: 26 — marked ready, then merge-merged into main. Merge commit
+  2ceee2bdd067d1882ccefbb6518d6dc844937a5c (head ad90d95, expected-head pinned).
+Status: complete
+Files changed: see the two task entries above.
+Tests: PR head ad90d95 CI green — "test" PASS (run 36350271991, ruff + mypy +
+  full pytest), "Check branch scope boundaries" PASS. Post-merge main CI run
+  36365810235 started on 2ceee2b (result recorded in the close-out PR).
+Known blockers: none.
+Next action: none for these tasks. Proposed next task (NOT started, needs
+  owner approval because it requires a schema migration): persist per-Short
+  highlight features (score, duration, captioned, hook type) on publish so the
+  learning loop can rank clip styles, not only games.
+Merge authorized: yes (explicit owner "Yes, merge now", 2026-09-28)
+Deploy authorized: no — no deploy performed. The production runner pins
+  PYTHONPATH to a local working tree; game-report reaches it only when the
+  owner updates that tree. It is read-only, so there is no runtime risk.
