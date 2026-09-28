@@ -126,6 +126,19 @@ game detection: a recognized game becomes `<Game> gameplay`, and ambiguous
 default capture names (e.g. "Black ops", "Furniture") become neutral
 "Archived gameplay" so the AI can never mislabel a clip.
 
+### Performance reports (read-only, advisory)
+
+```bash
+robin-engine youtube-sync                 # refresh the stored snapshot first
+robin-engine posting-report               # best day/hour windows by median views
+robin-engine game-report --format short   # which game's Shorts perform best
+```
+
+`game-report` groups the channel's current public videos by detected game
+(engine capture title first, then published title, then tags; ambiguous names
+stay "Unclassified"), ranks games by median views, and shows how many of each
+the engine produced. Neither report writes to the database or changes any job.
+
 ## Configuration
 
 | Variable | Default | Purpose |

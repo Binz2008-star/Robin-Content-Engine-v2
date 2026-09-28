@@ -1923,3 +1923,87 @@ Next action: none for this task. Merge authorized: yes (explicit operator
   where the same models.py change is applied in the working tree.
 Merge authorized: yes
 Deploy authorized: no
+---
+
+## RCE-20260923-STUBPIN — 2026-09-23
+
+Task ID: RCE-20260923-STUBPIN
+Agent: claude
+Branch: claude/gaming-youtube-automation-rtl9xw
+Base SHA: 6ee22491391e2e312f797b2da414b11f75c6f06a
+Current HEAD: (set at commit time — see PR)
+PR: draft against main (see PR link)
+Status: review
+Files changed: src/robin_content_engine/channel_import.py, pyproject.toml,
+  AI_WORKSPACE/ACTIVE_TASKS.yaml, AI_WORKSPACE/HANDOFF.md
+Tests: clean venv, Python 3.11. Reproduced on base: `mypy` -> "channel_import.py:22:
+  error: Module "yt_dlp" has no attribute "_Params"" with types-yt-dlp
+  2026.8.19.20260912; bisected: 2026.8.19.20260827 passes, 20260912 fails.
+  After fix: `mypy` Success (33 source files); `ruff check .` clean; full
+  `pytest` run recorded in the PR body.
+CI: pending on the PR.
+Known blockers: none. Context: this surfaced during a discovery pass for the
+  proposed "gaming YouTube automation factory"; most of that pipeline already
+  exists on main (capture-scan -> rights -> highlight -> cut/reframe/caption ->
+  quality gate -> AI metadata -> private-first publish -> posting-report). The
+  missing piece is a performance feedback loop; proposed as the next task, not
+  started.
+Next action: human review; do not merge or deploy without explicit authorization.
+Merge authorized: no
+Deploy authorized: no
+
+---
+
+## RCE-20260927-GAMEREPORT — 2026-09-27
+
+Task ID: RCE-20260927-GAMEREPORT
+Agent: claude
+Branch: claude/gaming-youtube-automation-rtl9xw
+Base SHA: 6ee22491391e2e312f797b2da414b11f75c6f06a (stacked on RCE-20260923-STUBPIN commit fd4d606)
+Current HEAD: (set at commit time — see PR)
+PR: 26 (shared with RCE-20260923-STUBPIN; separate commit)
+Status: review
+Files changed: src/robin_content_engine/game_performance.py (new),
+  src/robin_content_engine/cli.py (game-report command),
+  tests/test_game_performance.py (new, 19 tests), README.md,
+  AI_WORKSPACE/ACTIVE_TASKS.yaml, AI_WORKSPACE/HANDOFF.md
+Tests: clean venv, Python 3.11: `pytest tests/test_game_performance.py
+  tests/test_posting_time.py` -> 31 passed; `ruff check .` clean; `mypy`
+  Success (34 source files). Real-schema check: throwaway local Postgres 16
+  loaded with schema.sql + 4 seeded videos -> private video excluded, Arabic
+  AI title classified via engine source_title, JSONB tags parsed, bare
+  "Black ops" left Unclassified, small-sample caveat shown. Instance deleted.
+CI: pending on the PR.
+Known blockers: none.
+Next action: human review; do not merge or deploy without explicit authorization.
+Merge authorized: no
+Deploy authorized: no
+
+---
+
+## RCE-20260927-GAMEREPORT — 2026-09-27 (CI fix + correction)
+
+Task ID: RCE-20260927-GAMEREPORT
+Agent: claude
+Branch: claude/gaming-youtube-automation-rtl9xw
+Base SHA: 6ee22491391e2e312f797b2da414b11f75c6f06a
+Current HEAD: (set at commit time — see PR)
+PR: 26
+Status: review
+Files changed: tests/test_game_performance.py, AI_WORKSPACE/HANDOFF.md
+Change: CI run 36349063579 failed test_game_report_cli_rejects_unknown_format
+  (1 failed, 588 passed, 8 skipped). On CI typer colorizes the "--format"
+  option token with ANSI codes, so the literal substring was absent; locally
+  (no color) it passed. Reproduced with GITHUB_ACTIONS=true FORCE_COLOR=1.
+  Fix follows the existing repo convention (test_highlight_rank_cli.py):
+  click.unstyle(output) and assert on the message text, not the option name.
+  Test-only change; no production code touched.
+Correction: the previous entry said 19 new tests; the file has 18.
+Tests: with GITHUB_ACTIONS=true FORCE_COLOR=1: test_game_performance.py +
+  test_posting_time.py -> 31 passed; without color -> 18 passed; ruff clean;
+  mypy Success (34 source files).
+CI: pending on the new head.
+Known blockers: none.
+Next action: human review; do not merge or deploy without explicit authorization.
+Merge authorized: no
+Deploy authorized: no

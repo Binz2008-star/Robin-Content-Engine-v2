@@ -28,6 +28,11 @@ from .clip_selector import (
 )
 from .config import APP_ROOT, Settings
 from .database import JobRepository
+from .game_performance import (
+    UNCLASSIFIED,
+    GamePerformanceError,
+    build_game_performance_report,
+)
 from .highlight_features import (
     FeatureExtractionError,
     compute_scene_density,
@@ -1557,6 +1562,80 @@ def posting_report_command(
             typer.echo(
                 f"  {hour_stat.hour:02d}:00 - median {hour_stat.median_views} "
                 f"({hour_stat.count} video(s))"
+            )
+    typer.echo(f"Recommendation: {report.recommendation}")
+
+
+@app.command("game-report")
+def game_report_command(
+    as_json: Annotated[
+        bool, typer.Option("--json", help="Print machine-readable JSON instead of text.")
+    ] = False,
+    video_format: Annotated[
+        str,
+        typer.Option(
+            "--format",
+            help="Which videos to compare: all, short (<= 180s) or long.",
+        ),
+    ] = "all",
+    min_count: Annotated[
+        int,
+        typer.Option(
+            "--min-count",
+            help="Only show games backed by at least this many videos (>= 1).",
+        ),
+    ] = 1,
+) -> None:
+    """Advisory per-game performance report - read-only.
+
+    Groups the channel's OWN current PUBLIC videos (the stored youtube-videos
+    snapshot) by detected game and ranks games by median views, flagging how
+    many of each were produced by this engine. Use it to decide which game
+    to record and queue next.
+
+    PURELY ADVISORY and read-only: no scheduler, no upload, no database
+    write, and no change to any job/rights/upload state. Run
+    'robin-engine youtube-sync' first to refresh the snapshot.
+    """
+    if video_format not in ("all", "short", "long"):
+        raise typer.BadParameter("--format must be one of: all, short, long.")
+
+    settings = Settings()  # type: ignore[call-arg]
+    try:
+        report = build_game_performance_report(
+            settings,
+            video_format=video_format,  # type: ignore[arg-type]
+            min_count=min_count,
+        )
+    except GamePerformanceError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+
+    if as_json:
+        typer.echo(
+            json.dumps(
+                dataclasses.asdict(report),
+                ensure_ascii=False,
+                indent=2,
+                default=_json_datetime_default,
+            )
+        )
+        return
+
+    typer.echo(
+        f"Game report ({report.video_format}) - {report.sample_count} public videos, "
+        f"{report.total_views} total views"
+    )
+    if report.by_game:
+        typer.echo("By game (median views):")
+        for index, stat in enumerate(report.by_game, start=1):
+            rank = "  -" if stat.game == UNCLASSIFIED else f"  #{index}"
+            likes = (
+                f", like rate {stat.like_rate:.1%}" if stat.like_rate is not None else ""
+            )
+            typer.echo(
+                f"{rank}  {stat.game} - {stat.count} video(s) "
+                f"({stat.engine_count} by engine), median {stat.median_views} "
+                f"(mean {stat.mean_views:.0f}){likes}"
             )
     typer.echo(f"Recommendation: {report.recommendation}")
 

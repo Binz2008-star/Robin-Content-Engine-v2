@@ -37,8 +37,11 @@ dev = [
   "ruff>=0.9,<1",
   # Official type stubs for the optional yt-dlp dependency, so mypy can
   # type-check channel_import.py's lazy `import yt_dlp` instead of being
-  # told to ignore it.
-  "types-yt-dlp>=2026.7,<2027",
+  # told to ignore it. Pinned EXACTLY: channel_import.py imports a private
+  # stub name (_YoutubeDLOptions) that typeshed renames without notice (the
+  # 2026-09-12 release renamed _Params and silently broke the mypy gate).
+  # Bump deliberately in its own PR and re-run mypy.
+  "types-yt-dlp==2026.8.19.20260912",
 ]
 # Optional: downloading own-channel videos for `robin-engine channel-import`.
 download = [
