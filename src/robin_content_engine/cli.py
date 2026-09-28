@@ -28,6 +28,7 @@ from .clip_selector import (
 )
 from .config import APP_ROOT, Settings
 from .database import JobRepository
+from .device_auth import DeviceAuthError, poll_for_tokens, request_device_code
 from .drive_runner import DriveRunnerError, produce_next_short
 from .drive_source import DriveSourceError, build_drive_service
 from .game_performance import (
@@ -63,6 +64,15 @@ from .production_runner import (
 from .publishing import PublishingError, dry_run, execute_private_upload
 from .quality_gate import PackagingError, package_short, run_quality_gate
 from .scene_detector import SceneBoundary, SceneDetectionError, detect_scenes
+from .token_store import (
+    YOUTUBE_TOKEN_NAME,
+    StoredCredentials,
+    TokenStoreError,
+    encrypt_credentials,
+    fernet_from_service_account,
+    materialize_token_file,
+    save_token,
+)
 from .transcription import FasterWhisperRecognizer, TranscriptionError
 from .upload_budget import record_upload, upload_allowed, upload_budget_summary
 from .uploader import YouTubeUploader
@@ -1718,6 +1728,150 @@ def drive_produce_command(
         f"game={result.game or '-'} ({result.evidence.value}), "
         f"source title '{result.source_title}'. Not uploaded."
     )
+
+
+def _json_env(name: str) -> dict[str, Any]:
+    """Parse a JSON secret from the environment. Never echoes its content."""
+    import os
+
+    raw = os.environ.get(name, "").strip()
+    if not raw:
+        typer.echo(f"{name} is not set.", err=True)
+        raise typer.Exit(code=2)
+    try:
+        value = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        typer.echo(f"{name} is not valid JSON.", err=True)
+        raise typer.Exit(code=2) from exc
+    if not isinstance(value, dict):
+        typer.echo(f"{name} must be a JSON object.", err=True)
+        raise typer.Exit(code=2)
+    return value
+
+
+def _oauth_client(info: dict[str, Any]) -> tuple[str, str]:
+    """(client_id, client_secret) from a downloaded Google OAuth client JSON
+    ({"installed": {...}}, {"web": {...}} or flat)."""
+    body = info.get("installed") or info.get("web") or info
+    client_id = body.get("client_id") if isinstance(body, dict) else None
+    client_secret = body.get("client_secret") if isinstance(body, dict) else None
+    if not client_id or not client_secret:
+        typer.echo("YOUTUBE_OAUTH_CLIENT_JSON has no client_id/client_secret.", err=True)
+        raise typer.Exit(code=2)
+    return str(client_id), str(client_secret)
+
+
+@app.command("youtube-device-auth")
+def youtube_device_auth_command() -> None:
+    """One-time, phone-friendly YouTube sign-in for the PC-less runner.
+
+    Prints a URL and a short code: open the URL on any phone, enter the code,
+    choose the CHANNEL's Google account and allow access. The authorized
+    account must be the configured YOUTUBE_EXPECTED_CHANNEL_ID, otherwise
+    nothing is stored. The refresh token is stored ENCRYPTED in the
+    oauth_tokens table; no token is ever printed.
+
+    Needs env: YOUTUBE_OAUTH_CLIENT_JSON (a "TVs and Limited Input devices"
+    OAuth client), GOOGLE_SERVICE_ACCOUNT_JSON (encryption key source),
+    DATABASE_URL, YOUTUBE_EXPECTED_CHANNEL_ID.
+    """
+    import os
+
+    from google.oauth2.credentials import Credentials
+
+    client_id, client_secret = _oauth_client(_json_env("YOUTUBE_OAUTH_CLIENT_JSON"))
+    service_account_info = _json_env("GOOGLE_SERVICE_ACCOUNT_JSON")
+    settings = Settings()  # type: ignore[call-arg]
+    expected = settings.youtube_expected_channel_id
+    if not expected:
+        typer.echo("YOUTUBE_EXPECTED_CHANNEL_ID must be set before signing in.", err=True)
+        raise typer.Exit(code=2)
+
+    try:
+        code = request_device_code(client_id)
+        message = (
+            f"Open {code.verification_url} on your phone and enter the code: "
+            f"{code.user_code}  (valid for {code.expires_in // 60} minutes)"
+        )
+        typer.echo(message)
+        summary_path = os.environ.get("GITHUB_STEP_SUMMARY")
+        if summary_path:
+            with open(summary_path, "a", encoding="utf-8") as summary:
+                summary.write(f"## YouTube sign-in\n\n{message}\n")
+        tokens = poll_for_tokens(client_id, client_secret, code)
+    except DeviceAuthError as exc:
+        typer.echo(f"YouTube sign-in failed: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+    credentials = Credentials(  # type: ignore[no-untyped-call]
+        token=tokens.access_token or None,
+        refresh_token=tokens.refresh_token,
+        client_id=client_id,
+        client_secret=client_secret,
+        token_uri="https://oauth2.googleapis.com/token",
+        scopes=list(tokens.scopes),
+    )
+    auth = YouTubeAuth(settings.youtube_client_secret_file, settings.youtube_token_file)
+    try:
+        identity = auth.fetch_channel_identity(credentials)
+    except YouTubeAuthError as exc:
+        typer.echo(f"Signed in, but the channel lookup failed: {exc} Nothing stored.", err=True)
+        raise typer.Exit(code=1) from exc
+    if identity.channel_id != expected:
+        typer.echo(
+            f"Signed in as channel '{identity.title}' ({identity.channel_id}), which is NOT "
+            f"the expected channel {expected}. Nothing stored - sign in again with the "
+            "channel's account.",
+            err=True,
+        )
+        raise typer.Exit(code=1)
+
+    stored = StoredCredentials(
+        client_id=client_id,
+        client_secret=client_secret,
+        refresh_token=tokens.refresh_token,
+        scopes=tokens.scopes,
+        channel_id=identity.channel_id,
+    )
+    try:
+        save_token(
+            settings.database_url,
+            YOUTUBE_TOKEN_NAME,
+            encrypt_credentials(fernet_from_service_account(service_account_info), stored),
+        )
+    except TokenStoreError as exc:
+        typer.echo(f"Could not store the YouTube token: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+    typer.echo(
+        f"YouTube sign-in complete for '{identity.title}' ({identity.channel_id}). "
+        "Token stored encrypted."
+    )
+
+
+@app.command("youtube-token-materialize")
+def youtube_token_materialize_command(
+    output: Annotated[
+        Path | None,
+        typer.Option("--output", help="Where to write token.json (default: YOUTUBE_TOKEN_FILE)."),
+    ] = None,
+) -> None:
+    """Write the stored (encrypted) YouTube token as a 0600 token.json for the
+    existing uploader, at the start of a cloud run. Refuses a token for any
+    channel other than YOUTUBE_EXPECTED_CHANNEL_ID. Prints no token data."""
+    service_account_info = _json_env("GOOGLE_SERVICE_ACCOUNT_JSON")
+    settings = Settings()  # type: ignore[call-arg]
+    destination = output or settings.youtube_token_file
+    try:
+        stored = materialize_token_file(
+            settings.database_url,
+            service_account_info,
+            destination,
+            expected_channel_id=settings.youtube_expected_channel_id,
+        )
+    except TokenStoreError as exc:
+        typer.echo(f"youtube-token-materialize failed: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+    typer.echo(f"YouTube token ready for channel {stored.channel_id} at {destination}.")
 
 
 @app.command("channel-import")

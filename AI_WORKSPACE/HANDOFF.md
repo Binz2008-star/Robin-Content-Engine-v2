@@ -2142,3 +2142,33 @@ Next action: phase 2 - phone-friendly one-time YouTube OAuth (device code)
   for public posts).
 Merge authorized: no
 Deploy authorized: no
+
+---
+
+## RCE-20260928-CLOUDAUTH — 2026-09-28
+
+Task ID: RCE-20260928-CLOUDAUTH
+Agent: claude
+Branch: claude/gaming-youtube-automation-rtl9xw
+Base SHA: 2ceee2bdd067d1882ccefbb6518d6dc844937a5c
+Current HEAD: (set at commit time — see PR)
+PR: 27 (shared branch; separate commit)
+Status: review
+Files changed: src/robin_content_engine/device_auth.py (new),
+  src/robin_content_engine/token_store.py (new), src/robin_content_engine/youtube_auth.py
+  (accept full youtube scope), src/robin_content_engine/cli.py (youtube-device-auth,
+  youtube-token-materialize), schema.sql (+oauth_tokens), pyproject.toml
+  (+cryptography, +requests), tests/test_cloud_auth.py (new, 17 tests),
+  AI_WORKSPACE/ACTIVE_TASKS.yaml, AI_WORKSPACE/HANDOFF.md
+Tests: test_cloud_auth + test_youtube_auth -> 43 passed (CI colour env);
+  ruff clean; mypy Success (39 files). Real Postgres 16: schema.sql applies
+  twice cleanly (idempotent); save/overwrite/load of oauth_tokens OK; empty
+  name rejected by CHECK. Full suite: see PR.
+CI: pending on the PR.
+Known blockers: production migration (oauth_tokens) NOT applied - needs PR
+  review; apply on a Neon branch first. Owner one-time setup still pending
+  (service account + TV OAuth client + GitHub secrets + device sign-in).
+Next action: phase 3 - scheduled GitHub workflow wiring (materialize token ->
+  drive-produce -> private upload -> 1-2/day cap) + owner setup guide.
+Merge authorized: no
+Deploy authorized: no

@@ -98,3 +98,14 @@ DROP TRIGGER IF EXISTS trg_youtube_videos_updated_at ON youtube_videos;
 CREATE TRIGGER trg_youtube_videos_updated_at
 BEFORE UPDATE ON youtube_videos
 FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+-- Encrypted OAuth credentials for the PC-less cloud runner (one row per
+-- provider, e.g. 'youtube'). `ciphertext` is Fernet-encrypted with a key
+-- derived from the runner's service-account secret; plaintext tokens are
+-- never stored. Additive: no existing table is changed.
+CREATE TABLE IF NOT EXISTS oauth_tokens (
+    name TEXT PRIMARY KEY CHECK (name <> ''),
+    ciphertext TEXT NOT NULL CHECK (ciphertext <> ''),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);

@@ -2838,6 +2838,59 @@ tasks:
       provider and is deferred pending owner approval; until then only
       console-confirmed games are ever named.
 
+  - id: RCE-20260928-CLOUDAUTH
+    title: "Cloud runner phase 2: phone sign-in (device flow) + encrypted token in Neon"
+    status: review
+    owner: claude
+    branch: claude/gaming-youtube-automation-rtl9xw
+    base_branch: main
+    base_sha: 2ceee2bdd067d1882ccefbb6518d6dc844937a5c
+    depends_on: RCE-20260928-DRIVERUN
+    allowed_paths:
+      - src/robin_content_engine/device_auth.py
+      - src/robin_content_engine/token_store.py
+      - src/robin_content_engine/youtube_auth.py
+      - src/robin_content_engine/cli.py
+      - schema.sql
+      - pyproject.toml
+      - tests/test_cloud_auth.py
+      - AI_WORKSPACE/ACTIVE_TASKS.yaml
+      - AI_WORKSPACE/HANDOFF.md
+    forbidden_paths:
+      - studio/**
+      - .env
+      - client_secret*.json
+      - token*.json
+    merge_allowed: false
+    deploy_allowed: false
+    owner_decisions:
+      - "2026-09-28: owner approved building the PC-less automated system"
+      - "2026-09-28: owner chose storing the YouTube token encrypted in Neon (one additive table)"
+    scope: >-
+      AUTH CHANGE (owner-approved design). device_auth: OAuth 2.0 device flow
+      (google.com/device + code) requesting the full youtube scope; handles
+      pending/slow_down/denied/expired. token_store: Fernet encryption with a
+      key HKDF-derived from the service-account private key (no extra secret);
+      save/load in new table oauth_tokens; materialize_token_file writes a
+      0600 authorized-user token.json so the existing uploader runs unchanged,
+      refusing a token for any channel other than YOUTUBE_EXPECTED_CHANNEL_ID.
+      CLI: youtube-device-auth (verifies the authorized channel IS the
+      expected channel before storing) and youtube-token-materialize.
+      youtube_auth._load_token also accepts a token carrying the full youtube
+      scope alone (it includes upload + read); readonly-only still rejected.
+      schema.sql: additive CREATE TABLE IF NOT EXISTS oauth_tokens. Explicit
+      deps: cryptography, requests (already transitive).
+    stop_conditions:
+      - do NOT apply the oauth_tokens migration to production until the PR is
+        reviewed; apply on a Neon branch first, then main
+      - no token material in logs/output; no secrets committed
+      - full `mypy` + `ruff` + `pytest` must stay green
+    note: >-
+      Could not read Google's device-flow scope list from this session
+      (developers.google.com blocked by egress policy); the full youtube
+      scope is requested from knowledge. If Google rejects it, the command
+      fails with a clear error and stores nothing.
+
 # Other branches observed on origin at the time this registry was created
 # that are NOT yet registered as tasks (owner/scope unknown to this agent —
 # not fabricated here). Whoever owns them should add a task entry above
