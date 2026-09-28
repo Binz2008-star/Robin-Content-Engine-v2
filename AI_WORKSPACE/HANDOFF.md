@@ -2112,3 +2112,33 @@ Next action: phase 1c - headless runner command wiring drive_source +
   segment_ledger + existing run_production, with frame-vs-title game check.
 Merge authorized: no
 Deploy authorized: no
+
+---
+
+## RCE-20260928-DRIVERUN — 2026-09-28
+
+Task ID: RCE-20260928-DRIVERUN
+Agent: claude
+Branch: claude/gaming-youtube-automation-rtl9xw
+Base SHA: 2ceee2bdd067d1882ccefbb6518d6dc844937a5c
+Current HEAD: (set at commit time — see PR)
+PR: 27 (shared branch; separate commit)
+Status: review
+Files changed: src/robin_content_engine/drive_runner.py (new),
+  src/robin_content_engine/production_runner.py (optional analysis_cache_path
+  on run_production; public highlight_candidates()), src/robin_content_engine/cli.py
+  (drive-produce), tests/test_drive_runner.py (new, 12 tests),
+  AI_WORKSPACE/ACTIVE_TASKS.yaml, AI_WORKSPACE/HANDOFF.md
+Tests: with GITHUB_ACTIONS=true FORCE_COLOR=1: test_drive_runner +
+  test_drive_source + test_segment_ledger + test_production_runner +
+  test_production_run_cli -> 164 passed; ruff clean; mypy Success (37 files).
+CI: pending on the PR.
+Known blockers: needs the owner's Takeout export (scheduled to start
+  2026-09-29) and a service account shared on that folder.
+Next action: phase 2 - phone-friendly one-time YouTube OAuth (device code)
+  + GitHub Secrets wiring; phase 3 scheduled workflow (private-first,
+  1-2/day). Owner also asked about TikTok cross-posting: planned as phase 4
+  after YouTube is stable (TikTok Content Posting API needs an audited app
+  for public posts).
+Merge authorized: no
+Deploy authorized: no

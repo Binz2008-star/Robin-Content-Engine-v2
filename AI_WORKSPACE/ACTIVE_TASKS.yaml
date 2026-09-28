@@ -2793,6 +2793,51 @@ tasks:
       CI never runs them (no ROBIN_TEST_DATABASE_URL), so the drift went
       unnoticed. Needs its own task.
 
+  - id: RCE-20260928-DRIVERUN
+    title: "Cloud runner phase 1c: drive-produce (Drive footage -> one new packaged Short)"
+    status: review
+    owner: claude
+    branch: claude/gaming-youtube-automation-rtl9xw
+    base_branch: main
+    base_sha: 2ceee2bdd067d1882ccefbb6518d6dc844937a5c
+    depends_on: RCE-20260928-LEDGER
+    allowed_paths:
+      - src/robin_content_engine/drive_runner.py
+      - src/robin_content_engine/production_runner.py
+      - src/robin_content_engine/cli.py
+      - tests/test_drive_runner.py
+      - AI_WORKSPACE/ACTIVE_TASKS.yaml
+      - AI_WORKSPACE/HANDOFF.md
+    forbidden_paths:
+      - studio/**
+      - schema.sql
+      - .env
+      - client_secret*.json
+      - token*.json
+    merge_allowed: false
+    deploy_allowed: false
+    scope: >-
+      New drive_runner module + `robin-engine drive-produce` command:
+      downloads Takeout archives one at a time, extracts videos, matches them
+      to channel videos, orders confirmed-game videos first (Fortnite first),
+      picks the first unused highlight window via the segment ledger,
+      registers a rights-confirmed job with the ledger URL and runs the
+      existing production pipeline. NEVER uploads. Title truthfulness: a game
+      is named in the source title only when console-native share tags
+      (#PS4Live/#PS5Live) confirm it; AI-written/claimed games get the
+      neutral "Archived gameplay". production_runner gains an optional
+      analysis_cache_path on run_production (default None = unchanged) and a
+      public read-only highlight_candidates() wrapper, so a 2h source is
+      analysed once. Service-account key only via env
+      GOOGLE_SERVICE_ACCOUNT_JSON, never printed.
+    stop_conditions:
+      - no uploads, no schema change, no secrets committed
+      - full `mypy` + `ruff` + `pytest` must stay green
+    note: >-
+      Frame-based (vision) game verification needs a new external AI
+      provider and is deferred pending owner approval; until then only
+      console-confirmed games are ever named.
+
 # Other branches observed on origin at the time this registry was created
 # that are NOT yet registered as tasks (owner/scope unknown to this agent —
 # not fabricated here). Whoever owns them should add a task entry above

@@ -28,6 +28,8 @@ from .clip_selector import (
 )
 from .config import APP_ROOT, Settings
 from .database import JobRepository
+from .drive_runner import DriveRunnerError, produce_next_short
+from .drive_source import DriveSourceError, build_drive_service
 from .game_performance import (
     UNCLASSIFIED,
     GamePerformanceError,
@@ -1646,6 +1648,76 @@ def _json_datetime_default(value: Any) -> str:
     if isinstance(value, datetime):
         return value.isoformat()
     raise TypeError(f"Object of type {type(value).__name__} is not JSON serializable")
+
+
+@app.command("drive-produce")
+def drive_produce_command(
+    folder_id: Annotated[
+        str | None,
+        typer.Option(
+            "--folder-id",
+            help="Drive folder holding the Takeout .zip parts "
+            "(default: env DRIVE_TAKEOUT_FOLDER_ID).",
+        ),
+    ] = None,
+    as_json: Annotated[
+        bool, typer.Option("--json", help="Print machine-readable JSON instead of text.")
+    ] = False,
+) -> None:
+    """Produce ONE new packaged Short from the owner's Google Takeout export
+    in Drive (PC-less runner). Picks a highlight window never used before,
+    records it in the queue, and runs the normal highlight -> reframe ->
+    captions -> quality gate -> package pipeline.
+
+    NEVER uploads. The Drive service-account key is read from the env var
+    GOOGLE_SERVICE_ACCOUNT_JSON (its JSON content, e.g. a GitHub secret);
+    it is never printed. A game is named in the Short's source title only
+    when console-native tags confirm it.
+    """
+    import os
+
+    folder = folder_id or os.environ.get("DRIVE_TAKEOUT_FOLDER_ID", "").strip()
+    if not folder:
+        raise typer.BadParameter("Provide --folder-id or set DRIVE_TAKEOUT_FOLDER_ID.")
+    raw_key = os.environ.get("GOOGLE_SERVICE_ACCOUNT_JSON", "").strip()
+    if not raw_key:
+        typer.echo("GOOGLE_SERVICE_ACCOUNT_JSON is not set (service-account key JSON).", err=True)
+        raise typer.Exit(code=2)
+    try:
+        key_info = json.loads(raw_key)
+    except json.JSONDecodeError as exc:
+        typer.echo("GOOGLE_SERVICE_ACCOUNT_JSON is not valid JSON.", err=True)
+        raise typer.Exit(code=2) from exc
+
+    settings = Settings()  # type: ignore[call-arg]
+    try:
+        result = produce_next_short(settings, build_drive_service(key_info), folder)
+    except (DriveRunnerError, DriveSourceError, ProductionRunError) as exc:
+        typer.echo(f"drive-produce failed: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+    if result is None:
+        typer.echo("No unused footage left in the Drive export - nothing produced.")
+        return
+    summary = {
+        "job_id": result.job_id,
+        "video_id": result.video_id,
+        "game": result.game,
+        "game_evidence": result.evidence.value,
+        "source_title": result.source_title,
+        "rank": result.rank,
+        "segment": [round(result.start_seconds, 3), round(result.end_seconds, 3)],
+        "final_video": str(result.production.final_video_path),
+    }
+    if as_json:
+        typer.echo(json.dumps(summary, ensure_ascii=False, indent=2))
+        return
+    typer.echo(
+        f"Produced job {result.job_id} from {result.video_id} "
+        f"[{result.start_seconds:.1f}-{result.end_seconds:.1f}s], "
+        f"game={result.game or '-'} ({result.evidence.value}), "
+        f"source title '{result.source_title}'. Not uploaded."
+    )
 
 
 @app.command("channel-import")

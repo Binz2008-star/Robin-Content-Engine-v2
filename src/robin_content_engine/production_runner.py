@@ -863,6 +863,7 @@ def run_production(
     quality_gate_config: QualityGateConfig | None = None,
     package_dest_root: Path | None = None,
     selector_config: WindowSelectorConfig | None = None,
+    analysis_cache_path: Path | None = None,
 ) -> ProductionRunResult:
     """Public manual-run entry point (used by the `production-run` CLI
     command). Enters repository.running() exactly once to look up and
@@ -898,8 +899,30 @@ def run_production(
         model_size=model_size,
         quality_gate_config=quality_gate_config,
         package_dest_root=package_dest_root,
+        analysis_cache_path=analysis_cache_path,
         selector_config=selector_config,
     )
+
+
+def highlight_candidates(
+    video_path: Path,
+    top_n: int,
+    *,
+    selector_config: WindowSelectorConfig | None = None,
+    analysis_cache_path: Path | None = None,
+) -> list[HighlightCandidate]:
+    """Public, read-only view of the highlight candidates run_production()
+    chooses from, in rank order (index 0 == rank 1). Uses exactly the same
+    analysis, scoring and overlap suppression, so passing the same
+    `selector_config` (and `analysis_cache_path`) to run_production() maps
+    rank N to candidates[N - 1]. Never touches the database or YouTube."""
+    _scenes, selected = _run_highlight_analysis(
+        video_path,
+        top_n,
+        analysis_cache_path=analysis_cache_path,
+        selector_config=selector_config,
+    )
+    return selected
 
 
 # ---------------------------------------------------------------------------
