@@ -2866,6 +2866,7 @@ tasks:
     owner_decisions:
       - "2026-09-28: owner approved building the PC-less automated system"
       - "2026-09-28: owner chose storing the YouTube token encrypted in Neon (one additive table)"
+      - "2026-09-29: owner approved treating the channel's own published uploads (and their Takeout export) as rights-confirmed owned footage; local captures still need manual rights-approve"
     scope: >-
       AUTH CHANGE (owner-approved design). device_auth: OAuth 2.0 device flow
       (google.com/device + code) requesting the full youtube scope; handles

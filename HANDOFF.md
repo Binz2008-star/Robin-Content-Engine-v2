@@ -127,19 +127,21 @@ public flip (default private); `DAILY_SHORT_CAP` (default 1).
 - **Pre-existing:** 2 tests in `tests/test_database_integration.py` fail on
   `main` against a real Postgres (CI skips them - no test DB). Needs its own
   task.
-- **Decision needed (owner): rights for own published uploads.** The
-  guardrail below says `rights_confirmed` is a manual operator action only.
-  `channel-import` already registered the channel's OWN published uploads as
-  rights-confirmed, and the cloud runner does the same for the owner's Takeout
-  export of those uploads (rights note records source video, segment and
-  game evidence). Owner should confirm this reading of the guardrail.
+- **Decided (owner, 2026-09-29): rights for own published uploads.** The
+  owner approved treating the channel's OWN already-published uploads (and the
+  owner's Takeout export of them) as owned footage, so `channel-import` and the
+  cloud runner register them as rights-confirmed. Each job's rights note
+  records the source video, the exact segment and the game evidence. This does
+  NOT extend to local captures or any other footage: those still need the
+  manual `rights-approve`.
 
 ## Guardrails — HARD
 
 - NO third-party content harvesting (Pexels/Pixabay/Commons/scraping are
   rejected). Footage = the owner's captures or the owner's own uploads.
 - `rights_confirmed` is never inferred by AI/heuristics; no
-  `AUTO_CONFIRM_LOCAL_CAPTURES`. (See the decision above for own uploads.)
+  `AUTO_CONFIRM_LOCAL_CAPTURES`. Sole exception, owner-approved 2026-09-29:
+  the channel's own already-published uploads (see Known issues / findings).
 - Upload cap + channel-ID pin stay hard-enforced.
 - Uploads stay private-first → flip-to-public.
 - A game is named in a title only on strong evidence: conservative

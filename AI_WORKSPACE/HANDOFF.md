@@ -2226,3 +2226,23 @@ Next action: owner review; owner decision on rights for own published
   uploads (recorded in HANDOFF.md "Known issues / findings").
 Merge authorized: no
 Deploy authorized: no
+
+---
+
+## RCE-20260929-SESSIONHANDOFF — 2026-09-29 (owner decision recorded)
+
+Task ID: RCE-20260929-SESSIONHANDOFF
+Agent: claude
+Branch: claude/gaming-youtube-automation-rtl9xw
+Base SHA: 2ceee2bdd067d1882ccefbb6518d6dc844937a5c
+PR: 27 (shared branch; separate commit)
+Status: review
+Change: owner answered the open rights question ("نعم اوافق", 2026-09-29):
+  the channel's own already-published uploads, and the owner's Takeout export
+  of them, count as rights-confirmed owned footage for channel-import and the
+  cloud runner. Local captures and any other footage still require the manual
+  rights-approve. Recorded in HANDOFF.md (Known issues -> Decided; Guardrails
+  exception) and in ACTIVE_TASKS.yaml (RCE-20260928-CLOUDAUTH owner_decisions).
+Tests: N/A (docs only)
+Merge authorized: no
+Deploy authorized: no
