@@ -2205,3 +2205,24 @@ Next action: owner review of PR 27; then Neon-branch-first migration; then
   owner setup + sign-in + one private test run.
 Merge authorized: no
 Deploy authorized: no
+
+---
+
+## RCE-20260929-SESSIONHANDOFF — 2026-09-29
+
+Task ID: RCE-20260929-SESSIONHANDOFF
+Agent: claude
+Branch: claude/gaming-youtube-automation-rtl9xw
+Base SHA: 2ceee2bdd067d1882ccefbb6518d6dc844937a5c
+Current HEAD: (set at commit time — see PR)
+PR: 27 (shared branch; separate commit)
+Status: review
+Files changed: HANDOFF.md (rewritten), AI_WORKSPACE/ACTIVE_TASKS.yaml,
+  AI_WORKSPACE/HANDOFF.md
+Tests: N/A (docs only)
+CI: pending on the PR.
+Known blockers: none.
+Next action: owner review; owner decision on rights for own published
+  uploads (recorded in HANDOFF.md "Known issues / findings").
+Merge authorized: no
+Deploy authorized: no

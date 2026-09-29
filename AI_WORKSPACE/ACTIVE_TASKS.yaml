@@ -2933,6 +2933,31 @@ tasks:
       - "default cap 1/day (repository variable DAILY_SHORT_CAP)"
       - do not merge PR, do not deploy
 
+  - id: RCE-20260929-SESSIONHANDOFF
+    title: Refresh the root session handoff (HANDOFF.md) to the post-PC state
+    status: review
+    owner: claude
+    branch: claude/gaming-youtube-automation-rtl9xw
+    base_branch: main
+    base_sha: 2ceee2bdd067d1882ccefbb6518d6dc844937a5c
+    allowed_paths:
+      - HANDOFF.md
+      - AI_WORKSPACE/ACTIVE_TASKS.yaml
+      - AI_WORKSPACE/HANDOFF.md
+    forbidden_paths:
+      - src/**
+      - tests/**
+      - schema.sql
+    merge_allowed: false
+    deploy_allowed: false
+    scope: >-
+      Owner request (2026-09-29): update the handoff. Root HANDOFF.md was last
+      updated 2026-08-20 and still described the retired PC as production.
+      Rewritten to the current state: PC retired, PR #26 merged, PR #27
+      cloud-runner commits, channel audit, in-progress owner steps, known
+      issues, and an explicit owner decision on rights for own published
+      uploads. Docs only.
+
 # Other branches observed on origin at the time this registry was created
 # that are NOT yet registered as tasks (owner/scope unknown to this agent —
 # not fabricated here). Whoever owns them should add a task entry above
