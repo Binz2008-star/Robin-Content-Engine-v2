@@ -2172,3 +2172,36 @@ Next action: phase 3 - scheduled GitHub workflow wiring (materialize token ->
   drive-produce -> private upload -> 1-2/day cap) + owner setup guide.
 Merge authorized: no
 Deploy authorized: no
+
+---
+
+## RCE-20260928-CLOUDPUBLISH — 2026-09-29
+
+Task ID: RCE-20260928-CLOUDPUBLISH
+Agent: claude
+Branch: claude/gaming-youtube-automation-rtl9xw
+Base SHA: 2ceee2bdd067d1882ccefbb6518d6dc844937a5c
+Current HEAD: (set at commit time — see PR)
+PR: 27 (shared branch; separate commit)
+Status: review
+Files changed: src/robin_content_engine/upload_budget.py (DB-backed daily
+  count), src/robin_content_engine/cli.py (drive-produce
+  --execute-private-upload), tests/test_drive_runner.py, tests/test_upload_budget.py,
+  .github/workflows/daily-short.yml (new), .github/workflows/youtube-signin.yml
+  (new), docs/CLOUD_RUNNER_SETUP.md (new owner guide),
+  AI_WORKSPACE/ACTIVE_TASKS.yaml, AI_WORKSPACE/HANDOFF.md
+Tests: full suite (CI colour env) 660 passed / 8 skipped; ruff clean; mypy
+  Success (39 files). Real Postgres 16: db_uploads_today counts today's
+  Asia/Dubai upload and ignores yesterday's.
+CI: pending on the PR.
+Known blockers: owner one-time setup (docs/CLOUD_RUNNER_SETUP.md);
+  oauth_tokens migration awaits review; Takeout export started 2026-09-29.
+Safety: daily-short.yml is inert until repository variable
+  CLOUD_RUNNER_ENABLED == 'true'; private unless PUBLISH_PUBLIC == 'true';
+  cap default 1/day. Found and fixed before push: runner.temp is not
+  available in job-level env (moved to a step writing GITHUB_ENV); --json
+  path returned before publishing.
+Next action: owner review of PR 27; then Neon-branch-first migration; then
+  owner setup + sign-in + one private test run.
+Merge authorized: no
+Deploy authorized: no

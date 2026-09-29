@@ -74,7 +74,12 @@ from .token_store import (
     save_token,
 )
 from .transcription import FasterWhisperRecognizer, TranscriptionError
-from .upload_budget import record_upload, upload_allowed, upload_budget_summary
+from .upload_budget import (
+    db_upload_allowed,
+    record_upload,
+    upload_allowed,
+    upload_budget_summary,
+)
 from .uploader import YouTubeUploader
 from .vertical_reframe import VerticalReframeError, reframe_to_vertical
 from .youtube_auth import AuthState, YouTubeAuth, YouTubeAuthError
@@ -1673,16 +1678,31 @@ def drive_produce_command(
     as_json: Annotated[
         bool, typer.Option("--json", help="Print machine-readable JSON instead of text.")
     ] = False,
+    execute_upload: Annotated[
+        bool,
+        typer.Option(
+            "--execute-private-upload",
+            help=(
+                "Also publish the produced Short: uploaded PRIVATE first, flipped to public "
+                "only when YOUTUBE_PUBLIC_AFTER_UPLOAD is true. Without this flag nothing "
+                "touches YouTube (metadata is only dry-run validated)."
+            ),
+        ),
+    ] = False,
 ) -> None:
     """Produce ONE new packaged Short from the owner's Google Takeout export
     in Drive (PC-less runner). Picks a highlight window never used before,
     records it in the queue, and runs the normal highlight -> reframe ->
     captions -> quality gate -> package pipeline.
 
-    NEVER uploads. The Drive service-account key is read from the env var
-    GOOGLE_SERVICE_ACCOUNT_JSON (its JSON content, e.g. a GitHub secret);
-    it is never printed. A game is named in the Short's source title only
-    when console-native tags confirm it.
+    Without --execute-private-upload it NEVER uploads. With it, the daily cap
+    is checked FIRST against uploads recorded in the database (runners have
+    no persistent disk), the package is published through the same
+    private-first path as production-run-once, and the job is marked
+    uploaded in the queue. The Drive service-account key is read from the
+    env var GOOGLE_SERVICE_ACCOUNT_JSON (its JSON content, e.g. a GitHub
+    secret); it is never printed. A game is named in the Short's source
+    title only when console-native tags confirm it.
     """
     import os
 
@@ -1700,6 +1720,14 @@ def drive_produce_command(
         raise typer.Exit(code=2) from exc
 
     settings = Settings()  # type: ignore[call-arg]
+    if execute_upload and not db_upload_allowed(settings):
+        # Checked before producing so a capped day burns no runner time and
+        # no ledger segment.
+        typer.echo(
+            f"DAILY UPLOAD CAP REACHED ({settings.youtube_max_uploads_per_day}/day) - "
+            "nothing produced or uploaded today."
+        )
+        return
     try:
         result = produce_next_short(settings, build_drive_service(key_info), folder)
     except (DriveRunnerError, DriveSourceError, ProductionRunError) as exc:
@@ -1721,13 +1749,61 @@ def drive_produce_command(
     }
     if as_json:
         typer.echo(json.dumps(summary, ensure_ascii=False, indent=2))
-        return
-    typer.echo(
-        f"Produced job {result.job_id} from {result.video_id} "
-        f"[{result.start_seconds:.1f}-{result.end_seconds:.1f}s], "
-        f"game={result.game or '-'} ({result.evidence.value}), "
-        f"source title '{result.source_title}'. Not uploaded."
+    else:
+        typer.echo(
+            f"Produced job {result.job_id} from {result.video_id} "
+            f"[{result.start_seconds:.1f}-{result.end_seconds:.1f}s], "
+            f"game={result.game or '-'} ({result.evidence.value}), "
+            f"source title '{result.source_title}'."
+        )
+    _publish_drive_short(result.job_id, result.production, settings, execute_upload)
+
+
+def _publish_drive_short(
+    job_id: int, production: Any, settings: Settings, execute_upload: bool
+) -> None:
+    """Metadata + (dry-run | private-first upload) for a drive-produce job.
+    Mirrors production-run-once's publishing tail, plus a durable
+    mark_uploaded() in the queue so the DB-backed daily cap sees it."""
+    if not production.quality_gate.passed or production.package is None:
+        typer.echo("Quality gate failed - not publishing this Short.", err=True)
+        raise typer.Exit(code=1)
+    package_dir = production.package.package_dir
+    title, description, tags = build_production_metadata(
+        production.source_title, settings, hook=production.hook
     )
+    typer.echo(f"Title: {title}")
+    if not execute_upload:
+        try:
+            dry_run(package_dir, title, description, tags)
+        except PublishingError as exc:
+            typer.echo(f"Publish dry run failed: {exc}", err=True)
+            raise typer.Exit(code=1) from exc
+        typer.echo("PUBLISH DRY RUN PASS - not uploaded (no --execute-private-upload).")
+        return
+
+    auth = YouTubeAuth(settings.youtube_client_secret_file, settings.youtube_token_file)
+    try:
+        upload = execute_private_upload(
+            package_dir, title, description, tags, settings, auth, YouTubeUploader
+        )
+    except PublishingError as exc:
+        typer.echo(f"Upload failed: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+    repository = JobRepository(settings.database_url, settings.max_job_attempts)
+    try:
+        with repository.running():
+            repository.mark_uploaded(job_id, upload.youtube_id)
+    except Exception as exc:  # the upload itself succeeded; surface, don't hide
+        typer.echo(
+            f"UPLOADED as {upload.youtube_id} but recording it in the queue failed: "
+            f"{type(exc).__name__}. Reconcile job {job_id} manually.",
+            err=True,
+        )
+        raise typer.Exit(code=1) from exc
+    typer.echo("UPLOAD SUCCESS")
+    typer.echo(f"YouTube video ID: {upload.youtube_id}")
+    typer.echo(f"Privacy: {upload.privacy_status}")
 
 
 def _json_env(name: str) -> dict[str, Any]:

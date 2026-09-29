@@ -2891,6 +2891,48 @@ tasks:
       scope is requested from knowledge. If Google rejects it, the command
       fails with a clear error and stores nothing.
 
+  - id: RCE-20260928-CLOUDPUBLISH
+    title: "Cloud runner phase 3: scheduled daily Short + DB-backed daily cap"
+    status: review
+    owner: claude
+    branch: claude/gaming-youtube-automation-rtl9xw
+    base_branch: main
+    base_sha: 2ceee2bdd067d1882ccefbb6518d6dc844937a5c
+    depends_on: RCE-20260928-CLOUDAUTH
+    allowed_paths:
+      - src/robin_content_engine/upload_budget.py
+      - src/robin_content_engine/cli.py
+      - tests/test_drive_runner.py
+      - tests/test_upload_budget.py
+      - .github/workflows/daily-short.yml
+      - .github/workflows/youtube-signin.yml
+      - docs/CLOUD_RUNNER_SETUP.md
+      - AI_WORKSPACE/ACTIVE_TASKS.yaml
+      - AI_WORKSPACE/HANDOFF.md
+    forbidden_paths:
+      - studio/**
+      - schema.sql
+      - .env
+      - client_secret*.json
+      - token*.json
+    merge_allowed: false
+    deploy_allowed: false
+    scope: >-
+      drive-produce --execute-private-upload: checks the daily cap FIRST from
+      the database (upload_budget.db_uploads_today counts status='uploaded'
+      rows since local midnight Asia/Dubai - runners have no persistent disk,
+      so the JSON-file budget would always read 0), then produces, then
+      publishes through the existing private-first execute_private_upload and
+      records the upload with JobRepository.mark_uploaded. A failed quality
+      gate is never uploaded. Workflows: youtube-signin.yml (manual, one-time
+      device sign-in) and daily-short.yml (16:00 UTC = 20:00 Dubai; token
+      materialized to a 0600 temp file and removed afterwards).
+    stop_conditions:
+      - "SAFETY SWITCH: daily-short.yml does nothing unless repository variable CLOUD_RUNNER_ENABLED == 'true' (owner sets it)"
+      - "public flip only when repository variable PUBLISH_PUBLIC == 'true'; default private (AGENTS.md private-by-default)"
+      - "default cap 1/day (repository variable DAILY_SHORT_CAP)"
+      - do not merge PR, do not deploy
+
 # Other branches observed on origin at the time this registry was created
 # that are NOT yet registered as tasks (owner/scope unknown to this agent —
 # not fabricated here). Whoever owns them should add a task entry above

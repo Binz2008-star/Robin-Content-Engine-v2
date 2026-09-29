@@ -268,15 +268,15 @@ def test_drive_produce_cli_requires_folder_and_key(monkeypatch: pytest.MonkeyPat
     assert "{not json" not in bad_key.output
 
 
-def test_drive_produce_cli_reports_result_without_uploading(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    from typer.testing import CliRunner
-
-    from robin_content_engine import cli as cli_module
-    from robin_content_engine.cli import app as cli_app
-
-    fake = dr.DriveShortResult(
+def _fake_result(tmp_path: Path, *, gate_passed: bool = True) -> Any:
+    production = SimpleNamespace(
+        final_video_path=tmp_path / "final.mp4",
+        quality_gate=SimpleNamespace(passed=gate_passed),
+        package=SimpleNamespace(package_dir=tmp_path / "pkg") if gate_passed else None,
+        source_title="Fortnite gameplay",
+        hook=None,
+    )
+    return dr.DriveShortResult(
         video_id=PS5_FORTNITE.video_id,
         source_file=tmp_path / "Ggg.mp4",
         game="Fortnite",
@@ -286,15 +286,104 @@ def test_drive_produce_cli_reports_result_without_uploading(
         start_seconds=100.0,
         end_seconds=130.0,
         job_id=7,
-        production=SimpleNamespace(final_video_path=tmp_path / "final.mp4"),  # type: ignore[arg-type]
+        production=production,  # type: ignore[arg-type]
     )
-    monkeypatch.setenv("GOOGLE_SERVICE_ACCOUNT_JSON", '{"type": "service_account"}')
-    monkeypatch.setattr(cli_module, "Settings", lambda: SimpleNamespace())
-    monkeypatch.setattr(cli_module, "build_drive_service", lambda info: object())
-    monkeypatch.setattr(cli_module, "produce_next_short", lambda s, svc, folder: fake)
 
-    result = CliRunner().invoke(cli_app, ["drive-produce", "--folder-id", "f", "--json"])
+
+@pytest.fixture
+def cli_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> dict[str, Any]:
+    from robin_content_engine import cli as cli_module
+
+    calls: dict[str, Any] = {"produced": 0, "uploads": [], "marked": [], "dry": 0}
+    settings = SimpleNamespace(
+        database_url="db",
+        max_job_attempts=3,
+        youtube_max_uploads_per_day=2,
+        youtube_client_secret_file=tmp_path / "cs.json",
+        youtube_token_file=tmp_path / "token.json",
+    )
+
+    def fake_produce(s: Any, svc: Any, folder: str) -> Any:
+        calls["produced"] += 1
+        return calls["result"]
+
+    class Repo:
+        def __init__(self, *a: Any) -> None:
+            pass
+
+        @contextmanager
+        def running(self) -> Any:
+            yield self
+
+        def mark_uploaded(self, job_id: int, youtube_id: str) -> None:
+            calls["marked"].append((job_id, youtube_id))
+
+    def fake_upload(pkg: Any, title: str, desc: str, tags: Any, s: Any, auth: Any, up: Any) -> Any:
+        calls["uploads"].append(pkg)
+        return SimpleNamespace(youtube_id="NEWvid12345", privacy_status="private")
+
+    def fake_dry(*a: Any) -> None:
+        calls["dry"] += 1
+
+    monkeypatch.setenv("GOOGLE_SERVICE_ACCOUNT_JSON", '{"type": "service_account"}')
+    monkeypatch.setattr(cli_module, "Settings", lambda: settings)
+    monkeypatch.setattr(cli_module, "build_drive_service", lambda info: object())
+    monkeypatch.setattr(cli_module, "produce_next_short", fake_produce)
+    monkeypatch.setattr(cli_module, "db_upload_allowed", lambda s: calls.get("allowed", True))
+    monkeypatch.setattr(
+        cli_module, "build_production_metadata", lambda t, s, hook=None: ("T", "D", ["x"])
+    )
+    monkeypatch.setattr(cli_module, "dry_run", fake_dry)
+    monkeypatch.setattr(cli_module, "execute_private_upload", fake_upload)
+    monkeypatch.setattr(cli_module, "JobRepository", Repo)
+    calls["result"] = _fake_result(tmp_path)
+    return calls
+
+
+def _invoke(*args: str) -> Any:
+    from typer.testing import CliRunner
+
+    from robin_content_engine.cli import app as cli_app
+
+    return CliRunner().invoke(cli_app, ["drive-produce", "--folder-id", "f", *args])
+
+
+def test_drive_produce_without_flag_only_dry_runs(cli_env: dict[str, Any]) -> None:
+    result = _invoke("--json")
 
     assert result.exit_code == 0, result.output
     assert '"game_evidence": "confirmed"' in result.output
-    assert '"job_id": 7' in result.output
+    assert "PUBLISH DRY RUN PASS" in result.output
+    assert cli_env["dry"] == 1
+    assert cli_env["uploads"] == [] and cli_env["marked"] == []
+
+
+def test_drive_produce_uploads_and_records_in_queue(cli_env: dict[str, Any]) -> None:
+    result = _invoke("--execute-private-upload")
+
+    assert result.exit_code == 0, result.output
+    assert "UPLOAD SUCCESS" in result.output
+    assert len(cli_env["uploads"]) == 1
+    assert cli_env["marked"] == [(7, "NEWvid12345")]
+
+
+def test_drive_produce_checks_cap_before_producing(cli_env: dict[str, Any]) -> None:
+    cli_env["allowed"] = False
+
+    result = _invoke("--execute-private-upload")
+
+    assert result.exit_code == 0, result.output
+    assert "DAILY UPLOAD CAP REACHED" in result.output
+    assert cli_env["produced"] == 0
+    assert cli_env["uploads"] == []
+
+
+def test_drive_produce_never_uploads_a_failed_quality_gate(
+    cli_env: dict[str, Any], tmp_path: Path
+) -> None:
+    cli_env["result"] = _fake_result(tmp_path, gate_passed=False)
+
+    result = _invoke("--execute-private-upload")
+
+    assert result.exit_code == 1
+    assert cli_env["uploads"] == [] and cli_env["marked"] == []

@@ -80,3 +80,42 @@ def upload_budget_summary(settings: Settings) -> str:
     if used >= cap:
         return f"Daily upload cap reached ({used}/{cap}) - new uploads resume tomorrow."
     return f"Daily uploads: {used}/{cap} used."
+
+
+# ---------------------------------------------------------------------------
+# Database-backed budget for the PC-less cloud runner
+# ---------------------------------------------------------------------------
+#
+# GitHub-hosted runners start from an empty disk every run, so the JSON file
+# above would always read 0 there. The cloud runner counts today's uploads
+# from the queue instead: every successful cloud upload is recorded with
+# JobRepository.mark_uploaded(), which sets status='uploaded' and
+# completed_at=NOW().
+
+CHANNEL_TIMEZONE = "Asia/Dubai"
+
+
+def db_uploads_today(database_url: str, *, timezone: str = CHANNEL_TIMEZONE) -> int:
+    """Uploads recorded in the queue since local midnight in `timezone`.
+    Read-only SELECT."""
+    import psycopg
+
+    with psycopg.connect(database_url) as conn:
+        row = conn.execute(
+            """
+            SELECT count(*)
+            FROM video_queue
+            WHERE status = 'uploaded'
+              AND youtube_id IS NOT NULL
+              AND completed_at >= (date_trunc('day', NOW() AT TIME ZONE %s) AT TIME ZONE %s)
+            """,
+            (timezone, timezone),
+        ).fetchone()
+    return int(row[0]) if row and row[0] is not None else 0
+
+
+def db_upload_allowed(settings: Settings, *, timezone: str = CHANNEL_TIMEZONE) -> bool:
+    """True when today's DB-recorded uploads are below the daily cap."""
+    return db_uploads_today(settings.database_url, timezone=timezone) < (
+        settings.youtube_max_uploads_per_day
+    )
