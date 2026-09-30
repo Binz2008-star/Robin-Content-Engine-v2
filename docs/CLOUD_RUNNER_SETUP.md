@@ -9,8 +9,8 @@ Nothing publishes until the last step flips the safety switch.
 
 ## 0. Before you start
 
-- The Google Takeout export ("Add to Drive", videos only, 4 GB `.zip`) is
-  finished and its folder is in your Drive.
+- The Google Takeout export is in your Drive: the folder is called
+  **"Takeout"** (done 2026-09-30).
 - You are signed in to Google with the account that owns the Robinzo channel.
 
 ## 1. Google Cloud (console.cloud.google.com)
@@ -60,11 +60,11 @@ Repository: `Binz2008-star/Robin-Content-Engine-v2`.
 Tip (Android): open the downloaded `.json` with a text viewer, select all,
 copy, paste into the secret box.
 
-## 4. Database table (done by the engineer, with your approval)
+## 4. Database table - DONE (2026-09-30)
 
-The encrypted sign-in is stored in a new `oauth_tokens` table. It is added to
-the `content-engine` database after the code is reviewed (a Neon branch is
-tested first). No existing data is changed.
+The encrypted sign-in is stored in the `oauth_tokens` table, added to the
+`content-engine` database on 2026-09-30 with your approval (tested on a
+temporary Neon branch first). No existing data was changed. Nothing to do.
 
 ## 5. Sign in once
 

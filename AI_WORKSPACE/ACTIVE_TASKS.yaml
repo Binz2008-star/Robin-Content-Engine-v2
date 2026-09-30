@@ -2716,7 +2716,7 @@ tasks:
 
   - id: RCE-20260928-DRIVESRC
     title: "Cloud runner phase 1a: Google Drive (Takeout) footage source"
-    status: review
+    status: complete
     owner: claude
     branch: claude/gaming-youtube-automation-rtl9xw
     base_branch: main
@@ -2751,7 +2751,7 @@ tasks:
 
   - id: RCE-20260928-LEDGER
     title: "Cloud runner phase 1b: used-segment ledger (no schema change)"
-    status: review
+    status: complete
     owner: claude
     branch: claude/gaming-youtube-automation-rtl9xw
     base_branch: main
@@ -2795,7 +2795,7 @@ tasks:
 
   - id: RCE-20260928-DRIVERUN
     title: "Cloud runner phase 1c: drive-produce (Drive footage -> one new packaged Short)"
-    status: review
+    status: complete
     owner: claude
     branch: claude/gaming-youtube-automation-rtl9xw
     base_branch: main
@@ -2840,7 +2840,7 @@ tasks:
 
   - id: RCE-20260928-CLOUDAUTH
     title: "Cloud runner phase 2: phone sign-in (device flow) + encrypted token in Neon"
-    status: review
+    status: complete
     owner: claude
     branch: claude/gaming-youtube-automation-rtl9xw
     base_branch: main
@@ -2894,7 +2894,7 @@ tasks:
 
   - id: RCE-20260928-CLOUDPUBLISH
     title: "Cloud runner phase 3: scheduled daily Short + DB-backed daily cap"
-    status: review
+    status: complete
     owner: claude
     branch: claude/gaming-youtube-automation-rtl9xw
     base_branch: main
@@ -2936,7 +2936,7 @@ tasks:
 
   - id: RCE-20260929-SESSIONHANDOFF
     title: Refresh the root session handoff (HANDOFF.md) to the post-PC state
-    status: review
+    status: complete
     owner: claude
     branch: claude/gaming-youtube-automation-rtl9xw
     base_branch: main
@@ -2961,7 +2961,7 @@ tasks:
 
   - id: RCE-20260930-DRIVELOOSE
     title: "Cloud runner: read the real Takeout layout (loose videos, part suffix, disk budget)"
-    status: review
+    status: complete
     owner: claude
     branch: claude/gaming-youtube-automation-rtl9xw
     base_branch: main
@@ -3006,6 +3006,36 @@ tasks:
       Follow-up (not in scope): the highlight-analysis cache is keyed by
       path+size+mtime, so it never hits on a fresh runner download; a long
       video is re-analysed each day. Fix needs a production_runner change.
+
+  - id: RCE-20260930-CLOUDCLOSEOUT
+    title: "Close out PR #27 (merged) and record the oauth_tokens production migration"
+    status: review
+    owner: claude
+    branch: claude/gaming-youtube-automation-rtl9xw
+    base_branch: main
+    base_sha: 6802bfb1aa90c8581e477db291227e9a01e1450b
+    allowed_paths:
+      - HANDOFF.md
+      - docs/CLOUD_RUNNER_SETUP.md
+      - AI_WORKSPACE/ACTIVE_TASKS.yaml
+      - AI_WORKSPACE/HANDOFF.md
+    forbidden_paths:
+      - src/**
+      - tests/**
+      - schema.sql
+      - .github/**
+    merge_allowed: false
+    deploy_allowed: false
+    scope: >-
+      Governance only. Owner authorized (2026-09-30) merging PR #27 and adding
+      the oauth_tokens table to production. PR #27 merged as 6802bfb (merge
+      commit, head 0fc452e, CI green). Migration: Neon project
+      snowy-rice-24899849, database neondb, CREATE TABLE IF NOT EXISTS
+      oauth_tokens exactly as in schema.sql; tested on temporary branch
+      br-long-moon-axoilcz9 (4 columns, NOT NULL, 0 rows, video_queue
+      unchanged at 162 rows), then applied to br-lingering-poetry-axoi0r6y
+      (default) and re-verified (table exists, 0 rows, video_queue 162).
+      Marks the PR #27 tasks complete and refreshes the root HANDOFF.md.
 
 # Other branches observed on origin at the time this registry was created
 # that are NOT yet registered as tasks (owner/scope unknown to this agent —

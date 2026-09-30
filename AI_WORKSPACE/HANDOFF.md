@@ -2275,3 +2275,32 @@ Tests: see commit / PR (ruff, mypy, full pytest).
 Known follow-up: analysis cache never hits on runners (path+size+mtime key).
 Merge authorized: no
 Deploy authorized: no
+
+---
+
+## RCE-20260930-CLOUDCLOSEOUT — 2026-09-30
+
+Task ID: RCE-20260930-CLOUDCLOSEOUT
+Agent: claude
+Branch: claude/gaming-youtube-automation-rtl9xw (restarted from main 6802bfb)
+Base SHA: 6802bfb1aa90c8581e477db291227e9a01e1450b
+Status: review
+Owner authorization (2026-09-30): "Yes, merge now" for PR #27 and "Yes, add
+  it" for the oauth_tokens production table.
+Merge: PR #27 -> main, merge commit 6802bfb (head 0fc452e; CI test + scope
+  guard green). Tasks DRIVESRC, LEDGER, DRIVERUN, CLOUDAUTH, CLOUDPUBLISH,
+  SESSIONHANDOFF, DRIVELOOSE -> complete.
+Migration: Neon snowy-rice-24899849 / neondb. `CREATE TABLE IF NOT EXISTS
+  oauth_tokens` (as in schema.sql) tested on temporary branch
+  br-long-moon-axoilcz9 (4 NOT NULL columns, 0 rows, video_queue 162 rows
+  unchanged), applied to the default branch br-lingering-poetry-axoi0r6y,
+  re-verified there (table exists, 0 rows, video_queue 162). Temporary
+  branch deleted. Additive; rollback = `DROP TABLE oauth_tokens` (only
+  holds the encrypted sign-in; re-run the sign-in workflow afterwards).
+Files changed: HANDOFF.md, docs/CLOUD_RUNNER_SETUP.md,
+  AI_WORKSPACE/ACTIVE_TASKS.yaml, AI_WORKSPACE/HANDOFF.md
+Tests: N/A (docs only)
+Next action: owner one-time setup (docs/CLOUD_RUNNER_SETUP.md steps 1-3,
+  5-7). Nothing publishes until CLOUD_RUNNER_ENABLED=true.
+Merge authorized: no
+Deploy authorized: no

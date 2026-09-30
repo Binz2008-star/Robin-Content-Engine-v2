@@ -1,6 +1,6 @@
 # Session Handoff — Robin Content Engine
 
-_Updated: 2026-09-29. Read this first in a new session to resume instantly._
+_Updated: 2026-09-30. Read this first in a new session to resume instantly._
 _Per-task detail lives in `AI_WORKSPACE/HANDOFF.md` (append-only) and
 `AI_WORKSPACE/ACTIVE_TASKS.yaml` (registry)._
 
@@ -23,7 +23,8 @@ Production used to run on the operator's Windows PC
   can never run again and should be treated as dead (do NOT feed them to
   `production-run-once`; it would quarantine them one by one).
 - The PC-less replacement is the **cloud runner** (GitHub Actions + Google
-  Drive + Neon), built in PR #27 - see below. It is **not live yet.**
+  Drive + Neon), merged to `main` in PR #27 - see below. It is **not live
+  yet**: it waits on the owner's one-time setup.
 
 ## Repos and branch strategy
 
@@ -32,8 +33,8 @@ Production used to run on the operator's Windows PC
 - CI (`.github/workflows/ci.yml`, 30 min): ruff + **blocking mypy** + full
   pytest on PRs and pushes to `main`. Scope guard runs on PRs.
 - Database: Neon project `content-engine` (`snowy-rice-24899849`), tables
-  `video_queue`, `youtube_channels`, `youtube_videos` (+ `oauth_tokens` once
-  PR #27's migration is applied).
+  `video_queue`, `youtube_channels`, `youtube_videos`, `oauth_tokens` (added
+  2026-09-30; empty until the owner's one-time sign-in).
 
 ### Merge record
 
@@ -43,20 +44,15 @@ Production used to run on the operator's Windows PC
   - CI fix: `types-yt-dlp` 2026-09-12 renamed a private stub symbol and
     silently broke the mypy gate on `main`; now pinned exactly.
   - `robin-engine game-report`: read-only per-game performance report.
+- **2026-09-30: PR #27 → `main`, merge commit `6802bfb`** (owner-authorized):
+  the cloud runner - read-only download probe, Drive (Takeout) footage
+  source incl. loose >4 GB videos, segment ledger, `drive-produce`, phone
+  sign-in with encrypted token in Neon, daily workflow + DB daily cap, setup
+  guide. Same day the owner-approved `oauth_tokens` table was added to
+  production Neon (tested on a temporary branch first).
 
 ### Open PRs
 
-- **PR #27 (draft, CI green through phase 2; phase 3 pending)** - branch
-  `claude/gaming-youtube-automation-rtl9xw`. Review commit by commit:
-  | Commit | What |
-  |---|---|
-  | `d2ec621` | governance close-out of #26 |
-  | `b16ac35` `fd98ba4` `e7d80af` | read-only YouTube download probe + result |
-  | `f9fc4f9` | `drive_source`: read-only Drive (Takeout) footage source |
-  | `6707d77` | `segment_ledger`: a footage segment is never used twice |
-  | `9a79df7` | `drive-produce`: one new packaged Short from Drive footage |
-  | `3f72d42` | phone sign-in (device flow) + encrypted token in Neon |
-  | `47b312c` | daily workflow + DB-backed daily cap + owner setup guide |
 - PRs #2/#3 (`feat/studio-*`): frozen since 2026-08-06. Open operator
   decision - revive as a separate repo or close. Do not merge as-is.
 
@@ -104,21 +100,18 @@ public flip (default private); `DAILY_SHORT_CAP` (default 1).
 
 ## IN-PROGRESS - resume here
 
-1. **Google Takeout landed (2026-09-30)** in Drive folder "Takeout" (still
-   filling at 06:03Z). Layout: ~4 GB `.zip` parts plus videos too large for
-   a part stored loose as `<title>-<part>.mp4` (5-17 GB). The runner reads
-   both since RCE-20260930-DRIVELOOSE. Share THIS folder with the service
-   account (setup guide step 2).
-2. **Owner review of PR #27** (merge not authorized for the agent).
-3. **Migration**: apply `CREATE TABLE IF NOT EXISTS oauth_tokens` from
-   `schema.sql` - owner approved the additive table; apply on a Neon branch
-   first, then the default branch, only after PR #27 review.
-4. **Owner one-time setup**: `docs/CLOUD_RUNNER_SETUP.md` (service account,
-   TV-type OAuth client, publish the OAuth consent screen out of Testing -
-   Testing tokens expire in 7 days - GitHub secrets/variables, Drive share,
-   device sign-in).
-5. **First run private**, owner checks it in Studio, then `PUBLISH_PUBLIC`.
-6. Later (owner asked): **TikTok cross-posting** as phase 4 after YouTube is
+1. **Google Takeout landed (2026-09-30)** in Drive folder "Takeout" (last
+   file 06:03Z; parts numbered up to 066). Layout: ~4 GB `.zip` parts plus
+   videos too large for a part stored loose as `<title>-<part>.mp4`
+   (5-17 GB). The runner reads both.
+2. **Done 2026-09-30:** PR #27 merged; `oauth_tokens` table in production.
+3. **Owner one-time setup - THE ONLY BLOCKER**: `docs/CLOUD_RUNNER_SETUP.md`
+   (service account, TV-type OAuth client, publish the OAuth consent screen
+   out of Testing - Testing tokens expire in 7 days - share the "Takeout"
+   folder with the service account, GitHub secrets/variables, device
+   sign-in).
+4. **First run private**, owner checks it in Studio, then `PUBLISH_PUBLIC`.
+5. Later (owner asked): **TikTok cross-posting** as phase 4 after YouTube is
    stable (clean files, no YouTube watermark; public posting via TikTok's API
    needs an audited app). **Vision-based game checks** need a new AI
    provider - owner approval required.
@@ -128,6 +121,9 @@ public flip (default private); `DAILY_SHORT_CAP` (default 1).
 - **Pre-existing:** 2 tests in `tests/test_database_integration.py` fail on
   `main` against a real Postgres (CI skips them - no test DB). Needs its own
   task.
+- **Runner cost:** the highlight-analysis cache is keyed by path+size+mtime,
+  so on a fresh runner download it never hits and a long video is analysed
+  again each day it is used. Correct but slow; fix in `production_runner`.
 - **Decided (owner, 2026-09-29): rights for own published uploads.** The
   owner approved treating the channel's OWN already-published uploads (and the
   owner's Takeout export of them) as owned footage, so `channel-import` and the
