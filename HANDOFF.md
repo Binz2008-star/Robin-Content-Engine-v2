@@ -1,160 +1,162 @@
 # Session Handoff — Robin Content Engine
 
-_Updated: 2026-08-20. Read this first in a new session to resume instantly._
+_Updated: 2026-09-29. Read this first in a new session to resume instantly._
+_Per-task detail lives in `AI_WORKSPACE/HANDOFF.md` (append-only) and
+`AI_WORKSPACE/ACTIVE_TASKS.yaml` (registry)._
 
 ## What this system is
 
 A production pipeline that turns **operator-owned gaming footage** into
-auto-published YouTube Shorts: capture-scan → rights approval → highlight
-selection → 9:16 reframe + captions → quality gate → AI metadata (Arabic or
-English) → private-first upload → flip to public. **Owned/licensed content
-only - no internet scraping, ever.**
+auto-published YouTube Shorts: source footage → highlight selection → 9:16
+reframe + captions → quality gate → AI metadata (Arabic or English) →
+private-first upload → flip to public. **Owned/licensed content only - no
+third-party content, no scraping, no Content-ID evasion, ever.**
 
-## Repos and branch strategy (updated 2026-08-20)
+## BIG CHANGE (2026-09-28): the operator PC is gone
 
-- **`main` is now the trunk.** The entire production engine landed on `main`
-  via PR #1 (2026-08-19) plus PR #5 (governance control plane). All NEW work
-  must branch from `main`, not from `feat/initial-engine`.
-- Production (active): `X:\content engine\production` — switch this worktree
-  to `main` (it currently tracks `feat/initial-engine`; `feat/initial-engine`
-  has been merged into `main`, so a fast-forward/pull then `git switch main`
-  is clean).
-- Legacy v2: `X:\content engine\Robin-Content-Engine-v2` — branch `feat/vertical-captions-mvp`
+Production used to run on the operator's Windows PC
+(`X:\content engine\production`, Task Scheduler every ~2h, token.json and
+`.env` on that disk). **That PC is no longer available.** Consequences:
+
+- Nothing has been produced by the engine since mid-August. The queue holds
+  131 `pending` jobs whose `source_path` points at files on that PC - they
+  can never run again and should be treated as dead (do NOT feed them to
+  `production-run-once`; it would quarantine them one by one).
+- The PC-less replacement is the **cloud runner** (GitHub Actions + Google
+  Drive + Neon), built in PR #27 - see below. It is **not live yet.**
+
+## Repos and branch strategy
+
+- `main` is the trunk. New work branches from `main`.
 - Remote: `https://github.com/Binz2008-star/Robin-Content-Engine-v2.git`
-- CI runs on PRs and on pushes to `main`. Job timeout raised to 30m
-  (2026-08-20) — the full suite + install was flaking out at 15m.
+- CI (`.github/workflows/ci.yml`, 30 min): ruff + **blocking mypy** + full
+  pytest on PRs and pushes to `main`. Scope guard runs on PRs.
+- Database: Neon project `content-engine` (`snowy-rice-24899849`), tables
+  `video_queue`, `youtube_channels`, `youtube_videos` (+ `oauth_tokens` once
+  PR #27's migration is applied).
 
-### Merge record (2026-08-20, CTO session)
+### Merge record
 
-- PR #1 `feat/initial-engine` → `main` — production trunk landed. Merge commit `bc079b2b`.
-- PR #5 `chore/agent-control-plane` → `main` — governance layer (AGENTS.md,
-  scope guard, task registry). Merge commit `8a5e0a5e`.
-- PR #20 `feat/quality-gate-decode-integrity` → `feat/initial-engine` (now in
-  main) — quality gate full-decodes artifacts, rejects corrupt/truncated
-  files. Merge commit `268b1bbe`.
-- PR #21 `feat/highlight-ai-ranking` → `feat/initial-engine` (now in
-  main) — AI-assisted candidate ranking (advice-only). Merge commit `bd364eef`.
-- PR #22 `feat/ai-hook-integration` → `main` — AI hook integration (PR 2):
-  opening-caption hook, metadata hook, transcript persistence. Merge commit `b1f5b5ae`.
-- PR #23 `feat/mypy-ci-gate` → `main` — mypy is now a blocking CI gate; the
-  whole package is type-clean (33 files, zero errors). Merge commit `323467a5`.
-- PR #24 `feat/posting-time-recommendation` → `main` — PR 3: read-only,
-  advisory `robin-engine posting-report` (weekday/hour windows by median
-  views, default Asia/Dubai). Merge commit `7abcc25`.
-- CI infra: `.github/workflows/ci.yml` `timeout-minutes` 15 → 30, plus a
-  blocking `mypy` step.
-- Mypy is configured (strict) and now enforced in CI.
+- 2026-08-19/20: PR #1 (trunk), #5 (governance), #20, #21, #22 (AI hook),
+  #23 (mypy gate), #24 (posting-report), #25 (tags coercion, 2026-08-29).
+- **2026-09-28: PR #26 → `main`, merge commit `2ceee2b`** (owner-authorized):
+  - CI fix: `types-yt-dlp` 2026-09-12 renamed a private stub symbol and
+    silently broke the mypy gate on `main`; now pinned exactly.
+  - `robin-engine game-report`: read-only per-game performance report.
 
-## How to start the app
+### Open PRs
 
-1. Double-click the desktop icon **"Robin Content Engine"** (or run
-   `ops\start_control_panel.cmd`) → starts the control panel + opens
-   `http://127.0.0.1:8765`.
-2. The panel has a built-in **"How to use"** guide. Buttons: scan captures,
-   approve rights, process+upload, make-public, metadata-fix, channel-import.
+- **PR #27 (draft, CI green through phase 2; phase 3 pending)** - branch
+  `claude/gaming-youtube-automation-rtl9xw`. Review commit by commit:
+  | Commit | What |
+  |---|---|
+  | `d2ec621` | governance close-out of #26 |
+  | `b16ac35` `fd98ba4` `e7d80af` | read-only YouTube download probe + result |
+  | `f9fc4f9` | `drive_source`: read-only Drive (Takeout) footage source |
+  | `6707d77` | `segment_ledger`: a footage segment is never used twice |
+  | `9a79df7` | `drive-produce`: one new packaged Short from Drive footage |
+  | `3f72d42` | phone sign-in (device flow) + encrypted token in Neon |
+  | `47b312c` | daily workflow + DB-backed daily cap + owner setup guide |
+- PRs #2/#3 (`feat/studio-*`): frozen since 2026-08-06. Open operator
+  decision - revive as a separate repo or close. Do not merge as-is.
 
-## Current state (snapshot)
+## Channel state (Neon snapshot 2026-08-28 + owner screenshot 2026-09-28)
 
-- **Queue: 109 pending Shorts** (jobs #34→#145), all rights-confirmed, cut
-  from the channel's own long videos. First in queue: #34 Roblox, #36 CoD
-  Zombies, #37-41 Apex, #42/44 neutral "Archived gameplay".
-- **23 uploaded**, 0 failed, 8 quarantined (non-gaming/rejects + 7s clip).
-- **Daily upload cap: 4/day** (`YOUTUBE_MAX_UPLOADS_PER_DAY=4`) — raised
-  from 2 now that YouTube's `uploadLimitExceeded` cool-down has resolved.
-- **HD channel-import downloads (2026-08-19):** imports are capped at
-  360p because the no-cookie android yt-dlp client is the only working
-  path. To get 720p/1080p sources, export a browser `cookies.txt`, set
-  `YOUTUBE_COOKIES_FILE` in `.env`, and re-import. Existing downloads
-  aren't re-fetched (idempotent cache) — delete the specific
-  `work/downloads/<id>.mp4` file first to force a re-download. Imported
-  jobs now record source resolution in the rights note (HD/SD), and SD
-  downloads log a warning.
-- **Video quality overhaul (2026-08-19):** the 9:16 reframe now always
-  delivers **1080x1920** (lanczos upscale, CRF 18, was: tiny 200-360p crops
-  at a fixed 4000k bitrate), caption burn-in re-encodes at CRF 18 (was 23),
-  and the quality gate now **requires >=1080x1920** (`min_resolution`).
-  Old low-resolution artifacts fail the gate and are auto-rebuilt at full
-  resolution on the next run — no manual cleanup needed.
-- **YouTube `uploadLimitExceeded` resolved** — the earlier daily-limit
-  throttle cleared after the cool-down; uploads are back to the normal
-  cap. If it ever returns, verify the channel in YouTube Studio (Settings →
-  Channel → Feature eligibility → Verification); do NOT try to bypass.
-- **Metadata corrections: DONE on YouTube** — 24 "Furniture" + 12 "Black
-  ops" captures retitled to neutral archive titles; 2 verified-Apex videos
-  (`N1IMHGr3Lx0`, `sQert_40bmc`) retitled to Apex. Metadata plan is cleared.
-- **Snapshot refreshed** (192 videos). Panel running on 127.0.0.1:8765.
+- Robinzo `UCIcvbGsmSwMDXxjWXq4QG8A`: **29 subscribers, 227 videos**
+  (snapshot said 27 / 204; it is a month stale - run `youtube-sync` once the
+  cloud runner has credentials).
+- Shorts carry ~81% of views; the 101 long videos have a median of **1 view**
+  (they are the raw material for new Shorts).
+- **Fortnite Shorts perform best** (top 3 videos = 36% of all views; two
+  newer "Fortnite Highlight" Shorts ~1K views each).
+- Conversion problem: ~0.5% of views became subscribers. 47 videos share 14
+  duplicate titles. Posting stopped after a burst (82 uploads in August).
+- Title audit: the 23 engine uploads match their capture names. 7 videos
+  have junk titles ("Ggg", "Live PS4 Broadcast") but PS-native tags confirm
+  the game - suggested titles were given to the owner. 180 titles cannot be
+  verified without looking at frames.
 
-## Key paths
+## The cloud runner (PR #27) - how it works
 
-- Finished Shorts: `production\work\highlights\`
-- Publish packages: `production\work\ready\`
-- Downloaded sources: `production\work\downloads\`
-- Analysis cache: `production\work\analysis\`
-- Upload budget: `production\work\upload_budget.json`
-- Scheduled task launcher: `ops\run_production_once.ps1` (every ~2h)
-- Panel launcher: `ops\start_control_panel.cmd`
+Daily at 16:00 UTC (20:00 Dubai), `.github/workflows/daily-short.yml`:
+1. `youtube-token-materialize` - decrypts the stored YouTube token (Neon
+   `oauth_tokens`, Fernet, key HKDF-derived from the service-account key)
+   into a 0600 temp `token.json`; refuses any channel but the pinned one.
+2. `drive-produce --execute-private-upload`:
+   - checks the daily cap **first**, counted from the DB (Asia/Dubai day) -
+     runners have no persistent disk, so the old JSON budget cannot work;
+   - downloads Takeout `.zip` parts from Drive (service account,
+     `drive.readonly`), extracts videos (zip-slip safe), matches each file to
+     its channel video (never guesses);
+   - processes console-confirmed games first (Fortnite first), picks the
+     first highlight window **not already used** (ledger in
+     `video_queue.source_url` as `...watch?v=<id>#segment=<s>-<e>`);
+   - runs the existing highlight → reframe → captions → quality gate →
+     package pipeline, then publishes private-first and `mark_uploaded`.
 
-## Useful commands (run from `production`)
+Why Drive: YouTube blocks yt-dlp from cloud runners ("Sign in to confirm
+you're not a bot" - probe run 36367070647, 0/10). Browser cookies were
+rejected as a foundation (expiry, account risk).
 
-```powershell
-$env:ROBIN_APP_ROOT="X:\content engine\production"; $env:PYTHONPATH="X:\content engine\production\src"
-$env:YOUTUBE_EXPECTED_CHANNEL_ID="UCIcvbGsmSwMDXxjWXq4QG8A"
-& "X:\content engine\.venv\Scripts\python.exe" -m robin_content_engine.cli <command>
-```
+**Safety switches (repository variables):** `CLOUD_RUNNER_ENABLED` must be
+`true` or the workflow does nothing; `PUBLISH_PUBLIC` must be `true` for the
+public flip (default private); `DAILY_SHORT_CAP` (default 1).
 
-- `production-status` / `production-status --json` — queue overview
-- `production-run-once --execute-private-upload` — process + upload next job
-- `capture-scan` → `rights-list` → `rights-approve <id> --note "..."` — new clips
-- `channel-long-videos` — list Short candidates
-- `channel-import <ID> --no-upload` — cut a channel video into a Short (no upload)
-- `channel-metadata-fix --status` / `--apply --max-updates N` — fix titles
-- `youtube-sync` — refresh the channel snapshot (BEFORE metadata-fix)
+## IN-PROGRESS - resume here
 
-## IN-PROGRESS WORK — resume here in a new session
+1. **Google Takeout landed (2026-09-30)** in Drive folder "Takeout" (still
+   filling at 06:03Z). Layout: ~4 GB `.zip` parts plus videos too large for
+   a part stored loose as `<title>-<part>.mp4` (5-17 GB). The runner reads
+   both since RCE-20260930-DRIVELOOSE. Share THIS folder with the service
+   account (setup guide step 2).
+2. **Owner review of PR #27** (merge not authorized for the agent).
+3. **Migration**: apply `CREATE TABLE IF NOT EXISTS oauth_tokens` from
+   `schema.sql` - owner approved the additive table; apply on a Neon branch
+   first, then the default branch, only after PR #27 review.
+4. **Owner one-time setup**: `docs/CLOUD_RUNNER_SETUP.md` (service account,
+   TV-type OAuth client, publish the OAuth consent screen out of Testing -
+   Testing tokens expire in 7 days - GitHub secrets/variables, Drive share,
+   device sign-in).
+5. **First run private**, owner checks it in Studio, then `PUBLISH_PUBLIC`.
+6. Later (owner asked): **TikTok cross-posting** as phase 4 after YouTube is
+   stable (clean files, no YouTube watermark; public posting via TikTok's API
+   needs an audited app). **Vision-based game checks** need a new AI
+   provider - owner approval required.
 
-Everything on the trunk is committed, pushed, and CI-green. A new session
-should branch from `main`.
+### Known issues / findings
 
-1. **PR 2 (DONE — merged into main as PR #22, 2026-08-20).** AI hook
-   integration is live: `highlight-rank` hooks are burned as the opening
-   caption, used in `build_production_metadata`, and ASR transcripts are
-   persisted to `work/transcripts/job-<id>-rank-<n>.json` (format v1) for
-   ranking re-runs. Merge commit `b1f5b5ae`.
-2. **mypy gate (DONE — merged into main as PR #23, 2026-08-20).** `mypy` is
-   now a blocking CI step; the whole package is genuinely type-clean (33
-   files, zero errors). All pre-existing findings fixed with real types (no
-   exclusions / type-ignore / casts). Merge commit `323467a5`.
-3. **PR 3 (DONE — merged into main as PR #24, 2026-08-20).** Posting-time
-   recommendation: `robin-engine posting-report` is a read-only, advisory
-   analysis of the channel's own PUBLIC-video history (weekday/hour windows,
-   ranked by median views, default Asia/Dubai). No scheduler, no upload
-   authority. Merge commit `7abcc25`.
-4. **Open decision (operator): Studio disposition.** PRs #2/#3
-   (`feat/studio-ui`, `feat/studio-api-readiness`) are a React/Vite + FastAPI
-   sub-project frozen since 2026-08-06 and stale relative to the engine. The
-   registered task RCE-20260807-STUDIO is `status: review`, "Frozen pending
-   live FastAPI integration". CTO recommendation: either revive as a separate
-   repo rebased on `main`, or close the PRs and archive the branch. Do not
-   merge into the production lineage as-is.
+- **Pre-existing:** 2 tests in `tests/test_database_integration.py` fail on
+  `main` against a real Postgres (CI skips them - no test DB). Needs its own
+  task.
+- **Decided (owner, 2026-09-29): rights for own published uploads.** The
+  owner approved treating the channel's OWN already-published uploads (and the
+  owner's Takeout export of them) as owned footage, so `channel-import` and the
+  cloud runner register them as rights-confirmed. Each job's rights note
+  records the source video, the exact segment and the game evidence. This does
+  NOT extend to local captures or any other footage: those still need the
+  manual `rights-approve`.
 
-## Guardrails — HARD (a prior draft was reverted for violating these)
+## Guardrails — HARD
 
-- Sourcing stays 100% local. capture_scan.py must NEVER gain internet/HTTP
-  fetch. NO third-party content harvesting (Pexels/Pixabay/Commons/scraping
-  are explicitly rejected).
-- rights_confirmed is a MANUAL operator action ONLY. NO auto-approve path,
-  NO AI/heuristic approval, NO `AUTO_CONFIRM_LOCAL_CAPTURES`.
-- Upload cap + channel-ID pin stay hard-enforced; no configurable off switch.
+- NO third-party content harvesting (Pexels/Pixabay/Commons/scraping are
+  rejected). Footage = the owner's captures or the owner's own uploads.
+- `rights_confirmed` is never inferred by AI/heuristics; no
+  `AUTO_CONFIRM_LOCAL_CAPTURES`. Sole exception, owner-approved 2026-09-29:
+  the channel's own already-published uploads (see Known issues / findings).
+- Upload cap + channel-ID pin stay hard-enforced.
 - Uploads stay private-first → flip-to-public.
-- NO "AI Strategy Controller" with authority to decide which jobs get
-  sourced/approved/uploaded. AI may only advise (ranking, hooks, metadata).
-- Secrets/.env never printed, logged, or committed.
+- A game is named in a title only on strong evidence: conservative
+  `detect_game`; in the cloud runner only console-native (#PS4Live/#PS5Live)
+  tags count - otherwise neutral "Archived gameplay".
+- No AI "strategy controller" with authority over sourcing/approval/upload;
+  AI only advises (ranking, hooks, metadata).
+- Secrets/.env/tokens never printed, logged, or committed.
 
-## Guardrails (do not remove)
+## Legacy (retired PC) - kept for reference only
 
-- Rights gate: captures are never auto-approved; only owned/licensed content.
-- Conservative game detection: bare "Black ops"/"Furniture" titles → neutral
-  archive metadata (never guess the game).
-- Daily upload cap + retry-safe handling of `uploadLimitExceeded`.
-- Uploads go private-first, then flip public (`YOUTUBE_PUBLIC_AFTER_UPLOAD`).
-- Channel ID pin: uploads abort if the authenticated channel mismatches.
+- Paths: `X:\content engine\production\work\{highlights,ready,downloads,analysis}`,
+  `ops\run_production_once.ps1`, control panel `ops\start_control_panel.cmd`
+  (127.0.0.1:8765).
+- Useful commands still valid anywhere with credentials: `production-status`,
+  `youtube-sync`, `posting-report`, `game-report --format short`,
+  `channel-metadata-fix --status`.

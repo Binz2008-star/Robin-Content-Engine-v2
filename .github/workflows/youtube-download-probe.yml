@@ -1,0 +1,79 @@
+name: YouTube download probe
+
+# Read-only feasibility probe for running the engine on GitHub-hosted
+# runners instead of the (retired) operator PC. It answers one question:
+# can a GitHub runner download the channel's OWN public videos with yt-dlp,
+# and with which player client?
+#
+# Safety: no OAuth, no database, no upload, no repository write. The only
+# secret used is the optional YOUTUBE_COOKIES (a cookies.txt export from a
+# SECONDARY Google account, never the channel account); it is written to a
+# 0600 temp file, never echoed, and deleted at the end. It downloads at most
+# the first 20 seconds of two of the channel's own public videos into the
+# runner's temp disk and discards them.
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - "claude/**"
+    paths:
+      - ".github/workflows/youtube-download-probe.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install yt-dlp and ffmpeg
+        run: |
+          python -m pip install --upgrade pip
+          pip install "yt-dlp>=2025.1.0"
+          sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg >/dev/null
+          yt-dlp --version
+      - name: Probe own-channel downloads per player client
+        env:
+          YOUTUBE_COOKIES: ${{ secrets.YOUTUBE_COOKIES }}
+        run: |
+          COOKIE_ARGS=""
+          if [ -n "$YOUTUBE_COOKIES" ]; then
+            umask 077
+            printf '%s\n' "$YOUTUBE_COOKIES" > "$RUNNER_TEMP/cookies.txt"
+            COOKIE_ARGS="--cookies $RUNNER_TEMP/cookies.txt"
+            echo "cookies: present (from secret YOUTUBE_COOKIES)"
+          else
+            echo "cookies: absent"
+          fi
+          # Channel-owned public videos with PS5-native Fortnite tags (the
+          # game is confirmed by the console, not guessed from a title).
+          VIDEOS="XWxoxeeiZ0U EKEXAJjRJ0Y"
+          CLIENTS="android web tv ios mweb"
+          ok=0; total=0
+          for vid in $VIDEOS; do
+            for client in $CLIENTS; do
+              total=$((total+1))
+              out="$RUNNER_TEMP/$vid-$client"
+              # shellcheck disable=SC2086
+              if timeout 120 yt-dlp --no-warnings --no-progress $COOKIE_ARGS \
+                  --extractor-args "youtube:player_client=$client" \
+                  -f "bv*[height<=1080]+ba/b" --merge-output-format mp4 \
+                  --download-sections "*0-20" \
+                  -o "$out.%(ext)s" \
+                  --print "after_move:%(height)sp %(vcodec)s %(filesize_approx)s" \
+                  "https://www.youtube.com/watch?v=$vid" > "$out.log" 2>&1; then
+                ok=$((ok+1))
+                echo "PASS $vid client=$client -> $(tail -1 "$out.log")"
+              else
+                echo "FAIL $vid client=$client -> $(grep -m1 -E 'ERROR|Sign in|bot|403|429' "$out.log" | cut -c1-200)"
+              fi
+            done
+          done
+          echo "SUMMARY: $ok/$total downloads succeeded"
+          echo "### YouTube download probe: $ok/$total succeeded" >> "$GITHUB_STEP_SUMMARY"
+          rm -f "$RUNNER_TEMP"/*.mp4 "$RUNNER_TEMP"/*.webm "$RUNNER_TEMP"/*.m4a "$RUNNER_TEMP/cookies.txt"

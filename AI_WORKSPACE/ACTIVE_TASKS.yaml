@@ -2581,11 +2581,18 @@ tasks:
 
   - id: RCE-20260923-STUBPIN
     title: Restore the mypy CI gate broken by a types-yt-dlp stub rename
-    status: review
+    status: complete
     owner: claude
     branch: claude/gaming-youtube-automation-rtl9xw
     base_branch: main
     base_sha: 6ee22491391e2e312f797b2da414b11f75c6f06a
+    pr: 26
+    merged: true
+    merge_method: merge
+    merge_commit_sha: 2ceee2bdd067d1882ccefbb6518d6dc844937a5c
+    merged_into: main
+    merged_at: 2026-09-28
+    merged_by: claude, under explicit owner authorization ("Yes, merge now")
     allowed_paths:
       - src/robin_content_engine/channel_import.py
       - pyproject.toml
@@ -2614,12 +2621,19 @@ tasks:
 
   - id: RCE-20260927-GAMEREPORT
     title: Read-only per-game performance report (game-report)
-    status: review
+    status: complete
     owner: claude
     branch: claude/gaming-youtube-automation-rtl9xw
     base_branch: main
     base_sha: 6ee22491391e2e312f797b2da414b11f75c6f06a
     depends_on: RCE-20260923-STUBPIN
+    pr: 26
+    merged: true
+    merge_method: merge
+    merge_commit_sha: 2ceee2bdd067d1882ccefbb6518d6dc844937a5c
+    merged_into: main
+    merged_at: 2026-09-28
+    merged_by: claude, under explicit owner authorization ("Yes, merge now")
     allowed_paths:
       - src/robin_content_engine/game_performance.py
       - src/robin_content_engine/cli.py
@@ -2652,6 +2666,346 @@ tasks:
       only push to its designated branch; it is a separate commit so the two
       tasks can be reviewed commit by commit. It depends on STUBPIN anyway:
       without that fix, CI cannot pass on any branch.
+
+  - id: RCE-20260928-CLOUDPROBE
+    title: "Cloud runner phase 0: GitHub-runner YouTube download probe"
+    status: complete
+    owner: claude
+    branch: claude/gaming-youtube-automation-rtl9xw
+    base_branch: main
+    base_sha: 2ceee2bdd067d1882ccefbb6518d6dc844937a5c
+    allowed_paths:
+      - .github/workflows/youtube-download-probe.yml
+      - AI_WORKSPACE/ACTIVE_TASKS.yaml
+      - AI_WORKSPACE/HANDOFF.md
+    forbidden_paths:
+      - src/**
+      - studio/**
+      - schema.sql
+      - .env
+      - client_secret*.json
+      - token*.json
+    merge_allowed: false
+    deploy_allowed: false
+    scope: >-
+      The operator PC that ran production is no longer available; the owner
+      approved (2026-09-28) moving the engine to a scheduled GitHub-hosted
+      runner. Phase 0 de-risks the plan before any secrets or OAuth are
+      requested: a read-only workflow that tries to download the first 20s of
+      two of the channel's OWN public videos with several yt-dlp player
+      clients and reports pass/fail. No secrets, no DB, no upload, no writes.
+    result: >-
+      Run 36367070647 on b16ac35: 0/10 downloads succeeded. Every player
+      client (android, web, tv, ios, mweb) on both videos was refused with
+      "Sign in to confirm you're not a bot". GitHub-hosted runners cannot
+      pull the channel's videos from YouTube without browser cookies, which
+      are rejected as a foundation (expire, account-flag risk on datacenter
+      IPs). Decision: source footage from Google Drive instead (owner's
+      one-time Google Takeout export of their own YouTube videos, delivered
+      to Drive), read with the Drive API under the same one-time Google
+      sign-in used for YouTube uploads.
+    stop_conditions:
+      - no secrets, OAuth, database access or uploads in this phase
+      - if every client fails, stop and report; the design must change
+    note: >-
+      Phase plan (each its own reviewable change): 0 probe (this); 1 headless
+      runner command that cuts NEW Shorts from long own-channel videos with a
+      used-segment ledger and game-title verification; 2 one-time phone-friendly
+      YouTube OAuth (device code) + GitHub Secrets wiring; 3 scheduled
+      workflow, private-first publishing, 1-2/day cap.
+
+  - id: RCE-20260928-DRIVESRC
+    title: "Cloud runner phase 1a: Google Drive (Takeout) footage source"
+    status: review
+    owner: claude
+    branch: claude/gaming-youtube-automation-rtl9xw
+    base_branch: main
+    base_sha: 2ceee2bdd067d1882ccefbb6518d6dc844937a5c
+    depends_on: RCE-20260928-CLOUDPROBE
+    allowed_paths:
+      - src/robin_content_engine/drive_source.py
+      - tests/test_drive_source.py
+      - AI_WORKSPACE/ACTIVE_TASKS.yaml
+      - AI_WORKSPACE/HANDOFF.md
+    forbidden_paths:
+      - studio/**
+      - schema.sql
+      - .env
+      - client_secret*.json
+      - token*.json
+    merge_allowed: false
+    deploy_allowed: false
+    scope: >-
+      Owner chose Google Drive as the footage source (2026-09-28) after the
+      probe showed YouTube blocks cloud downloads. New read-only module:
+      service-account Drive client (drive.readonly), paginated Takeout
+      archive listing, chunked archive download with partial-file cleanup,
+      zip-slip-safe extraction of video files only, and conservative
+      file-to-channel-video matching (normalized title incl. Arabic; duplicate
+      titles resolved only by an unambiguous duration; two files claiming one
+      video are both refused). Not wired into any runner yet; no secrets,
+      no DB writes, no uploads.
+    stop_conditions:
+      - no uploads, no DB writes, no secrets committed
+      - full `mypy` + `ruff` + `pytest` must stay green
+
+  - id: RCE-20260928-LEDGER
+    title: "Cloud runner phase 1b: used-segment ledger (no schema change)"
+    status: review
+    owner: claude
+    branch: claude/gaming-youtube-automation-rtl9xw
+    base_branch: main
+    base_sha: 2ceee2bdd067d1882ccefbb6518d6dc844937a5c
+    depends_on: RCE-20260928-DRIVESRC
+    allowed_paths:
+      - src/robin_content_engine/segment_ledger.py
+      - src/robin_content_engine/database.py
+      - tests/test_segment_ledger.py
+      - tests/test_database.py
+      - AI_WORKSPACE/ACTIVE_TASKS.yaml
+      - AI_WORKSPACE/HANDOFF.md
+    forbidden_paths:
+      - studio/**
+      - schema.sql
+      - .env
+      - client_secret*.json
+      - token*.json
+    merge_allowed: false
+    deploy_allowed: false
+    scope: >-
+      Guarantees every new Short is cut from footage never used before.
+      JobRepository.enqueue_local gains an optional source_url (existing
+      column, backward compatible, default NULL). New segment_ledger module
+      records the used segment as
+      https://www.youtube.com/watch?v=<id>#segment=<start>-<end>, reads all
+      recorded segments for a video (read-only SELECT, any status), and picks
+      the best-ranked highlight candidate that does not overlap any of them
+      (<= 0.5s rounding overlap allowed). Not wired into a runner yet.
+    stop_conditions:
+      - no schema change, no uploads
+      - full `mypy` + `ruff` + `pytest` must stay green
+    note: >-
+      Pre-existing finding (NOT caused by this task, reproduced on
+      origin/main 2ceee2b against a local Postgres 16 with schema.sql):
+      tests/test_database_integration.py has 2 failing tests
+      (test_mark_failed_exhausts_attempts_before_retryable,
+      test_mark_deterministic_failure_clears_claimed_at_of_in_flight_job).
+      CI never runs them (no ROBIN_TEST_DATABASE_URL), so the drift went
+      unnoticed. Needs its own task.
+
+  - id: RCE-20260928-DRIVERUN
+    title: "Cloud runner phase 1c: drive-produce (Drive footage -> one new packaged Short)"
+    status: review
+    owner: claude
+    branch: claude/gaming-youtube-automation-rtl9xw
+    base_branch: main
+    base_sha: 2ceee2bdd067d1882ccefbb6518d6dc844937a5c
+    depends_on: RCE-20260928-LEDGER
+    allowed_paths:
+      - src/robin_content_engine/drive_runner.py
+      - src/robin_content_engine/production_runner.py
+      - src/robin_content_engine/cli.py
+      - tests/test_drive_runner.py
+      - AI_WORKSPACE/ACTIVE_TASKS.yaml
+      - AI_WORKSPACE/HANDOFF.md
+    forbidden_paths:
+      - studio/**
+      - schema.sql
+      - .env
+      - client_secret*.json
+      - token*.json
+    merge_allowed: false
+    deploy_allowed: false
+    scope: >-
+      New drive_runner module + `robin-engine drive-produce` command:
+      downloads Takeout archives one at a time, extracts videos, matches them
+      to channel videos, orders confirmed-game videos first (Fortnite first),
+      picks the first unused highlight window via the segment ledger,
+      registers a rights-confirmed job with the ledger URL and runs the
+      existing production pipeline. NEVER uploads. Title truthfulness: a game
+      is named in the source title only when console-native share tags
+      (#PS4Live/#PS5Live) confirm it; AI-written/claimed games get the
+      neutral "Archived gameplay". production_runner gains an optional
+      analysis_cache_path on run_production (default None = unchanged) and a
+      public read-only highlight_candidates() wrapper, so a 2h source is
+      analysed once. Service-account key only via env
+      GOOGLE_SERVICE_ACCOUNT_JSON, never printed.
+    stop_conditions:
+      - no uploads, no schema change, no secrets committed
+      - full `mypy` + `ruff` + `pytest` must stay green
+    note: >-
+      Frame-based (vision) game verification needs a new external AI
+      provider and is deferred pending owner approval; until then only
+      console-confirmed games are ever named.
+
+  - id: RCE-20260928-CLOUDAUTH
+    title: "Cloud runner phase 2: phone sign-in (device flow) + encrypted token in Neon"
+    status: review
+    owner: claude
+    branch: claude/gaming-youtube-automation-rtl9xw
+    base_branch: main
+    base_sha: 2ceee2bdd067d1882ccefbb6518d6dc844937a5c
+    depends_on: RCE-20260928-DRIVERUN
+    allowed_paths:
+      - src/robin_content_engine/device_auth.py
+      - src/robin_content_engine/token_store.py
+      - src/robin_content_engine/youtube_auth.py
+      - src/robin_content_engine/cli.py
+      - schema.sql
+      - pyproject.toml
+      - tests/test_cloud_auth.py
+      - AI_WORKSPACE/ACTIVE_TASKS.yaml
+      - AI_WORKSPACE/HANDOFF.md
+    forbidden_paths:
+      - studio/**
+      - .env
+      - client_secret*.json
+      - token*.json
+    merge_allowed: false
+    deploy_allowed: false
+    owner_decisions:
+      - "2026-09-28: owner approved building the PC-less automated system"
+      - "2026-09-28: owner chose storing the YouTube token encrypted in Neon (one additive table)"
+      - "2026-09-29: owner approved treating the channel's own published uploads (and their Takeout export) as rights-confirmed owned footage; local captures still need manual rights-approve"
+    scope: >-
+      AUTH CHANGE (owner-approved design). device_auth: OAuth 2.0 device flow
+      (google.com/device + code) requesting the full youtube scope; handles
+      pending/slow_down/denied/expired. token_store: Fernet encryption with a
+      key HKDF-derived from the service-account private key (no extra secret);
+      save/load in new table oauth_tokens; materialize_token_file writes a
+      0600 authorized-user token.json so the existing uploader runs unchanged,
+      refusing a token for any channel other than YOUTUBE_EXPECTED_CHANNEL_ID.
+      CLI: youtube-device-auth (verifies the authorized channel IS the
+      expected channel before storing) and youtube-token-materialize.
+      youtube_auth._load_token also accepts a token carrying the full youtube
+      scope alone (it includes upload + read); readonly-only still rejected.
+      schema.sql: additive CREATE TABLE IF NOT EXISTS oauth_tokens. Explicit
+      deps: cryptography, requests (already transitive).
+    stop_conditions:
+      - do NOT apply the oauth_tokens migration to production until the PR is
+        reviewed; apply on a Neon branch first, then main
+      - no token material in logs/output; no secrets committed
+      - full `mypy` + `ruff` + `pytest` must stay green
+    note: >-
+      Could not read Google's device-flow scope list from this session
+      (developers.google.com blocked by egress policy); the full youtube
+      scope is requested from knowledge. If Google rejects it, the command
+      fails with a clear error and stores nothing.
+
+  - id: RCE-20260928-CLOUDPUBLISH
+    title: "Cloud runner phase 3: scheduled daily Short + DB-backed daily cap"
+    status: review
+    owner: claude
+    branch: claude/gaming-youtube-automation-rtl9xw
+    base_branch: main
+    base_sha: 2ceee2bdd067d1882ccefbb6518d6dc844937a5c
+    depends_on: RCE-20260928-CLOUDAUTH
+    allowed_paths:
+      - src/robin_content_engine/upload_budget.py
+      - src/robin_content_engine/cli.py
+      - tests/test_drive_runner.py
+      - tests/test_upload_budget.py
+      - .github/workflows/daily-short.yml
+      - .github/workflows/youtube-signin.yml
+      - docs/CLOUD_RUNNER_SETUP.md
+      - AI_WORKSPACE/ACTIVE_TASKS.yaml
+      - AI_WORKSPACE/HANDOFF.md
+    forbidden_paths:
+      - studio/**
+      - schema.sql
+      - .env
+      - client_secret*.json
+      - token*.json
+    merge_allowed: false
+    deploy_allowed: false
+    scope: >-
+      drive-produce --execute-private-upload: checks the daily cap FIRST from
+      the database (upload_budget.db_uploads_today counts status='uploaded'
+      rows since local midnight Asia/Dubai - runners have no persistent disk,
+      so the JSON-file budget would always read 0), then produces, then
+      publishes through the existing private-first execute_private_upload and
+      records the upload with JobRepository.mark_uploaded. A failed quality
+      gate is never uploaded. Workflows: youtube-signin.yml (manual, one-time
+      device sign-in) and daily-short.yml (16:00 UTC = 20:00 Dubai; token
+      materialized to a 0600 temp file and removed afterwards).
+    stop_conditions:
+      - "SAFETY SWITCH: daily-short.yml does nothing unless repository variable CLOUD_RUNNER_ENABLED == 'true' (owner sets it)"
+      - "public flip only when repository variable PUBLISH_PUBLIC == 'true'; default private (AGENTS.md private-by-default)"
+      - "default cap 1/day (repository variable DAILY_SHORT_CAP)"
+      - do not merge PR, do not deploy
+
+  - id: RCE-20260929-SESSIONHANDOFF
+    title: Refresh the root session handoff (HANDOFF.md) to the post-PC state
+    status: review
+    owner: claude
+    branch: claude/gaming-youtube-automation-rtl9xw
+    base_branch: main
+    base_sha: 2ceee2bdd067d1882ccefbb6518d6dc844937a5c
+    allowed_paths:
+      - HANDOFF.md
+      - AI_WORKSPACE/ACTIVE_TASKS.yaml
+      - AI_WORKSPACE/HANDOFF.md
+    forbidden_paths:
+      - src/**
+      - tests/**
+      - schema.sql
+    merge_allowed: false
+    deploy_allowed: false
+    scope: >-
+      Owner request (2026-09-29): update the handoff. Root HANDOFF.md was last
+      updated 2026-08-20 and still described the retired PC as production.
+      Rewritten to the current state: PC retired, PR #26 merged, PR #27
+      cloud-runner commits, channel audit, in-progress owner steps, known
+      issues, and an explicit owner decision on rights for own published
+      uploads. Docs only.
+
+  - id: RCE-20260930-DRIVELOOSE
+    title: "Cloud runner: read the real Takeout layout (loose videos, part suffix, disk budget)"
+    status: review
+    owner: claude
+    branch: claude/gaming-youtube-automation-rtl9xw
+    base_branch: main
+    base_sha: 2ceee2bdd067d1882ccefbb6518d6dc844937a5c
+    depends_on: RCE-20260928-CLOUDPUBLISH
+    allowed_paths:
+      - src/robin_content_engine/drive_source.py
+      - src/robin_content_engine/drive_runner.py
+      - tests/test_drive_source.py
+      - tests/test_drive_runner.py
+      - .github/workflows/daily-short.yml
+      - HANDOFF.md
+      - AI_WORKSPACE/ACTIVE_TASKS.yaml
+      - AI_WORKSPACE/HANDOFF.md
+    forbidden_paths:
+      - studio/**
+      - schema.sql
+      - src/robin_content_engine/production_runner.py
+      - .env
+      - client_secret*.json
+      - token*.json
+    merge_allowed: false
+    deploy_allowed: false
+    scope: >-
+      The owner's Takeout export landed in Drive on 2026-09-30 (folder
+      "Takeout"). Observed via the Drive connector (metadata only): besides
+      ~4 GB zip parts, Takeout stores every video larger than a part as a
+      LOOSE Drive file named "<title>-<part>.mp4" (5-17 GB each). The runner
+      only read .zip parts, so those long sessions were invisible, and the
+      part suffix would have broken title matching. Adds list_takeout()
+      (parts + loose videos, Drive duration when available),
+      strip_part_suffix(), loose-video processing BEFORE parts with title
+      (and Drive duration) checked before any download, a free-disk check
+      before every download (skip, never fail, when a file does not fit),
+      deletion of exhausted loose files, and a workflow step that frees
+      ~30 GB of preinstalled toolchains on the runner. Read-only on Drive;
+      no schema change; no upload behaviour change.
+    stop_conditions:
+      - no uploads, no schema change, no secrets committed
+      - full `mypy` + `ruff` + `pytest` must stay green
+    note: >-
+      Follow-up (not in scope): the highlight-analysis cache is keyed by
+      path+size+mtime, so it never hits on a fresh runner download; a long
+      video is re-analysed each day. Fix needs a production_runner change.
 
 # Other branches observed on origin at the time this registry was created
 # that are NOT yet registered as tasks (owner/scope unknown to this agent —

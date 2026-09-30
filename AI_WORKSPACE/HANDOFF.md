@@ -2007,3 +2007,271 @@ Known blockers: none.
 Next action: human review; do not merge or deploy without explicit authorization.
 Merge authorized: no
 Deploy authorized: no
+
+---
+
+## RCE-20260923-STUBPIN + RCE-20260927-GAMEREPORT — 2026-09-28 (MERGED / CLOSED)
+
+Task ID: RCE-20260923-STUBPIN, RCE-20260927-GAMEREPORT
+Agent: claude
+Branch: claude/gaming-youtube-automation-rtl9xw
+Base SHA: 6ee22491391e2e312f797b2da414b11f75c6f06a
+PR: 26 — marked ready, then merge-merged into main. Merge commit
+  2ceee2bdd067d1882ccefbb6518d6dc844937a5c (head ad90d95, expected-head pinned).
+Status: complete
+Files changed: see the two task entries above.
+Tests: PR head ad90d95 CI green — "test" PASS (run 36350271991, ruff + mypy +
+  full pytest), "Check branch scope boundaries" PASS. Post-merge main CI run
+  36365810235 started on 2ceee2b (result recorded in the close-out PR).
+Known blockers: none.
+Next action: none for these tasks. Proposed next task (NOT started, needs
+  owner approval because it requires a schema migration): persist per-Short
+  highlight features (score, duration, captioned, hook type) on publish so the
+  learning loop can rank clip styles, not only games.
+Merge authorized: yes (explicit owner "Yes, merge now", 2026-09-28)
+Deploy authorized: no — no deploy performed. The production runner pins
+  PYTHONPATH to a local working tree; game-report reaches it only when the
+  owner updates that tree. It is read-only, so there is no runtime risk.
+
+---
+
+## RCE-20260928-CLOUDPROBE — 2026-09-28
+
+Task ID: RCE-20260928-CLOUDPROBE
+Agent: claude
+Branch: claude/gaming-youtube-automation-rtl9xw
+Base SHA: 2ceee2bdd067d1882ccefbb6518d6dc844937a5c
+Current HEAD: (set at commit time — see PR)
+PR: 27 (shared with the #26 governance close-out; separate commits)
+Status: complete (probe answered its question)
+Files changed: .github/workflows/youtube-download-probe.yml (new, read-only,
+  no secrets), AI_WORKSPACE/ACTIVE_TASKS.yaml, AI_WORKSPACE/HANDOFF.md
+Tests: probe run 36367070647 -> SUMMARY 0/10. All five yt-dlp player clients
+  refused on both own-channel videos: "Sign in to confirm you're not a bot".
+CI: probe job itself green (it reports, it does not gate).
+Known blockers: YouTube bot-check on cloud IPs blocks yt-dlp without cookies.
+Next action: owner decision on footage source. Recommended: one-time Google
+  Takeout of own YouTube videos delivered to Google Drive; engine reads from
+  Drive (Drive API) under the same one-time Google OAuth used for uploads.
+  Cookies rejected (expiry + account risk).
+Merge authorized: no
+Deploy authorized: no
+
+---
+
+## RCE-20260928-DRIVESRC — 2026-09-28
+
+Task ID: RCE-20260928-DRIVESRC
+Agent: claude
+Branch: claude/gaming-youtube-automation-rtl9xw
+Base SHA: 2ceee2bdd067d1882ccefbb6518d6dc844937a5c
+Current HEAD: (set at commit time — see PR)
+PR: 27 (shared branch; separate commit)
+Status: review
+Files changed: src/robin_content_engine/drive_source.py (new),
+  tests/test_drive_source.py (new, 18 tests), AI_WORKSPACE/ACTIVE_TASKS.yaml,
+  AI_WORKSPACE/HANDOFF.md
+Tests: with GITHUB_ACTIONS=true FORCE_COLOR=1: tests/test_drive_source.py ->
+  18 passed; `ruff check .` clean; `mypy` Success (35 source files).
+CI: pending on the PR.
+Known blockers: owner must run the one-time Google Takeout ("Add to Drive",
+  videos only, 4 GB .zip parts) and later share that folder with a service
+  account (Viewer). Drive has no gameplay videos today (checked via connector;
+  only a 1.5 MB 2024 Takeout zip).
+Next action: phase 1b - headless runner command: pick an unused segment from
+  a matched long video (used-segment ledger in video_queue.source_url, no
+  schema change), run the existing highlight/reframe/caption/quality-gate
+  pipeline, verify game from frames vs title.
+Merge authorized: no
+Deploy authorized: no
+
+---
+
+## RCE-20260928-LEDGER — 2026-09-28
+
+Task ID: RCE-20260928-LEDGER
+Agent: claude
+Branch: claude/gaming-youtube-automation-rtl9xw
+Base SHA: 2ceee2bdd067d1882ccefbb6518d6dc844937a5c
+Current HEAD: (set at commit time — see PR)
+PR: 27 (shared branch; separate commit)
+Status: review
+Files changed: src/robin_content_engine/segment_ledger.py (new),
+  src/robin_content_engine/database.py (enqueue_local optional source_url),
+  tests/test_segment_ledger.py (new), tests/test_database.py (+2 tests),
+  AI_WORKSPACE/ACTIVE_TASKS.yaml, AI_WORKSPACE/HANDOFF.md
+Tests: with GITHUB_ACTIONS=true FORCE_COLOR=1: segment_ledger + database +
+  capture_scan + channel_import + drive_source -> 80 passed; ruff clean; mypy
+  Success (36 source files). Real Postgres 16 + schema.sql: enqueue_local with
+  source_url inserts and fetch_used_segments reads it back.
+CI: pending on the PR.
+Known blockers: none for this task. FINDING (pre-existing, not this task):
+  2 tests in tests/test_database_integration.py fail identically on
+  origin/main 2ceee2b against a real Postgres; CI skips them (no DB URL).
+Next action: phase 1c - headless runner command wiring drive_source +
+  segment_ledger + existing run_production, with frame-vs-title game check.
+Merge authorized: no
+Deploy authorized: no
+
+---
+
+## RCE-20260928-DRIVERUN — 2026-09-28
+
+Task ID: RCE-20260928-DRIVERUN
+Agent: claude
+Branch: claude/gaming-youtube-automation-rtl9xw
+Base SHA: 2ceee2bdd067d1882ccefbb6518d6dc844937a5c
+Current HEAD: (set at commit time — see PR)
+PR: 27 (shared branch; separate commit)
+Status: review
+Files changed: src/robin_content_engine/drive_runner.py (new),
+  src/robin_content_engine/production_runner.py (optional analysis_cache_path
+  on run_production; public highlight_candidates()), src/robin_content_engine/cli.py
+  (drive-produce), tests/test_drive_runner.py (new, 12 tests),
+  AI_WORKSPACE/ACTIVE_TASKS.yaml, AI_WORKSPACE/HANDOFF.md
+Tests: with GITHUB_ACTIONS=true FORCE_COLOR=1: test_drive_runner +
+  test_drive_source + test_segment_ledger + test_production_runner +
+  test_production_run_cli -> 164 passed; ruff clean; mypy Success (37 files).
+CI: pending on the PR.
+Known blockers: needs the owner's Takeout export (scheduled to start
+  2026-09-29) and a service account shared on that folder.
+Next action: phase 2 - phone-friendly one-time YouTube OAuth (device code)
+  + GitHub Secrets wiring; phase 3 scheduled workflow (private-first,
+  1-2/day). Owner also asked about TikTok cross-posting: planned as phase 4
+  after YouTube is stable (TikTok Content Posting API needs an audited app
+  for public posts).
+Merge authorized: no
+Deploy authorized: no
+
+---
+
+## RCE-20260928-CLOUDAUTH — 2026-09-28
+
+Task ID: RCE-20260928-CLOUDAUTH
+Agent: claude
+Branch: claude/gaming-youtube-automation-rtl9xw
+Base SHA: 2ceee2bdd067d1882ccefbb6518d6dc844937a5c
+Current HEAD: (set at commit time — see PR)
+PR: 27 (shared branch; separate commit)
+Status: review
+Files changed: src/robin_content_engine/device_auth.py (new),
+  src/robin_content_engine/token_store.py (new), src/robin_content_engine/youtube_auth.py
+  (accept full youtube scope), src/robin_content_engine/cli.py (youtube-device-auth,
+  youtube-token-materialize), schema.sql (+oauth_tokens), pyproject.toml
+  (+cryptography, +requests), tests/test_cloud_auth.py (new, 17 tests),
+  AI_WORKSPACE/ACTIVE_TASKS.yaml, AI_WORKSPACE/HANDOFF.md
+Tests: test_cloud_auth + test_youtube_auth -> 43 passed (CI colour env);
+  ruff clean; mypy Success (39 files). Real Postgres 16: schema.sql applies
+  twice cleanly (idempotent); save/overwrite/load of oauth_tokens OK; empty
+  name rejected by CHECK. Full suite: see PR.
+CI: pending on the PR.
+Known blockers: production migration (oauth_tokens) NOT applied - needs PR
+  review; apply on a Neon branch first. Owner one-time setup still pending
+  (service account + TV OAuth client + GitHub secrets + device sign-in).
+Next action: phase 3 - scheduled GitHub workflow wiring (materialize token ->
+  drive-produce -> private upload -> 1-2/day cap) + owner setup guide.
+Merge authorized: no
+Deploy authorized: no
+
+---
+
+## RCE-20260928-CLOUDPUBLISH — 2026-09-29
+
+Task ID: RCE-20260928-CLOUDPUBLISH
+Agent: claude
+Branch: claude/gaming-youtube-automation-rtl9xw
+Base SHA: 2ceee2bdd067d1882ccefbb6518d6dc844937a5c
+Current HEAD: (set at commit time — see PR)
+PR: 27 (shared branch; separate commit)
+Status: review
+Files changed: src/robin_content_engine/upload_budget.py (DB-backed daily
+  count), src/robin_content_engine/cli.py (drive-produce
+  --execute-private-upload), tests/test_drive_runner.py, tests/test_upload_budget.py,
+  .github/workflows/daily-short.yml (new), .github/workflows/youtube-signin.yml
+  (new), docs/CLOUD_RUNNER_SETUP.md (new owner guide),
+  AI_WORKSPACE/ACTIVE_TASKS.yaml, AI_WORKSPACE/HANDOFF.md
+Tests: full suite (CI colour env) 660 passed / 8 skipped; ruff clean; mypy
+  Success (39 files). Real Postgres 16: db_uploads_today counts today's
+  Asia/Dubai upload and ignores yesterday's.
+CI: pending on the PR.
+Known blockers: owner one-time setup (docs/CLOUD_RUNNER_SETUP.md);
+  oauth_tokens migration awaits review; Takeout export started 2026-09-29.
+Safety: daily-short.yml is inert until repository variable
+  CLOUD_RUNNER_ENABLED == 'true'; private unless PUBLISH_PUBLIC == 'true';
+  cap default 1/day. Found and fixed before push: runner.temp is not
+  available in job-level env (moved to a step writing GITHUB_ENV); --json
+  path returned before publishing.
+Next action: owner review of PR 27; then Neon-branch-first migration; then
+  owner setup + sign-in + one private test run.
+Merge authorized: no
+Deploy authorized: no
+
+---
+
+## RCE-20260929-SESSIONHANDOFF — 2026-09-29
+
+Task ID: RCE-20260929-SESSIONHANDOFF
+Agent: claude
+Branch: claude/gaming-youtube-automation-rtl9xw
+Base SHA: 2ceee2bdd067d1882ccefbb6518d6dc844937a5c
+Current HEAD: (set at commit time — see PR)
+PR: 27 (shared branch; separate commit)
+Status: review
+Files changed: HANDOFF.md (rewritten), AI_WORKSPACE/ACTIVE_TASKS.yaml,
+  AI_WORKSPACE/HANDOFF.md
+Tests: N/A (docs only)
+CI: pending on the PR.
+Known blockers: none.
+Next action: owner review; owner decision on rights for own published
+  uploads (recorded in HANDOFF.md "Known issues / findings").
+Merge authorized: no
+Deploy authorized: no
+
+---
+
+## RCE-20260929-SESSIONHANDOFF — 2026-09-29 (owner decision recorded)
+
+Task ID: RCE-20260929-SESSIONHANDOFF
+Agent: claude
+Branch: claude/gaming-youtube-automation-rtl9xw
+Base SHA: 2ceee2bdd067d1882ccefbb6518d6dc844937a5c
+PR: 27 (shared branch; separate commit)
+Status: review
+Change: owner answered the open rights question ("نعم اوافق", 2026-09-29):
+  the channel's own already-published uploads, and the owner's Takeout export
+  of them, count as rights-confirmed owned footage for channel-import and the
+  cloud runner. Local captures and any other footage still require the manual
+  rights-approve. Recorded in HANDOFF.md (Known issues -> Decided; Guardrails
+  exception) and in ACTIVE_TASKS.yaml (RCE-20260928-CLOUDAUTH owner_decisions).
+Tests: N/A (docs only)
+Merge authorized: no
+Deploy authorized: no
+
+---
+
+## RCE-20260930-DRIVELOOSE — 2026-09-30
+
+Task ID: RCE-20260930-DRIVELOOSE
+Agent: claude
+Branch: claude/gaming-youtube-automation-rtl9xw
+Base SHA: 2ceee2bdd067d1882ccefbb6518d6dc844937a5c
+PR: 27 (shared branch; separate commit)
+Status: review
+Trigger: the owner's Takeout export landed in Drive (folder "Takeout",
+  created 2026-09-30 02:23Z, still filling at 06:03Z). Metadata inspection
+  via the Drive connector showed ~4 GB zip parts AND loose videos named
+  "<title>-<part>.mp4" (5-17 GB) - a layout the runner could not read.
+Files changed: src/robin_content_engine/drive_source.py,
+  src/robin_content_engine/drive_runner.py, tests/test_drive_source.py,
+  tests/test_drive_runner.py, .github/workflows/daily-short.yml,
+  HANDOFF.md, AI_WORKSPACE/ACTIVE_TASKS.yaml, AI_WORKSPACE/HANDOFF.md
+Change: list_takeout() returns parts + loose videos; strip_part_suffix()
+  restores the real title; loose videos are tried first and downloaded only
+  when their title (and Drive's duration, when known) matches a channel
+  video; every download is preceded by a free-disk check (skip, not fail);
+  exhausted loose files are deleted; the daily workflow frees preinstalled
+  toolchains for disk.
+Tests: see commit / PR (ruff, mypy, full pytest).
+Known follow-up: analysis cache never hits on runners (path+size+mtime key).
+Merge authorized: no
+Deploy authorized: no

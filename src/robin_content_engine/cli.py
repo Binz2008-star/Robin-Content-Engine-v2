@@ -28,6 +28,9 @@ from .clip_selector import (
 )
 from .config import APP_ROOT, Settings
 from .database import JobRepository
+from .device_auth import DeviceAuthError, poll_for_tokens, request_device_code
+from .drive_runner import DriveRunnerError, produce_next_short
+from .drive_source import DriveSourceError, build_drive_service
 from .game_performance import (
     UNCLASSIFIED,
     GamePerformanceError,
@@ -61,8 +64,22 @@ from .production_runner import (
 from .publishing import PublishingError, dry_run, execute_private_upload
 from .quality_gate import PackagingError, package_short, run_quality_gate
 from .scene_detector import SceneBoundary, SceneDetectionError, detect_scenes
+from .token_store import (
+    YOUTUBE_TOKEN_NAME,
+    StoredCredentials,
+    TokenStoreError,
+    encrypt_credentials,
+    fernet_from_service_account,
+    materialize_token_file,
+    save_token,
+)
 from .transcription import FasterWhisperRecognizer, TranscriptionError
-from .upload_budget import record_upload, upload_allowed, upload_budget_summary
+from .upload_budget import (
+    db_upload_allowed,
+    record_upload,
+    upload_allowed,
+    upload_budget_summary,
+)
 from .uploader import YouTubeUploader
 from .vertical_reframe import VerticalReframeError, reframe_to_vertical
 from .youtube_auth import AuthState, YouTubeAuth, YouTubeAuthError
@@ -1646,6 +1663,291 @@ def _json_datetime_default(value: Any) -> str:
     if isinstance(value, datetime):
         return value.isoformat()
     raise TypeError(f"Object of type {type(value).__name__} is not JSON serializable")
+
+
+@app.command("drive-produce")
+def drive_produce_command(
+    folder_id: Annotated[
+        str | None,
+        typer.Option(
+            "--folder-id",
+            help="Drive folder holding the Takeout .zip parts "
+            "(default: env DRIVE_TAKEOUT_FOLDER_ID).",
+        ),
+    ] = None,
+    as_json: Annotated[
+        bool, typer.Option("--json", help="Print machine-readable JSON instead of text.")
+    ] = False,
+    execute_upload: Annotated[
+        bool,
+        typer.Option(
+            "--execute-private-upload",
+            help=(
+                "Also publish the produced Short: uploaded PRIVATE first, flipped to public "
+                "only when YOUTUBE_PUBLIC_AFTER_UPLOAD is true. Without this flag nothing "
+                "touches YouTube (metadata is only dry-run validated)."
+            ),
+        ),
+    ] = False,
+) -> None:
+    """Produce ONE new packaged Short from the owner's Google Takeout export
+    in Drive (PC-less runner). Picks a highlight window never used before,
+    records it in the queue, and runs the normal highlight -> reframe ->
+    captions -> quality gate -> package pipeline.
+
+    Without --execute-private-upload it NEVER uploads. With it, the daily cap
+    is checked FIRST against uploads recorded in the database (runners have
+    no persistent disk), the package is published through the same
+    private-first path as production-run-once, and the job is marked
+    uploaded in the queue. The Drive service-account key is read from the
+    env var GOOGLE_SERVICE_ACCOUNT_JSON (its JSON content, e.g. a GitHub
+    secret); it is never printed. A game is named in the Short's source
+    title only when console-native tags confirm it.
+    """
+    import os
+
+    folder = folder_id or os.environ.get("DRIVE_TAKEOUT_FOLDER_ID", "").strip()
+    if not folder:
+        raise typer.BadParameter("Provide --folder-id or set DRIVE_TAKEOUT_FOLDER_ID.")
+    raw_key = os.environ.get("GOOGLE_SERVICE_ACCOUNT_JSON", "").strip()
+    if not raw_key:
+        typer.echo("GOOGLE_SERVICE_ACCOUNT_JSON is not set (service-account key JSON).", err=True)
+        raise typer.Exit(code=2)
+    try:
+        key_info = json.loads(raw_key)
+    except json.JSONDecodeError as exc:
+        typer.echo("GOOGLE_SERVICE_ACCOUNT_JSON is not valid JSON.", err=True)
+        raise typer.Exit(code=2) from exc
+
+    settings = Settings()  # type: ignore[call-arg]
+    if execute_upload and not db_upload_allowed(settings):
+        # Checked before producing so a capped day burns no runner time and
+        # no ledger segment.
+        typer.echo(
+            f"DAILY UPLOAD CAP REACHED ({settings.youtube_max_uploads_per_day}/day) - "
+            "nothing produced or uploaded today."
+        )
+        return
+    try:
+        result = produce_next_short(settings, build_drive_service(key_info), folder)
+    except (DriveRunnerError, DriveSourceError, ProductionRunError) as exc:
+        typer.echo(f"drive-produce failed: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+    if result is None:
+        typer.echo("No unused footage left in the Drive export - nothing produced.")
+        return
+    summary = {
+        "job_id": result.job_id,
+        "video_id": result.video_id,
+        "game": result.game,
+        "game_evidence": result.evidence.value,
+        "source_title": result.source_title,
+        "rank": result.rank,
+        "segment": [round(result.start_seconds, 3), round(result.end_seconds, 3)],
+        "final_video": str(result.production.final_video_path),
+    }
+    if as_json:
+        typer.echo(json.dumps(summary, ensure_ascii=False, indent=2))
+    else:
+        typer.echo(
+            f"Produced job {result.job_id} from {result.video_id} "
+            f"[{result.start_seconds:.1f}-{result.end_seconds:.1f}s], "
+            f"game={result.game or '-'} ({result.evidence.value}), "
+            f"source title '{result.source_title}'."
+        )
+    _publish_drive_short(result.job_id, result.production, settings, execute_upload)
+
+
+def _publish_drive_short(
+    job_id: int, production: Any, settings: Settings, execute_upload: bool
+) -> None:
+    """Metadata + (dry-run | private-first upload) for a drive-produce job.
+    Mirrors production-run-once's publishing tail, plus a durable
+    mark_uploaded() in the queue so the DB-backed daily cap sees it."""
+    if not production.quality_gate.passed or production.package is None:
+        typer.echo("Quality gate failed - not publishing this Short.", err=True)
+        raise typer.Exit(code=1)
+    package_dir = production.package.package_dir
+    title, description, tags = build_production_metadata(
+        production.source_title, settings, hook=production.hook
+    )
+    typer.echo(f"Title: {title}")
+    if not execute_upload:
+        try:
+            dry_run(package_dir, title, description, tags)
+        except PublishingError as exc:
+            typer.echo(f"Publish dry run failed: {exc}", err=True)
+            raise typer.Exit(code=1) from exc
+        typer.echo("PUBLISH DRY RUN PASS - not uploaded (no --execute-private-upload).")
+        return
+
+    auth = YouTubeAuth(settings.youtube_client_secret_file, settings.youtube_token_file)
+    try:
+        upload = execute_private_upload(
+            package_dir, title, description, tags, settings, auth, YouTubeUploader
+        )
+    except PublishingError as exc:
+        typer.echo(f"Upload failed: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+    repository = JobRepository(settings.database_url, settings.max_job_attempts)
+    try:
+        with repository.running():
+            repository.mark_uploaded(job_id, upload.youtube_id)
+    except Exception as exc:  # the upload itself succeeded; surface, don't hide
+        typer.echo(
+            f"UPLOADED as {upload.youtube_id} but recording it in the queue failed: "
+            f"{type(exc).__name__}. Reconcile job {job_id} manually.",
+            err=True,
+        )
+        raise typer.Exit(code=1) from exc
+    typer.echo("UPLOAD SUCCESS")
+    typer.echo(f"YouTube video ID: {upload.youtube_id}")
+    typer.echo(f"Privacy: {upload.privacy_status}")
+
+
+def _json_env(name: str) -> dict[str, Any]:
+    """Parse a JSON secret from the environment. Never echoes its content."""
+    import os
+
+    raw = os.environ.get(name, "").strip()
+    if not raw:
+        typer.echo(f"{name} is not set.", err=True)
+        raise typer.Exit(code=2)
+    try:
+        value = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        typer.echo(f"{name} is not valid JSON.", err=True)
+        raise typer.Exit(code=2) from exc
+    if not isinstance(value, dict):
+        typer.echo(f"{name} must be a JSON object.", err=True)
+        raise typer.Exit(code=2)
+    return value
+
+
+def _oauth_client(info: dict[str, Any]) -> tuple[str, str]:
+    """(client_id, client_secret) from a downloaded Google OAuth client JSON
+    ({"installed": {...}}, {"web": {...}} or flat)."""
+    body = info.get("installed") or info.get("web") or info
+    client_id = body.get("client_id") if isinstance(body, dict) else None
+    client_secret = body.get("client_secret") if isinstance(body, dict) else None
+    if not client_id or not client_secret:
+        typer.echo("YOUTUBE_OAUTH_CLIENT_JSON has no client_id/client_secret.", err=True)
+        raise typer.Exit(code=2)
+    return str(client_id), str(client_secret)
+
+
+@app.command("youtube-device-auth")
+def youtube_device_auth_command() -> None:
+    """One-time, phone-friendly YouTube sign-in for the PC-less runner.
+
+    Prints a URL and a short code: open the URL on any phone, enter the code,
+    choose the CHANNEL's Google account and allow access. The authorized
+    account must be the configured YOUTUBE_EXPECTED_CHANNEL_ID, otherwise
+    nothing is stored. The refresh token is stored ENCRYPTED in the
+    oauth_tokens table; no token is ever printed.
+
+    Needs env: YOUTUBE_OAUTH_CLIENT_JSON (a "TVs and Limited Input devices"
+    OAuth client), GOOGLE_SERVICE_ACCOUNT_JSON (encryption key source),
+    DATABASE_URL, YOUTUBE_EXPECTED_CHANNEL_ID.
+    """
+    import os
+
+    from google.oauth2.credentials import Credentials
+
+    client_id, client_secret = _oauth_client(_json_env("YOUTUBE_OAUTH_CLIENT_JSON"))
+    service_account_info = _json_env("GOOGLE_SERVICE_ACCOUNT_JSON")
+    settings = Settings()  # type: ignore[call-arg]
+    expected = settings.youtube_expected_channel_id
+    if not expected:
+        typer.echo("YOUTUBE_EXPECTED_CHANNEL_ID must be set before signing in.", err=True)
+        raise typer.Exit(code=2)
+
+    try:
+        code = request_device_code(client_id)
+        message = (
+            f"Open {code.verification_url} on your phone and enter the code: "
+            f"{code.user_code}  (valid for {code.expires_in // 60} minutes)"
+        )
+        typer.echo(message)
+        summary_path = os.environ.get("GITHUB_STEP_SUMMARY")
+        if summary_path:
+            with open(summary_path, "a", encoding="utf-8") as summary:
+                summary.write(f"## YouTube sign-in\n\n{message}\n")
+        tokens = poll_for_tokens(client_id, client_secret, code)
+    except DeviceAuthError as exc:
+        typer.echo(f"YouTube sign-in failed: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+
+    credentials = Credentials(  # type: ignore[no-untyped-call]
+        token=tokens.access_token or None,
+        refresh_token=tokens.refresh_token,
+        client_id=client_id,
+        client_secret=client_secret,
+        token_uri="https://oauth2.googleapis.com/token",
+        scopes=list(tokens.scopes),
+    )
+    auth = YouTubeAuth(settings.youtube_client_secret_file, settings.youtube_token_file)
+    try:
+        identity = auth.fetch_channel_identity(credentials)
+    except YouTubeAuthError as exc:
+        typer.echo(f"Signed in, but the channel lookup failed: {exc} Nothing stored.", err=True)
+        raise typer.Exit(code=1) from exc
+    if identity.channel_id != expected:
+        typer.echo(
+            f"Signed in as channel '{identity.title}' ({identity.channel_id}), which is NOT "
+            f"the expected channel {expected}. Nothing stored - sign in again with the "
+            "channel's account.",
+            err=True,
+        )
+        raise typer.Exit(code=1)
+
+    stored = StoredCredentials(
+        client_id=client_id,
+        client_secret=client_secret,
+        refresh_token=tokens.refresh_token,
+        scopes=tokens.scopes,
+        channel_id=identity.channel_id,
+    )
+    try:
+        save_token(
+            settings.database_url,
+            YOUTUBE_TOKEN_NAME,
+            encrypt_credentials(fernet_from_service_account(service_account_info), stored),
+        )
+    except TokenStoreError as exc:
+        typer.echo(f"Could not store the YouTube token: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+    typer.echo(
+        f"YouTube sign-in complete for '{identity.title}' ({identity.channel_id}). "
+        "Token stored encrypted."
+    )
+
+
+@app.command("youtube-token-materialize")
+def youtube_token_materialize_command(
+    output: Annotated[
+        Path | None,
+        typer.Option("--output", help="Where to write token.json (default: YOUTUBE_TOKEN_FILE)."),
+    ] = None,
+) -> None:
+    """Write the stored (encrypted) YouTube token as a 0600 token.json for the
+    existing uploader, at the start of a cloud run. Refuses a token for any
+    channel other than YOUTUBE_EXPECTED_CHANNEL_ID. Prints no token data."""
+    service_account_info = _json_env("GOOGLE_SERVICE_ACCOUNT_JSON")
+    settings = Settings()  # type: ignore[call-arg]
+    destination = output or settings.youtube_token_file
+    try:
+        stored = materialize_token_file(
+            settings.database_url,
+            service_account_info,
+            destination,
+            expected_channel_id=settings.youtube_expected_channel_id,
+        )
+    except TokenStoreError as exc:
+        typer.echo(f"youtube-token-materialize failed: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+    typer.echo(f"YouTube token ready for channel {stored.channel_id} at {destination}.")
 
 
 @app.command("channel-import")

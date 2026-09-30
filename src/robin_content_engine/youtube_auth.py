@@ -101,7 +101,13 @@ class YouTubeAuth:
         if not isinstance(raw, dict):
             return None
         granted_scopes = set(raw.get("scopes") or [])
-        if not set(YOUTUBE_AUTH_SCOPES).issubset(granted_scopes):
+        # The full "youtube" scope includes upload and read access; it is the
+        # only YouTube scope the phone (device-flow) sign-in can grant, so a
+        # token carrying it alone is sufficient.
+        if not (
+            set(YOUTUBE_AUTH_SCOPES).issubset(granted_scopes)
+            or YOUTUBE_MANAGE_SCOPE in granted_scopes
+        ):
             return None
         try:
             return self._credentials_from_info(raw)

@@ -1,0 +1,39 @@
+name: YouTube sign-in (one-time)
+
+# Manual, one-time phone sign-in for the PC-less runner. Press "Run workflow",
+# open this run's summary: it shows a URL and a short code. Open the URL on
+# your phone, enter the code, choose the Robinzo channel's Google account and
+# allow access. The job verifies the account IS the expected channel and only
+# then stores the refresh token ENCRYPTED in the database. No token is ever
+# printed. Re-run only if the stored token stops working.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: youtube-signin
+  cancel-in-progress: false
+
+jobs:
+  signin:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+      GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+      YOUTUBE_OAUTH_CLIENT_JSON: ${{ secrets.YOUTUBE_OAUTH_CLIENT_JSON }}
+      YOUTUBE_EXPECTED_CHANNEL_ID: ${{ vars.YOUTUBE_EXPECTED_CHANNEL_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install
+        run: python -m pip install --upgrade pip && pip install -e .
+      - name: Sign in (see the run summary for the code)
+        run: robin-engine youtube-device-auth

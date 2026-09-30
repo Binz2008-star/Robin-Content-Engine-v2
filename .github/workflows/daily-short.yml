@@ -1,0 +1,70 @@
+name: Daily Short (cloud runner)
+
+# PC-less production: cuts ONE new Short from the owner's Google Takeout
+# footage in Drive (a segment never used before), runs the normal quality
+# gate, and publishes it private-first (public only when the repository
+# variable PUBLISH_PUBLIC is "true"). The daily cap is counted from the
+# database, and checked before any processing.
+#
+# SAFETY SWITCH: nothing runs until the repository variable
+# CLOUD_RUNNER_ENABLED is set to "true". Unset it to stop publishing
+# immediately.
+
+on:
+  schedule:
+    # 16:00 UTC = 20:00 Asia/Dubai (evening prime time for the channel).
+    - cron: "0 16 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: daily-short
+  cancel-in-progress: false
+
+jobs:
+  short:
+    if: vars.CLOUD_RUNNER_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+      GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+      DRIVE_TAKEOUT_FOLDER_ID: ${{ vars.DRIVE_TAKEOUT_FOLDER_ID }}
+      YOUTUBE_EXPECTED_CHANNEL_ID: ${{ vars.YOUTUBE_EXPECTED_CHANNEL_ID }}
+      YOUTUBE_AI_METADATA: "true"
+      YOUTUBE_METADATA_LANGUAGE: ${{ vars.YOUTUBE_METADATA_LANGUAGE || 'arabic' }}
+      YOUTUBE_PUBLIC_AFTER_UPLOAD: ${{ vars.PUBLISH_PUBLIC == 'true' && 'true' || 'false' }}
+      YOUTUBE_MAX_UPLOADS_PER_DAY: ${{ vars.DAILY_SHORT_CAP || '1' }}
+      HIGHLIGHT_MIN_SECONDS: "25"
+      HIGHLIGHT_MAX_SECONDS: "45"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Runner-local paths (the runner context is only available in steps)
+        run: |
+          {
+            echo "YOUTUBE_TOKEN_FILE=$RUNNER_TEMP/yt/token.json"
+            echo "YOUTUBE_CLIENT_SECRET_FILE=$RUNNER_TEMP/yt/unused-client-secret.json"
+            echo "WORK_DIR=$RUNNER_TEMP/work"
+          } >> "$GITHUB_ENV"
+      - name: Free runner disk (loose Takeout videos can be up to 17 GB)
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          df -h "$RUNNER_TEMP"
+      - name: Install
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg >/dev/null
+          python -m pip install --upgrade pip && pip install -e .
+      - name: Prepare YouTube token (decrypted to a 0600 temp file)
+        run: robin-engine youtube-token-materialize
+      - name: Produce and publish one new Short
+        run: robin-engine drive-produce --execute-private-upload
+      - name: Remove token file
+        if: always()
+        run: rm -f "$YOUTUBE_TOKEN_FILE"

@@ -409,3 +409,36 @@ def test_mark_deterministic_failure_returns_false_when_job_not_pending(
 
     assert repo.mark_deterministic_failure(42, "already handled") is False
     assert pool.closed is True
+
+
+def test_enqueue_local_records_optional_source_url(tmp_path: Path) -> None:
+    source = tmp_path / "clip.mp4"
+    source.write_bytes(b"x")
+    repo, conn = _repo_with_fake_pool(FakeResult(description=None, rows=[(42,)]))
+
+    job_id = repo.enqueue_local(
+        source,
+        " Fortnite gameplay ",
+        " note ",
+        source_url="https://www.youtube.com/watch?v=MrZkqujTwdg#segment=1.000-31.000",
+    )
+
+    assert job_id == 42
+    sql, params = conn.executed[0]
+    assert "source_url" in sql
+    assert params == (
+        str(source.resolve()),
+        "https://www.youtube.com/watch?v=MrZkqujTwdg#segment=1.000-31.000",
+        "Fortnite gameplay",
+        "note",
+    )
+
+
+def test_enqueue_local_source_url_defaults_to_null(tmp_path: Path) -> None:
+    source = tmp_path / "clip.mp4"
+    source.write_bytes(b"x")
+    repo, conn = _repo_with_fake_pool(FakeResult(description=None, rows=[(7,)]))
+
+    repo.enqueue_local(source, "t", "n")
+
+    assert conn.executed[0][1][1] is None

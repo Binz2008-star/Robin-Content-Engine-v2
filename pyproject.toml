@@ -9,6 +9,7 @@ description = "Rights-aware automated production pipeline for original gaming Sh
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
+  "cryptography>=42",
   "edge-tts>=7.2,<8",
   "fastapi>=0.115,<1",
   "faster-whisper>=1.2,<2",
@@ -23,6 +24,7 @@ dependencies = [
   "psycopg[binary,pool]>=3.2,<4",
   "pydantic>=2.10,<3",
   "pydantic-settings>=2.7,<3",
+  "requests>=2.31,<3",
   "scenedetect-headless>=0.7.1,<0.8",
   "structlog>=25,<26",
   "tenacity>=9,<10",
