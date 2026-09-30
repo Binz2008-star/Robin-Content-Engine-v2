@@ -17,11 +17,14 @@ from robin_content_engine.drive_source import (  # noqa: E402
     ChannelVideoRef,
     DriveArchive,
     DriveSourceError,
+    DriveVideo,
     extract_videos,
     list_archives,
+    list_takeout,
     match_all,
     match_channel_video,
     normalize_title,
+    strip_part_suffix,
 )
 
 # ---------------------------------------------------------------------------
@@ -91,6 +94,47 @@ def test_list_archives_follows_pages_and_keeps_only_zips() -> None:
     assert len(calls) == 2
     assert calls[0]["q"] == "'folder123' in parents and trashed = false"
     assert calls[1]["pageToken"] == "p2"
+
+
+def test_list_takeout_separates_parts_from_loose_videos() -> None:
+    # Real layout (2026-09-30 export): zip parts interleaved with videos too
+    # large for a part, stored as "<title>-<part>.mp4".
+    service = FakeService(
+        [
+            {
+                "files": [
+                    {"id": "z", "name": "takeout-20260930T021057Z-1-025.zip", "size": "4"},
+                    {
+                        "id": "v",
+                        "name": "Archived Gameplay Clip(2)-026.mp4",
+                        "size": "5781775233",
+                        "videoMediaMetadata": {"durationMillis": "9277500"},
+                    },
+                    {"id": "w", "name": "Apex Legends جلسة نارية 🔥-018.mp4", "size": "8"},
+                    {"id": "n", "name": "notes.txt", "size": "3"},
+                ]
+            }
+        ]
+    )
+
+    listing = list_takeout(service, "folder123")
+
+    assert listing.archives == [DriveArchive("z", "takeout-20260930T021057Z-1-025.zip", 4)]
+    assert listing.videos == [
+        DriveVideo("v", "Archived Gameplay Clip(2)-026.mp4", 5781775233, 9277.5),
+        DriveVideo("w", "Apex Legends جلسة نارية 🔥-018.mp4", 8, None),
+    ]
+    assert listing.videos[0].title_name == "Archived Gameplay Clip(2).mp4"
+    assert "videoMediaMetadata(durationMillis)" in service.files().list_calls[0]["fields"]
+
+
+def test_strip_part_suffix_only_touches_video_part_numbers() -> None:
+    arabic = "Apex Legends جلسة نارية 🔥"
+    assert strip_part_suffix(f"{arabic}-018.mp4") == f"{arabic}.mp4"
+    assert strip_part_suffix("Clip(2)-026.MP4") == "Clip(2).MP4"
+    assert strip_part_suffix("Round 1-2.mp4") == "Round 1-2.mp4"  # not a 3-digit part
+    assert strip_part_suffix("takeout-1-025.zip") == "takeout-1-025.zip"
+    assert strip_part_suffix("Fortnite win.mp4") == "Fortnite win.mp4"
 
 
 @pytest.mark.parametrize("bad", ["", "abc' or name contains 'x"])

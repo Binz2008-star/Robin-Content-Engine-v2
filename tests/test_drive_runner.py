@@ -26,7 +26,11 @@ from robin_content_engine.drive_runner import (  # noqa: E402
     produce_next_short,
     source_title_for,
 )
-from robin_content_engine.drive_source import DriveArchive  # noqa: E402
+from robin_content_engine.drive_source import (  # noqa: E402
+    DriveArchive,
+    DriveVideo,
+    TakeoutListing,
+)
 from robin_content_engine.segment_ledger import UsedSegment, parse_ledger_url  # noqa: E402
 
 PS5_FORTNITE = ChannelVideo(
@@ -124,10 +128,15 @@ def _settings(tmp_path: Path) -> Any:
 @pytest.fixture
 def fake_drive(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> dict[str, Any]:
     FakeRepository.enqueued = []
-    state: dict[str, Any] = {"used": {}, "files": {}, "downloads": []}
-    archives = [DriveArchive("arc1", "takeout-001.zip", 10)]
+    state: dict[str, Any] = {
+        "used": {},
+        "files": {},
+        "downloads": [],
+        "loose": [],
+        "archives": [DriveArchive("arc1", "takeout-001.zip", 10)],
+    }
 
-    def fake_download(service: Any, archive: DriveArchive, dest_dir: Path) -> Path:
+    def fake_download(service: Any, archive: DriveArchive | DriveVideo, dest_dir: Path) -> Path:
         state["downloads"].append(archive.file_id)
         dest_dir.mkdir(parents=True, exist_ok=True)
         path = dest_dir / archive.name
@@ -143,7 +152,11 @@ def fake_drive(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> dict[str, Any
             out.append(p)
         return out
 
-    monkeypatch.setattr(dr, "list_archives", lambda service, folder: archives)
+    monkeypatch.setattr(
+        dr,
+        "list_takeout",
+        lambda service, folder: TakeoutListing(state["archives"], state["loose"]),
+    )
     monkeypatch.setattr(dr, "download_archive", fake_download)
     monkeypatch.setattr(dr, "extract_videos", fake_extract)
     monkeypatch.setattr(
@@ -166,7 +179,8 @@ def _run(tmp_path: Path, state: dict[str, Any], **kwargs: Any) -> Any:
         channel_videos=[PS5_FORTNITE, AI_APEX, ARCHIVE],
         candidates_fn=lambda path, top_n, **kw: [_cand(100, 130), _cand(400, 430)],
         produce_fn=produce,
-        duration_fn=lambda p: state["files"][p.name],
+        duration_fn=lambda p: state["files"].get(p.name),
+        free_bytes_fn=lambda path: state.get("free", 10**12),
         repository_factory=FakeRepository,
         **kwargs,
     )
@@ -234,10 +248,80 @@ def test_returns_none_when_everything_is_used_or_unmatched(
 def test_empty_folder_is_a_clear_error(
     tmp_path: Path, fake_drive: dict[str, Any], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(dr, "list_archives", lambda service, folder: [])
+    fake_drive["archives"] = []
 
     with pytest.raises(DriveRunnerError, match="shared with the service account"):
         _run(tmp_path, fake_drive)
+
+
+# ---------------------------------------------------------------------------
+# Loose Takeout videos (too large for a zip part, stored "<title>-NNN.mp4")
+# ---------------------------------------------------------------------------
+
+
+def test_loose_video_matches_despite_part_suffix_and_is_used_first(
+    tmp_path: Path, fake_drive: dict[str, Any]
+) -> None:
+    fake_drive["files"] = {"Ggg-026.mp4": 6017.0}
+    fake_drive["loose"] = [DriveVideo("lv1", "Ggg-026.mp4", 5_000, None)]
+
+    result, _ = _run(tmp_path, fake_drive)
+
+    assert result is not None
+    assert result.video_id == PS5_FORTNITE.video_id
+    assert result.source_title == "Fortnite gameplay"
+    # Produced straight from the loose file; no zip part was downloaded.
+    assert fake_drive["downloads"] == ["lv1"]
+
+
+def test_loose_video_with_unknown_title_is_never_downloaded(
+    tmp_path: Path, fake_drive: dict[str, Any]
+) -> None:
+    fake_drive["loose"] = [DriveVideo("lv1", "Some other upload-007.mp4", 5_000, 60.0)]
+
+    result, _ = _run(tmp_path, fake_drive)
+
+    assert result is None
+    assert fake_drive["downloads"] == ["arc1"]
+
+
+def test_loose_video_whose_drive_duration_contradicts_is_never_downloaded(
+    tmp_path: Path, fake_drive: dict[str, Any]
+) -> None:
+    # Title matches "Ggg" but Drive says 60s, not 6017s: not that video.
+    fake_drive["loose"] = [DriveVideo("lv1", "Ggg-007.mp4", 5_000, 60.0)]
+
+    result, _ = _run(tmp_path, fake_drive)
+
+    assert result is None
+    assert "lv1" not in fake_drive["downloads"]
+
+
+def test_files_that_do_not_fit_on_disk_are_skipped_not_downloaded(
+    tmp_path: Path, fake_drive: dict[str, Any]
+) -> None:
+    fake_drive["files"] = {"Ggg.mp4": 6017.0}
+    fake_drive["loose"] = [DriveVideo("big", "Ggg-021.mp4", 17 * 1024**3, None)]
+    fake_drive["free"] = 14 * 1024**3
+
+    result, _ = _run(tmp_path, fake_drive)
+
+    # The 17 GB loose file is skipped; the small zip part still produces.
+    assert result is not None
+    assert fake_drive["downloads"] == ["arc1"]
+
+
+def test_exhausted_loose_video_is_deleted_after_use(
+    tmp_path: Path, fake_drive: dict[str, Any]
+) -> None:
+    fake_drive["files"] = {"Ggg-026.mp4": 6017.0}
+    fake_drive["loose"] = [DriveVideo("lv1", "Ggg-026.mp4", 5_000, None)]
+    fake_drive["used"] = {PS5_FORTNITE.video_id: [UsedSegment(PS5_FORTNITE.video_id, 0, 1000)]}
+
+    result, _ = _run(tmp_path, fake_drive)
+
+    assert result is None
+    assert not (tmp_path / "work" / "drive" / "loose" / "Ggg-026.mp4").exists()
 
 
 # ---------------------------------------------------------------------------

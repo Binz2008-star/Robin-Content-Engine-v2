@@ -104,10 +104,11 @@ public flip (default private); `DAILY_SHORT_CAP` (default 1).
 
 ## IN-PROGRESS - resume here
 
-1. **Owner: Google Takeout** ("Add to Drive", videos only, 4 GB `.zip`) -
-   scheduled by Google to start 2026-09-29. Owner will report when done.
-   Drive has ~208 GB free of 400 GB. Verify the files via the Google Drive
-   connector once it lands.
+1. **Google Takeout landed (2026-09-30)** in Drive folder "Takeout" (still
+   filling at 06:03Z). Layout: ~4 GB `.zip` parts plus videos too large for
+   a part stored loose as `<title>-<part>.mp4` (5-17 GB). The runner reads
+   both since RCE-20260930-DRIVELOOSE. Share THIS folder with the service
+   account (setup guide step 2).
 2. **Owner review of PR #27** (merge not authorized for the agent).
 3. **Migration**: apply `CREATE TABLE IF NOT EXISTS oauth_tokens` from
    `schema.sql` - owner approved the additive table; apply on a Neon branch

@@ -5,8 +5,10 @@ existing production pipeline, for the scheduled cloud runner that replaces
 the retired operator PC:
 
 1. read the channel's own videos (stored youtube_videos snapshot, read-only)
-2. for each Takeout archive in the shared Drive folder (oldest first):
-   download it, extract only its video files, match each file to its
+2. for each loose Takeout video (too large for a zip part) and then each
+   Takeout archive in the shared Drive folder (oldest first): download it
+   only if its title matches a channel video and it fits the runner's free
+   disk, extract only the video files of an archive, match each file to its
    channel video (never guessing)
 3. order matched videos: confirmed game first, then proven games, longest
 4. for the first video with an UNUSED highlight window: register a
@@ -43,10 +45,13 @@ from .database import JobRepository
 from .drive_source import (
     ChannelVideoRef,
     DriveArchive,
+    DriveVideo,
     download_archive,
     extract_videos,
-    list_archives,
+    list_takeout,
     match_all,
+    match_channel_video,
+    normalize_title,
 )
 from .production_runner import ProductionRunResult, highlight_candidates, run_production
 from .segment_ledger import fetch_used_segments, first_unused_rank, ledger_url
@@ -79,6 +84,9 @@ _CONSOLE_NATIVE_TAGS = ("#ps4live", "#ps5live")
 CandidateFn = Callable[..., list[HighlightCandidate]]
 ProduceFn = Callable[..., ProductionRunResult]
 
+# Free disk kept for the rendered Short, captions and analysis on top of the
+# downloaded footage. Loose Takeout videos can be 17 GB each.
+DISK_HEADROOM_BYTES = 3 * 1024**3
 
 
 class DriveRunnerError(RuntimeError):
@@ -204,6 +212,38 @@ def order_videos(
     return [(path, video, *game_evidence(video)) for path, video in ordered]
 
 
+def free_disk_bytes(path: Path) -> int:
+    return shutil.disk_usage(path).free
+
+
+@dataclass(frozen=True)
+class _RunContext:
+    settings: Settings
+    drive_service: Any
+    refs: list[ChannelVideoRef]
+    by_id: dict[str, ChannelVideo]
+    known_titles: frozenset[str]
+    top_n: int
+    game_priority: Sequence[str]
+    selector_config: WindowSelectorConfig
+    candidates_fn: CandidateFn
+    produce_fn: ProduceFn
+    duration_fn: Callable[[Path], float | None]
+    free_bytes_fn: Callable[[Path], int]
+    make_repository: Callable[[], JobRepository]
+    work_root: Path
+    cache_dir: Path
+
+    def fits_on_disk(self, needed_bytes: int, what: str) -> bool:
+        free = self.free_bytes_fn(self.work_root)
+        if free >= needed_bytes:
+            return True
+        log.warning(
+            "drive_runner_skipped_no_disk", file=what, needed=needed_bytes, free=free
+        )
+        return False
+
+
 def produce_next_short(
     settings: Settings,
     drive_service: Any,
@@ -215,83 +255,107 @@ def produce_next_short(
     candidates_fn: CandidateFn = highlight_candidates,
     produce_fn: ProduceFn = run_production,
     duration_fn: Callable[[Path], float | None] = probe_duration,
+    free_bytes_fn: Callable[[Path], int] = free_disk_bytes,
     repository_factory: Callable[[], JobRepository] | None = None,
 ) -> DriveShortResult | None:
     """Produce ONE new packaged Short from Drive footage, or None when every
-    archive is exhausted (no matched video has an unused window left).
-    Never uploads."""
+    loose video and archive is exhausted (no matched video has an unused
+    window left). Never uploads."""
     videos = list(channel_videos) if channel_videos is not None else fetch_channel_videos(settings)
-    by_id = {video.video_id: video for video in videos}
     refs = [video.ref() for video in videos]
-    selector_config = WindowSelectorConfig(
-        min_clip_seconds=settings.highlight_min_seconds,
-        max_clip_seconds=settings.highlight_max_seconds,
-    )
-    make_repository = repository_factory or (
-        lambda: JobRepository(settings.database_url, settings.max_job_attempts)
-    )
-
-    archives_dir = settings.work_dir / "drive" / "archives"
-    extract_root = settings.work_dir / "drive" / "videos"
+    work_root = settings.work_dir / "drive"
     cache_dir = settings.work_dir / "analysis"
     cache_dir.mkdir(parents=True, exist_ok=True)
+    work_root.mkdir(parents=True, exist_ok=True)
+    ctx = _RunContext(
+        settings=settings,
+        drive_service=drive_service,
+        refs=refs,
+        by_id={video.video_id: video for video in videos},
+        known_titles=frozenset(normalize_title(ref.title) for ref in refs) - {""},
+        top_n=top_n,
+        game_priority=game_priority,
+        selector_config=WindowSelectorConfig(
+            min_clip_seconds=settings.highlight_min_seconds,
+            max_clip_seconds=settings.highlight_max_seconds,
+        ),
+        candidates_fn=candidates_fn,
+        produce_fn=produce_fn,
+        duration_fn=duration_fn,
+        free_bytes_fn=free_bytes_fn,
+        make_repository=repository_factory
+        or (lambda: JobRepository(settings.database_url, settings.max_job_attempts)),
+        work_root=work_root,
+        cache_dir=cache_dir,
+    )
 
-    archives = list_archives(drive_service, folder_id)
-    if not archives:
+    listing = list_takeout(drive_service, folder_id)
+    if not listing.archives and not listing.videos:
         raise DriveRunnerError(
-            f"No Takeout .zip archives found in Drive folder {folder_id}. Is the export "
-            "finished, and is the folder shared with the service account?"
+            f"No Takeout archives or videos found in Drive folder {folder_id}. Is the "
+            "export finished, and is the folder shared with the service account?"
         )
 
-    for archive in archives:
-        result = _produce_from_archive(
-            archive,
-            settings,
-            drive_service,
-            archives_dir=archives_dir,
-            extract_dir=extract_root / archive.file_id,
-            cache_dir=cache_dir,
-            refs=refs,
-            by_id=by_id,
-            top_n=top_n,
-            game_priority=game_priority,
-            selector_config=selector_config,
-            candidates_fn=candidates_fn,
-            produce_fn=produce_fn,
-            duration_fn=duration_fn,
-            make_repository=make_repository,
-        )
+    # Loose videos first: no extraction, and their title (and Drive's own
+    # duration, when known) is checked BEFORE anything is downloaded.
+    for loose in listing.videos:
+        result = _produce_from_loose_video(loose, ctx)
         if result is not None:
             return result
-    log.info("drive_runner_exhausted", archives=len(archives))
+    for archive in listing.archives:
+        result = _produce_from_archive(archive, ctx)
+        if result is not None:
+            return result
+    log.info(
+        "drive_runner_exhausted",
+        archives=len(listing.archives),
+        loose_videos=len(listing.videos),
+    )
     return None
 
 
-def _produce_from_archive(
-    archive: DriveArchive,
-    settings: Settings,
-    drive_service: Any,
-    *,
-    archives_dir: Path,
-    extract_dir: Path,
-    cache_dir: Path,
-    refs: list[ChannelVideoRef],
-    by_id: dict[str, ChannelVideo],
-    top_n: int,
-    game_priority: Sequence[str],
-    selector_config: WindowSelectorConfig,
-    candidates_fn: CandidateFn,
-    produce_fn: ProduceFn,
-    duration_fn: Callable[[Path], float | None],
-    make_repository: Callable[[], JobRepository],
-) -> DriveShortResult | None:
-    archive_path = download_archive(drive_service, archive, archives_dir)
+def _produce_from_loose_video(loose: DriveVideo, ctx: _RunContext) -> DriveShortResult | None:
+    title_name = loose.title_name
+    if normalize_title(title_name) not in ctx.known_titles:
+        log.info("drive_runner_unmatched_files", file=loose.name, count=1)
+        return None
+    if (
+        loose.duration_seconds is not None
+        and match_channel_video(title_name, loose.duration_seconds, ctx.refs) is None
+    ):
+        # Title known but Drive's duration singles out no channel video.
+        log.info("drive_runner_unmatched_files", file=loose.name, count=1)
+        return None
+    if not ctx.fits_on_disk((loose.size_bytes or 0) + DISK_HEADROOM_BYTES, loose.name):
+        return None
+
+    loose_dir = ctx.work_root / "loose"
+    path = download_archive(ctx.drive_service, loose, loose_dir)
+    duration = ctx.duration_fn(path)
+    if duration is None:
+        duration = loose.duration_seconds
+    ref = match_channel_video(title_name, duration, ctx.refs)
+    result = None
+    if ref is None:
+        log.info("drive_runner_unmatched_files", file=loose.name, count=1)
+    else:
+        result = _first_unused_short({path: ctx.by_id[ref.video_id]}, ctx)
+    if result is None:
+        path.unlink(missing_ok=True)
+    return result
+
+
+def _produce_from_archive(archive: DriveArchive, ctx: _RunContext) -> DriveShortResult | None:
+    # The zip plus its extracted videos are on disk at the same time.
+    if not ctx.fits_on_disk(2 * (archive.size_bytes or 0) + DISK_HEADROOM_BYTES, archive.name):
+        return None
+    extract_dir = ctx.work_root / "videos" / archive.file_id
+    archive_path = download_archive(ctx.drive_service, archive, ctx.work_root / "archives")
     files = extract_videos(archive_path, extract_dir)
-    # The extracted videos are all we need; free the archive's disk space
-    # (GitHub runners have ~14 GB free).
+    # The extracted videos are all we need; free the archive's disk space.
     archive_path.unlink(missing_ok=True)
 
-    matched_refs, unmatched = match_all([(f, duration_fn(f)) for f in files], refs)
+    matched_refs, unmatched = match_all([(f, ctx.duration_fn(f)) for f in files], ctx.refs)
     if unmatched:
         log.info(
             "drive_runner_unmatched_files",
@@ -299,12 +363,22 @@ def _produce_from_archive(
             count=len(unmatched),
             files=[p.name for p in unmatched][:20],
         )
-    matched = {path: by_id[ref.video_id] for path, ref in matched_refs.items()}
+    result = _first_unused_short(
+        {path: ctx.by_id[ref.video_id] for path, ref in matched_refs.items()}, ctx
+    )
+    if result is None:
+        shutil.rmtree(extract_dir, ignore_errors=True)
+    return result
 
-    for path, video, game, evidence in order_videos(matched, game_priority=game_priority):
-        cache_path = cache_dir / f"drive-{video.video_id}.json"
-        candidates = candidates_fn(
-            path, top_n, selector_config=selector_config, analysis_cache_path=cache_path
+
+def _first_unused_short(
+    matched: dict[Path, ChannelVideo], ctx: _RunContext
+) -> DriveShortResult | None:
+    settings = ctx.settings
+    for path, video, game, evidence in order_videos(matched, game_priority=ctx.game_priority):
+        cache_path = ctx.cache_dir / f"drive-{video.video_id}.json"
+        candidates = ctx.candidates_fn(
+            path, ctx.top_n, selector_config=ctx.selector_config, analysis_cache_path=cache_path
         )
         used = fetch_used_segments(settings, video.video_id)
         rank = first_unused_rank(candidates, used)
@@ -321,7 +395,7 @@ def _produce_from_archive(
             f"Game evidence: {evidence.value}"
             + (f" ({game})." if game else ".")
         )
-        repository = make_repository()
+        repository = ctx.make_repository()
         with repository.running():
             job_id = repository.enqueue_local(
                 path,
@@ -331,12 +405,12 @@ def _produce_from_archive(
                     video.video_id, candidate.start_seconds, candidate.end_seconds
                 ),
             )
-        production = produce_fn(
+        production = ctx.produce_fn(
             job_id,
             rank,
-            make_repository(),
+            ctx.make_repository(),
             settings,
-            selector_config=selector_config,
+            selector_config=ctx.selector_config,
             analysis_cache_path=cache_path,
         )
         log.info(
@@ -359,6 +433,4 @@ def _produce_from_archive(
             job_id=job_id,
             production=production,
         )
-
-    shutil.rmtree(extract_dir, ignore_errors=True)
     return None

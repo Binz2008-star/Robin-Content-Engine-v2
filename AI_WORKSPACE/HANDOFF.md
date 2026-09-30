@@ -2246,3 +2246,32 @@ Change: owner answered the open rights question ("نعم اوافق", 2026-09-29
 Tests: N/A (docs only)
 Merge authorized: no
 Deploy authorized: no
+
+---
+
+## RCE-20260930-DRIVELOOSE — 2026-09-30
+
+Task ID: RCE-20260930-DRIVELOOSE
+Agent: claude
+Branch: claude/gaming-youtube-automation-rtl9xw
+Base SHA: 2ceee2bdd067d1882ccefbb6518d6dc844937a5c
+PR: 27 (shared branch; separate commit)
+Status: review
+Trigger: the owner's Takeout export landed in Drive (folder "Takeout",
+  created 2026-09-30 02:23Z, still filling at 06:03Z). Metadata inspection
+  via the Drive connector showed ~4 GB zip parts AND loose videos named
+  "<title>-<part>.mp4" (5-17 GB) - a layout the runner could not read.
+Files changed: src/robin_content_engine/drive_source.py,
+  src/robin_content_engine/drive_runner.py, tests/test_drive_source.py,
+  tests/test_drive_runner.py, .github/workflows/daily-short.yml,
+  HANDOFF.md, AI_WORKSPACE/ACTIVE_TASKS.yaml, AI_WORKSPACE/HANDOFF.md
+Change: list_takeout() returns parts + loose videos; strip_part_suffix()
+  restores the real title; loose videos are tried first and downloaded only
+  when their title (and Drive's duration, when known) matches a channel
+  video; every download is preceded by a free-disk check (skip, not fail);
+  exhausted loose files are deleted; the daily workflow frees preinstalled
+  toolchains for disk.
+Tests: see commit / PR (ruff, mypy, full pytest).
+Known follow-up: analysis cache never hits on runners (path+size+mtime key).
+Merge authorized: no
+Deploy authorized: no

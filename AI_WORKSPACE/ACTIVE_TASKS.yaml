@@ -2959,6 +2959,54 @@ tasks:
       issues, and an explicit owner decision on rights for own published
       uploads. Docs only.
 
+  - id: RCE-20260930-DRIVELOOSE
+    title: "Cloud runner: read the real Takeout layout (loose videos, part suffix, disk budget)"
+    status: review
+    owner: claude
+    branch: claude/gaming-youtube-automation-rtl9xw
+    base_branch: main
+    base_sha: 2ceee2bdd067d1882ccefbb6518d6dc844937a5c
+    depends_on: RCE-20260928-CLOUDPUBLISH
+    allowed_paths:
+      - src/robin_content_engine/drive_source.py
+      - src/robin_content_engine/drive_runner.py
+      - tests/test_drive_source.py
+      - tests/test_drive_runner.py
+      - .github/workflows/daily-short.yml
+      - HANDOFF.md
+      - AI_WORKSPACE/ACTIVE_TASKS.yaml
+      - AI_WORKSPACE/HANDOFF.md
+    forbidden_paths:
+      - studio/**
+      - schema.sql
+      - src/robin_content_engine/production_runner.py
+      - .env
+      - client_secret*.json
+      - token*.json
+    merge_allowed: false
+    deploy_allowed: false
+    scope: >-
+      The owner's Takeout export landed in Drive on 2026-09-30 (folder
+      "Takeout"). Observed via the Drive connector (metadata only): besides
+      ~4 GB zip parts, Takeout stores every video larger than a part as a
+      LOOSE Drive file named "<title>-<part>.mp4" (5-17 GB each). The runner
+      only read .zip parts, so those long sessions were invisible, and the
+      part suffix would have broken title matching. Adds list_takeout()
+      (parts + loose videos, Drive duration when available),
+      strip_part_suffix(), loose-video processing BEFORE parts with title
+      (and Drive duration) checked before any download, a free-disk check
+      before every download (skip, never fail, when a file does not fit),
+      deletion of exhausted loose files, and a workflow step that frees
+      ~30 GB of preinstalled toolchains on the runner. Read-only on Drive;
+      no schema change; no upload behaviour change.
+    stop_conditions:
+      - no uploads, no schema change, no secrets committed
+      - full `mypy` + `ruff` + `pytest` must stay green
+    note: >-
+      Follow-up (not in scope): the highlight-analysis cache is keyed by
+      path+size+mtime, so it never hits on a fresh runner download; a long
+      video is re-analysed each day. Fix needs a production_runner change.
+
 # Other branches observed on origin at the time this registry was created
 # that are NOT yet registered as tasks (owner/scope unknown to this agent —
 # not fabricated here). Whoever owns them should add a task entry above

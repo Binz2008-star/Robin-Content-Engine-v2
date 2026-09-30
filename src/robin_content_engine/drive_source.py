@@ -7,8 +7,10 @@ runner cannot pull footage from the channel itself. Instead the owner
 exports their own YouTube videos once with Google Takeout ("Add to Drive")
 and shares that folder with a read-only service account. This module:
 
-- lists the Takeout archives in that Drive folder,
-- downloads one archive at a time (chunked, resumable per chunk),
+- lists the Takeout archives in that Drive folder, plus the videos Takeout
+  stores loose because they are larger than a zip part
+  ("<title>-<part>.mp4"),
+- downloads one file at a time (chunked, resumable per chunk),
 - extracts ONLY the video files from it (zip-slip safe, streaming),
 - matches each extracted file back to its channel video.
 
@@ -37,6 +39,11 @@ ARCHIVE_EXTENSIONS = (".zip",)
 # Takeout names duplicate titles "<title>(1).mp4", "<title>(2).mp4", ...
 _DUPLICATE_SUFFIX_RE = re.compile(r"\(\d+\)$")
 
+# A video too large for a zip part is stored by Takeout as its own Drive
+# file, named after the part it occupies: "<title>-<part>.mp4", e.g.
+# "Archived Gameplay Clip(2)-026.mp4" next to "takeout-...-1-025.zip".
+_TAKEOUT_PART_SUFFIX_RE = re.compile(r"-\d{3}$")
+
 # Default duration tolerance when disambiguating same-title videos: the
 # YouTube API reports whole seconds and containers round differently.
 DURATION_TOLERANCE_SECONDS = 2.0
@@ -53,6 +60,27 @@ class DriveArchive:
     file_id: str
     name: str
     size_bytes: int | None
+
+
+@dataclass(frozen=True)
+class DriveVideo:
+    """A video Takeout stored as a loose Drive file instead of inside a zip."""
+
+    file_id: str
+    name: str
+    size_bytes: int | None
+    duration_seconds: float | None
+
+    @property
+    def title_name(self) -> str:
+        """The file name as it would appear inside a zip (part suffix removed)."""
+        return strip_part_suffix(self.name)
+
+
+@dataclass(frozen=True)
+class TakeoutListing:
+    archives: list[DriveArchive]
+    videos: list[DriveVideo]
 
 
 @dataclass(frozen=True)
@@ -75,19 +103,22 @@ def build_drive_service(service_account_info: dict[str, Any]) -> Any:
     return build("drive", "v3", credentials=credentials, cache_discovery=False)
 
 
-def list_archives(service: Any, folder_id: str) -> list[DriveArchive]:
-    """All Takeout archives directly inside `folder_id`, oldest first
-    (Takeout numbers parts in creation order). Follows pagination."""
+def list_takeout(service: Any, folder_id: str) -> TakeoutListing:
+    """Everything Takeout put directly inside `folder_id`, oldest first
+    (Takeout numbers parts in creation order): the `.zip` parts and the
+    videos stored loose because they did not fit in a part. Follows
+    pagination. Drive's own duration is kept when Drive has computed it."""
     if not folder_id or "'" in folder_id:
         raise DriveSourceError("A valid Drive folder id is required.")
     archives: list[DriveArchive] = []
+    videos: list[DriveVideo] = []
     page_token: str | None = None
     while True:
         response = (
             service.files()
             .list(
                 q=f"'{folder_id}' in parents and trashed = false",
-                fields="nextPageToken, files(id, name, size)",
+                fields="nextPageToken, files(id, name, size, videoMediaMetadata(durationMillis))",
                 orderBy="createdTime",
                 pageSize=100,
                 pageToken=page_token,
@@ -98,23 +129,45 @@ def list_archives(service: Any, folder_id: str) -> list[DriveArchive]:
         )
         for item in response.get("files", []):
             name = str(item.get("name", ""))
-            if name.lower().endswith(ARCHIVE_EXTENSIONS):
-                size = item.get("size")
-                archives.append(
-                    DriveArchive(
-                        file_id=str(item["id"]),
-                        name=name,
-                        size_bytes=int(size) if size is not None else None,
+            size = item.get("size")
+            size_bytes = int(size) if size is not None else None
+            lowered = name.lower()
+            if lowered.endswith(ARCHIVE_EXTENSIONS):
+                archives.append(DriveArchive(str(item["id"]), name, size_bytes))
+            elif PurePosixPath(lowered).suffix in VIDEO_EXTENSIONS:
+                millis = (item.get("videoMediaMetadata") or {}).get("durationMillis")
+                videos.append(
+                    DriveVideo(
+                        str(item["id"]),
+                        name,
+                        size_bytes,
+                        int(millis) / 1000.0 if millis is not None else None,
                     )
                 )
         page_token = response.get("nextPageToken")
         if not page_token:
-            return archives
+            return TakeoutListing(archives, videos)
 
 
-def download_archive(service: Any, archive: DriveArchive, dest_dir: Path) -> Path:
-    """Download one archive to `dest_dir` in chunks. Re-uses a complete
-    earlier download (same size) instead of fetching it again."""
+def list_archives(service: Any, folder_id: str) -> list[DriveArchive]:
+    """All Takeout `.zip` parts directly inside `folder_id`, oldest first."""
+    return list_takeout(service, folder_id).archives
+
+
+def strip_part_suffix(name: str) -> str:
+    """"Clip(2)-026.mp4" -> "Clip(2).mp4". Only for loose Takeout videos;
+    names that are not videos, or carry no part suffix, are unchanged."""
+    path = PurePosixPath(name)
+    if path.suffix.lower() not in VIDEO_EXTENSIONS:
+        return name
+    stem = name[: -len(path.suffix)]
+    return _TAKEOUT_PART_SUFFIX_RE.sub("", stem) + path.suffix
+
+
+def download_archive(service: Any, archive: DriveArchive | DriveVideo, dest_dir: Path) -> Path:
+    """Download one Drive file (a zip part or a loose video) to `dest_dir`
+    in chunks. Re-uses a complete earlier download (same size) instead of
+    fetching it again."""
     from googleapiclient.http import MediaIoBaseDownload  # type: ignore[import-untyped]
 
     dest_dir.mkdir(parents=True, exist_ok=True)
