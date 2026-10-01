@@ -115,17 +115,11 @@ Shell in GCP project `robin-content-engine`):
 - Merged: PR #28 (`d4a7b08`) - close-out + `record_direct_upload` fix.
 
 Open items:
-1. **PR #29 (no-AI Arabic titles, DeepSeek off)** - owner decision: do not use
-   DeepSeek. Needs the owner's explicit merge approval once CI is green, and
-   should land BEFORE the next scheduled run (16:00 UTC daily = 20:00 Dubai);
-   otherwise that public Short gets the generic English title.
-2. **OAuth consent screen still in Testing** -> the sign-in token expires
-   7 days after 2026-10-01 (around 2026-10-08) and publishing stops. Fix:
-   Branding -> home page `https://binz2008-star.github.io/`, privacy policy
-   `https://binz2008-star.github.io/privacy.html`, authorised domain
-   `binz2008-star.github.io` (owner created that public Pages repo) -> Save
-   -> Audience -> Publish app; then re-run "YouTube sign-in (one-time)" once.
-   Publish stayed disabled even after removing the declared sensitive scopes.
+1. DONE 2026-10-01: **PR #29 merged** (`53fb4d8`) - no-AI Arabic titles, DeepSeek
+   fully off (owner decision). Daily runs now publish PUBLIC at 16:00 UTC.
+2. DONE 2026-10-01: OAuth consent screen **In production** (Branding home page +
+   privacy policy at binz2008-star.github.io, authorised domain added) and the
+   device sign-in re-run (token updated 18:02 UTC) - no 7-day expiry anymore.
 3. First private Short e1_0dgAMomM: owner to review/flip public in Studio.
 4. Later: TikTok cross-posting (phase 4); vision-based game checks (new
    provider, owner approval); analysis cache never hits on runners
