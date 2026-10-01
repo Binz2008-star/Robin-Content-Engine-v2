@@ -2368,3 +2368,13 @@ cloud runner live and public (PUBLISH_PUBLIC=true), first Short e1_0dgAMomM,
 PR #28 merged, PR #29 awaiting explicit owner merge approval, OAuth consent
 screen still Testing (token expires ~2026-10-08 unless Branding is completed
 and the app published, then one re-sign-in).
+
+---
+
+## Session checkpoint — 2026-10-01 18:05Z
+
+PR #29 merged (53fb4d8, owner: "ادمج PR #29"); RCE-20261001-NOAITITLES complete.
+OAuth consent screen published (In production) by the owner; YouTube sign-in
+re-run 18:02Z so the stored token is long-lived. Remaining: verify the first
+public scheduled Short (2026-10-02 16:00 UTC); later items in root HANDOFF.md.
+Merge authorized: no (this docs commit)

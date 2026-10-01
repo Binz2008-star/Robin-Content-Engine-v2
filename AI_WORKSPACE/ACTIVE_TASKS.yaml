@@ -3075,7 +3075,7 @@ tasks:
 
   - id: RCE-20261001-NOAITITLES
     title: "Cloud runner: varied Arabic titles without AI; DeepSeek off"
-    status: review
+    status: complete
     owner: claude
     branch: claude/gaming-youtube-automation-rtl9xw
     base_branch: main
