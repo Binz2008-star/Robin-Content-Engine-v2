@@ -2336,3 +2336,35 @@ Tests: ruff clean, mypy clean, tests/test_database.py + test_drive_runner.py +
   test_upload_budget.py 51 passed (2 new DB tests, 1 new CLI test).
 Merge authorized: no
 Deploy authorized: no
+
+---
+
+## RCE-20261001-NOAITITLES — 2026-10-01
+
+Task ID: RCE-20261001-NOAITITLES
+Agent: claude
+Branch: claude/gaming-youtube-automation-rtl9xw (restarted from main d4a7b08)
+Status: review
+Context: owner merged PR #28 (d4a7b08, authorized), approved the job-168
+  reconciliation (done: uploaded, e1_0dgAMomM) and set PUBLISH_PUBLIC=true -
+  the daily run now publishes publicly. Owner: "don't use DeepSeek".
+Change: shorts_metadata.drive_short_metadata (no AI, varied Arabic titles,
+  game only when CONFIRMED, link to the full video, #Shorts); drive-produce
+  uses it unless AI metadata is explicitly enabled with a key;
+  daily-short.yml passes DEEPSEEK_API_KEY="" and YOUTUBE_AI_METADATA=false.
+Tests: ruff, mypy clean; test_shorts_metadata (5, incl. every template
+  through build_publish_metadata) + test_drive_runner + test_database: 50
+  passed.
+Merge authorized: owner said "do whatever needed" (2026-10-01) - merging
+  after CI is green so the next scheduled run (16:00 UTC) uses it.
+Deploy authorized: no
+
+---
+
+## Session checkpoint — 2026-10-01 (owner: "save progress, continue later")
+
+Root HANDOFF.md "IN-PROGRESS - resume here" rewritten with the live state:
+cloud runner live and public (PUBLISH_PUBLIC=true), first Short e1_0dgAMomM,
+PR #28 merged, PR #29 awaiting explicit owner merge approval, OAuth consent
+screen still Testing (token expires ~2026-10-08 unless Branding is completed
+and the app published, then one re-sign-in).
