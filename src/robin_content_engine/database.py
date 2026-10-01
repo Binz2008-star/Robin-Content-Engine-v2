@@ -471,6 +471,24 @@ class JobRepository:
                 (youtube_id, job_id),
             )
 
+    def record_direct_upload(self, job_id: int, youtube_id: str) -> bool:
+        """Mark a cloud-runner job uploaded. drive-produce renders without the
+        claim/render cycle, so its job is still 'pending' (or 'rendered')
+        when the upload succeeds; mark_uploaded() would match no row.
+        Returns False when no row was updated, so the caller can fail loudly
+        instead of silently missing the DB-backed daily cap."""
+        with self.pool.connection() as conn:
+            row = conn.execute(
+                """
+                UPDATE video_queue
+                SET status = 'uploaded', youtube_id = %s, completed_at = NOW(), claimed_at = NULL
+                WHERE id = %s AND status IN ('pending', 'rendered')
+                RETURNING id
+                """,
+                (youtube_id, job_id),
+            ).fetchone()
+        return row is not None
+
     def mark_failed(self, job_id: int, error: Exception) -> None:
         safe_error = f"{type(error).__name__}: {error}"[:2000]
         with self.pool.connection() as conn:

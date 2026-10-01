@@ -442,3 +442,24 @@ def test_enqueue_local_source_url_defaults_to_null(tmp_path: Path) -> None:
     repo.enqueue_local(source, "t", "n")
 
     assert conn.executed[0][1][1] is None
+
+
+def test_record_direct_upload_accepts_pending_and_rendered_only() -> None:
+    # drive-produce renders without the claim/render cycle: the job is still
+    # 'pending' when the upload succeeds (mark_uploaded() matched no row in the
+    # first cloud run, 2026-10-01, so the daily cap never saw that upload).
+    repo, conn = _repo_with_fake_pool(FakeResult(description=None, rows=[(168,)]))
+
+    assert repo.record_direct_upload(168, "e1_0dgAMomM") is True
+    sql, params = conn.executed[0]
+    normalized = " ".join(sql.split())
+    assert "status = 'uploaded'" in normalized
+    assert "completed_at = NOW()" in normalized
+    assert "status IN ('pending', 'rendered')" in normalized
+    assert "RETURNING id" in normalized
+    assert params == ("e1_0dgAMomM", 168)
+
+
+def test_record_direct_upload_returns_false_when_no_row_updated() -> None:
+    repo, _ = _repo_with_fake_pool(FakeResult(description=None, rows=[]))
+    assert repo.record_direct_upload(1, "x") is False

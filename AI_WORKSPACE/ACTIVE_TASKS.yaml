@@ -3037,6 +3037,42 @@ tasks:
       (default) and re-verified (table exists, 0 rows, video_queue 162).
       Marks the PR #27 tasks complete and refreshes the root HANDOFF.md.
 
+  - id: RCE-20261001-RECORDUPLOAD
+    title: "Cloud runner: record drive-produce uploads (job stayed 'pending')"
+    status: review
+    owner: claude
+    branch: claude/gaming-youtube-automation-rtl9xw
+    base_branch: main
+    base_sha: 6802bfb1aa90c8581e477db291227e9a01e1450b
+    allowed_paths:
+      - src/robin_content_engine/database.py
+      - src/robin_content_engine/cli.py
+      - tests/test_database.py
+      - tests/test_drive_runner.py
+      - AI_WORKSPACE/ACTIVE_TASKS.yaml
+      - AI_WORKSPACE/HANDOFF.md
+    forbidden_paths:
+      - studio/**
+      - schema.sql
+      - .github/**
+      - .env
+      - client_secret*.json
+      - token*.json
+    merge_allowed: false
+    deploy_allowed: false
+    scope: >-
+      Bug found in the first real cloud run (2026-10-01, run 36895571591):
+      the private upload succeeded (video e1_0dgAMomM) but queue job 168
+      stayed 'pending' because mark_uploaded() only updates 'rendered' jobs
+      and drive-produce never claims/renders through the queue; the UPDATE
+      silently matched no row. Consequence: the DB-backed daily cap never
+      counts cloud uploads. Adds JobRepository.record_direct_upload()
+      (pending|rendered -> uploaded, RETURNING id) and makes drive-produce
+      exit 1 when no row is recorded. No schema change.
+    note: >-
+      Job 168 itself needs a one-row reconciliation in production
+      (status uploaded, youtube_id e1_0dgAMomM) - pending owner approval.
+
 # Other branches observed on origin at the time this registry was created
 # that are NOT yet registered as tasks (owner/scope unknown to this agent —
 # not fabricated here). Whoever owns them should add a task entry above

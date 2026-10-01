@@ -399,8 +399,9 @@ def cli_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> dict[str, Any]:
         def running(self) -> Any:
             yield self
 
-        def mark_uploaded(self, job_id: int, youtube_id: str) -> None:
+        def record_direct_upload(self, job_id: int, youtube_id: str) -> bool:
             calls["marked"].append((job_id, youtube_id))
+            return calls.get("recordable", True)
 
     def fake_upload(pkg: Any, title: str, desc: str, tags: Any, s: Any, auth: Any, up: Any) -> Any:
         calls["uploads"].append(pkg)
@@ -449,6 +450,16 @@ def test_drive_produce_uploads_and_records_in_queue(cli_env: dict[str, Any]) -> 
     assert "UPLOAD SUCCESS" in result.output
     assert len(cli_env["uploads"]) == 1
     assert cli_env["marked"] == [(7, "NEWvid12345")]
+
+
+def test_drive_produce_fails_loudly_when_upload_not_recorded(cli_env: dict[str, Any]) -> None:
+    cli_env["recordable"] = False
+
+    result = _invoke("--execute-private-upload")
+
+    assert result.exit_code == 1
+    assert len(cli_env["uploads"]) == 1
+    assert "daily cap will not count it" in result.output
 
 
 def test_drive_produce_checks_cap_before_producing(cli_env: dict[str, Any]) -> None:

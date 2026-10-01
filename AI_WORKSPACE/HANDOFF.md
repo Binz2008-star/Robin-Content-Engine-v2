@@ -2304,3 +2304,35 @@ Next action: owner one-time setup (docs/CLOUD_RUNNER_SETUP.md steps 1-3,
   5-7). Nothing publishes until CLOUD_RUNNER_ENABLED=true.
 Merge authorized: no
 Deploy authorized: no
+
+---
+
+## RCE-20261001-RECORDUPLOAD — 2026-10-01
+
+Task ID: RCE-20261001-RECORDUPLOAD
+Agent: claude
+Branch: claude/gaming-youtube-automation-rtl9xw (PR #28, separate commit)
+Base SHA: 6802bfb1aa90c8581e477db291227e9a01e1450b
+Status: review
+Context: owner finished the one-time setup on 2026-10-01 (all secrets and
+  variables set, device sign-in for Robinzo stored encrypted, Takeout folder
+  shared with robin-drive-reader@robin-content-engine.iam.gserviceaccount.com,
+  CLOUD_RUNNER_ENABLED=true, PUBLISH_PUBLIC unset). First manual Daily Short
+  run 36895571591 succeeded in ~15 min: private upload e1_0dgAMomM from
+  channel video 3xyU0yJwNMw segment 1104-1129s (evidence none -> neutral
+  title).
+Findings from that run:
+  1. Job 168 stayed 'pending' (mark_uploaded only matches 'rendered') -> the
+     daily cap does not count cloud uploads. Fixed here (record_direct_upload
+     + loud failure). Row 168 needs a one-row reconciliation (owner approval).
+  2. DeepSeek returned 402 Insufficient Balance -> AI metadata fell back to
+     the generic title "Archived gameplay — Highlight". Owner action: top up
+     DeepSeek, or decide on non-AI titles.
+  3. OAuth consent screen stays in Testing (token expires after 7 days) until
+     Branding has home page + privacy policy; pages published at
+     binz2008-star.github.io (owner-created repo), owner to fill Branding and
+     publish, then re-run the sign-in once.
+Tests: ruff clean, mypy clean, tests/test_database.py + test_drive_runner.py +
+  test_upload_budget.py 51 passed (2 new DB tests, 1 new CLI test).
+Merge authorized: no
+Deploy authorized: no

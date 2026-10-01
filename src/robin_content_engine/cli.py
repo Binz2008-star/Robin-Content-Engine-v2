@@ -1764,7 +1764,7 @@ def _publish_drive_short(
 ) -> None:
     """Metadata + (dry-run | private-first upload) for a drive-produce job.
     Mirrors production-run-once's publishing tail, plus a durable
-    mark_uploaded() in the queue so the DB-backed daily cap sees it."""
+    record_direct_upload() in the queue so the DB-backed daily cap sees it."""
     if not production.quality_gate.passed or production.package is None:
         typer.echo("Quality gate failed - not publishing this Short.", err=True)
         raise typer.Exit(code=1)
@@ -1793,7 +1793,7 @@ def _publish_drive_short(
     repository = JobRepository(settings.database_url, settings.max_job_attempts)
     try:
         with repository.running():
-            repository.mark_uploaded(job_id, upload.youtube_id)
+            recorded = repository.record_direct_upload(job_id, upload.youtube_id)
     except Exception as exc:  # the upload itself succeeded; surface, don't hide
         typer.echo(
             f"UPLOADED as {upload.youtube_id} but recording it in the queue failed: "
@@ -1801,6 +1801,13 @@ def _publish_drive_short(
             err=True,
         )
         raise typer.Exit(code=1) from exc
+    if not recorded:
+        typer.echo(
+            f"UPLOADED as {upload.youtube_id} but job {job_id} was not in a recordable "
+            "state, so the daily cap will not count it. Reconcile it manually.",
+            err=True,
+        )
+        raise typer.Exit(code=1)
     typer.echo("UPLOAD SUCCESS")
     typer.echo(f"YouTube video ID: {upload.youtube_id}")
     typer.echo(f"Privacy: {upload.privacy_status}")
