@@ -3086,6 +3086,7 @@ tasks:
       - tests/test_shorts_metadata.py
       - tests/test_drive_runner.py
       - .github/workflows/daily-short.yml
+      - HANDOFF.md
       - AI_WORKSPACE/ACTIVE_TASKS.yaml
       - AI_WORKSPACE/HANDOFF.md
     forbidden_paths:

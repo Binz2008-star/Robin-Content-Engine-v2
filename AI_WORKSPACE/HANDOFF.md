@@ -2358,3 +2358,13 @@ Tests: ruff, mypy clean; test_shorts_metadata (5, incl. every template
 Merge authorized: owner said "do whatever needed" (2026-10-01) - merging
   after CI is green so the next scheduled run (16:00 UTC) uses it.
 Deploy authorized: no
+
+---
+
+## Session checkpoint — 2026-10-01 (owner: "save progress, continue later")
+
+Root HANDOFF.md "IN-PROGRESS - resume here" rewritten with the live state:
+cloud runner live and public (PUBLISH_PUBLIC=true), first Short e1_0dgAMomM,
+PR #28 merged, PR #29 awaiting explicit owner merge approval, OAuth consent
+screen still Testing (token expires ~2026-10-08 unless Branding is completed
+and the app published, then one re-sign-in).

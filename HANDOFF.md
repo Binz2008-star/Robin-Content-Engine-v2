@@ -1,6 +1,6 @@
 # Session Handoff — Robin Content Engine
 
-_Updated: 2026-09-30. Read this first in a new session to resume instantly._
+_Updated: 2026-10-01. Read this first in a new session to resume instantly._
 _Per-task detail lives in `AI_WORKSPACE/HANDOFF.md` (append-only) and
 `AI_WORKSPACE/ACTIVE_TASKS.yaml` (registry)._
 
@@ -98,23 +98,39 @@ rejected as a foundation (expiry, account risk).
 `true` or the workflow does nothing; `PUBLISH_PUBLIC` must be `true` for the
 public flip (default private); `DAILY_SHORT_CAP` (default 1).
 
-## IN-PROGRESS - resume here
+## IN-PROGRESS - resume here (2026-10-01)
 
-1. **Google Takeout landed (2026-09-30)** in Drive folder "Takeout" (last
-   file 06:03Z; parts numbered up to 066). Layout: ~4 GB `.zip` parts plus
-   videos too large for a part stored loose as `<title>-<part>.mp4`
-   (5-17 GB). The runner reads both.
-2. **Done 2026-09-30:** PR #27 merged; `oauth_tokens` table in production.
-3. **Owner one-time setup - THE ONLY BLOCKER**: `docs/CLOUD_RUNNER_SETUP.md`
-   (service account, TV-type OAuth client, publish the OAuth consent screen
-   out of Testing - Testing tokens expire in 7 days - share the "Takeout"
-   folder with the service account, GitHub secrets/variables, device
-   sign-in).
-4. **First run private**, owner checks it in Studio, then `PUBLISH_PUBLIC`.
-5. Later (owner asked): **TikTok cross-posting** as phase 4 after YouTube is
-   stable (clean files, no YouTube watermark; public posting via TikTok's API
-   needs an audited app). **Vision-based game checks** need a new AI
-   provider - owner approval required.
+**The cloud runner is LIVE.** Owner setup finished 2026-10-01 (from Cloud
+Shell in GCP project `robin-content-engine`):
+- GitHub secrets: `DATABASE_URL` (content-engine Neon), `GOOGLE_SERVICE_ACCOUNT_JSON`
+  (`robin-drive-reader@robin-content-engine.iam.gserviceaccount.com`),
+  `YOUTUBE_OAUTH_CLIENT_JSON` (TV-type client `robin-tv`), `DEEPSEEK_API_KEY` (unused).
+- Variables: `YOUTUBE_EXPECTED_CHANNEL_ID`, `DRIVE_TAKEOUT_FOLDER_ID`,
+  `CLOUD_RUNNER_ENABLED=true`, **`PUBLISH_PUBLIC=true`** (daily Shorts go public).
+- Device sign-in done; encrypted token in Neon `oauth_tokens` (name `youtube`).
+- Takeout folder shared with the service account (owner chose to keep the
+  folder's "anyone with the link" access).
+- First Short (manual run 36895571591): https://youtu.be/e1_0dgAMomM, private,
+  from 3xyU0yJwNMw 1104-1129s; queue job 168 reconciled to `uploaded`.
+- Merged: PR #28 (`d4a7b08`) - close-out + `record_direct_upload` fix.
+
+Open items:
+1. **PR #29 (no-AI Arabic titles, DeepSeek off)** - owner decision: do not use
+   DeepSeek. Needs the owner's explicit merge approval once CI is green, and
+   should land BEFORE the next scheduled run (16:00 UTC daily = 20:00 Dubai);
+   otherwise that public Short gets the generic English title.
+2. **OAuth consent screen still in Testing** -> the sign-in token expires
+   7 days after 2026-10-01 (around 2026-10-08) and publishing stops. Fix:
+   Branding -> home page `https://binz2008-star.github.io/`, privacy policy
+   `https://binz2008-star.github.io/privacy.html`, authorised domain
+   `binz2008-star.github.io` (owner created that public Pages repo) -> Save
+   -> Audience -> Publish app; then re-run "YouTube sign-in (one-time)" once.
+   Publish stayed disabled even after removing the declared sensitive scopes.
+3. First private Short e1_0dgAMomM: owner to review/flip public in Studio.
+4. Later: TikTok cross-posting (phase 4); vision-based game checks (new
+   provider, owner approval); analysis cache never hits on runners
+   (path+size+mtime key); runner processes loose videos in Drive order, not
+   confirmed-game priority across files.
 
 ### Known issues / findings
 
