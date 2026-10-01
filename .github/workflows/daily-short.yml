@@ -30,11 +30,14 @@ jobs:
     timeout-minutes: 150
     env:
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
-      DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+      # Owner decision 2026-10-01: no DeepSeek/LLM calls. An empty key turns
+      # off AI highlight ranking and AI titles; titles come from the
+      # deterministic no-AI templates (shorts_metadata.py).
+      DEEPSEEK_API_KEY: ""
       GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
       DRIVE_TAKEOUT_FOLDER_ID: ${{ vars.DRIVE_TAKEOUT_FOLDER_ID }}
       YOUTUBE_EXPECTED_CHANNEL_ID: ${{ vars.YOUTUBE_EXPECTED_CHANNEL_ID }}
-      YOUTUBE_AI_METADATA: "true"
+      YOUTUBE_AI_METADATA: "false"
       YOUTUBE_METADATA_LANGUAGE: ${{ vars.YOUTUBE_METADATA_LANGUAGE || 'arabic' }}
       YOUTUBE_PUBLIC_AFTER_UPLOAD: ${{ vars.PUBLISH_PUBLIC == 'true' && 'true' || 'false' }}
       YOUTUBE_MAX_UPLOADS_PER_DAY: ${{ vars.DAILY_SHORT_CAP || '1' }}

@@ -29,7 +29,7 @@ from .clip_selector import (
 from .config import APP_ROOT, Settings
 from .database import JobRepository
 from .device_auth import DeviceAuthError, poll_for_tokens, request_device_code
-from .drive_runner import DriveRunnerError, produce_next_short
+from .drive_runner import DriveRunnerError, DriveShortResult, GameEvidence, produce_next_short
 from .drive_source import DriveSourceError, build_drive_service
 from .game_performance import (
     UNCLASSIFIED,
@@ -64,6 +64,7 @@ from .production_runner import (
 from .publishing import PublishingError, dry_run, execute_private_upload
 from .quality_gate import PackagingError, package_short, run_quality_gate
 from .scene_detector import SceneBoundary, SceneDetectionError, detect_scenes
+from .shorts_metadata import drive_short_metadata
 from .token_store import (
     YOUTUBE_TOKEN_NAME,
     StoredCredentials,
@@ -1756,22 +1757,34 @@ def drive_produce_command(
             f"game={result.game or '-'} ({result.evidence.value}), "
             f"source title '{result.source_title}'."
         )
-    _publish_drive_short(result.job_id, result.production, settings, execute_upload)
+    _publish_drive_short(result, settings, execute_upload)
 
 
 def _publish_drive_short(
-    job_id: int, production: Any, settings: Settings, execute_upload: bool
+    result: DriveShortResult, settings: Settings, execute_upload: bool
 ) -> None:
     """Metadata + (dry-run | private-first upload) for a drive-produce job.
     Mirrors production-run-once's publishing tail, plus a durable
     record_direct_upload() in the queue so the DB-backed daily cap sees it."""
+    job_id: int = result.job_id
+    production = result.production
     if not production.quality_gate.passed or production.package is None:
         typer.echo("Quality gate failed - not publishing this Short.", err=True)
         raise typer.Exit(code=1)
     package_dir = production.package.package_dir
-    title, description, tags = build_production_metadata(
-        production.source_title, settings, hook=production.hook
-    )
+    if getattr(settings, "youtube_ai_metadata", False) and settings.deepseek_api_key:
+        title, description, tags = build_production_metadata(
+            production.source_title, settings, hook=production.hook
+        )
+    else:
+        # No-AI path (owner decision 2026-10-01): varied Arabic titles, a game
+        # named only when console tags confirm it, link to the full video.
+        title, description, tags = drive_short_metadata(
+            job_id=job_id,
+            source_video_id=result.video_id,
+            confirmed_game=result.game if result.evidence is GameEvidence.CONFIRMED else None,
+            language=getattr(settings, "youtube_metadata_language", "arabic"),
+        )
     typer.echo(f"Title: {title}")
     if not execute_upload:
         try:

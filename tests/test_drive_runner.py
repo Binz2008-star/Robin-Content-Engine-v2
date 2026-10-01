@@ -452,6 +452,17 @@ def test_drive_produce_uploads_and_records_in_queue(cli_env: dict[str, Any]) -> 
     assert cli_env["marked"] == [(7, "NEWvid12345")]
 
 
+def test_drive_produce_without_ai_uses_arabic_template_naming_confirmed_game(
+    cli_env: dict[str, Any],
+) -> None:
+    result = _invoke("--execute-private-upload")
+
+    assert result.exit_code == 0, result.output
+    title_line = next(line for line in result.output.splitlines() if line.startswith("Title: "))
+    assert "Fortnite" in title_line and "#Shorts" in title_line
+    assert title_line != "Title: T"  # the AI path was not used
+
+
 def test_drive_produce_fails_loudly_when_upload_not_recorded(cli_env: dict[str, Any]) -> None:
     cli_env["recordable"] = False
 

@@ -3009,7 +3009,7 @@ tasks:
 
   - id: RCE-20260930-CLOUDCLOSEOUT
     title: "Close out PR #27 (merged) and record the oauth_tokens production migration"
-    status: review
+    status: complete
     owner: claude
     branch: claude/gaming-youtube-automation-rtl9xw
     base_branch: main
@@ -3039,7 +3039,7 @@ tasks:
 
   - id: RCE-20261001-RECORDUPLOAD
     title: "Cloud runner: record drive-produce uploads (job stayed 'pending')"
-    status: review
+    status: complete
     owner: claude
     branch: claude/gaming-youtube-automation-rtl9xw
     base_branch: main
@@ -3072,6 +3072,38 @@ tasks:
     note: >-
       Job 168 itself needs a one-row reconciliation in production
       (status uploaded, youtube_id e1_0dgAMomM) - pending owner approval.
+
+  - id: RCE-20261001-NOAITITLES
+    title: "Cloud runner: varied Arabic titles without AI; DeepSeek off"
+    status: review
+    owner: claude
+    branch: claude/gaming-youtube-automation-rtl9xw
+    base_branch: main
+    base_sha: d4a7b0822cdc6cfe6a99d6404f3c8e7b05fdd790
+    allowed_paths:
+      - src/robin_content_engine/shorts_metadata.py
+      - src/robin_content_engine/cli.py
+      - tests/test_shorts_metadata.py
+      - tests/test_drive_runner.py
+      - .github/workflows/daily-short.yml
+      - AI_WORKSPACE/ACTIVE_TASKS.yaml
+      - AI_WORKSPACE/HANDOFF.md
+    forbidden_paths:
+      - studio/**
+      - schema.sql
+      - .env
+      - client_secret*.json
+      - token*.json
+    merge_allowed: false
+    deploy_allowed: false
+    scope: >-
+      Owner decision 2026-10-01: do not use DeepSeek (its balance ran out and
+      the first Short got the generic English fallback title). daily-short
+      passes an empty DEEPSEEK_API_KEY and YOUTUBE_AI_METADATA=false, so no
+      LLM call happens (AI ranking and AI titles both off). New
+      shorts_metadata.drive_short_metadata(): deterministic Arabic (or
+      English) titles rotated by job id, a game named only when console tags
+      confirm it, #Shorts, and a description linking the full source video.
 
 # Other branches observed on origin at the time this registry was created
 # that are NOT yet registered as tasks (owner/scope unknown to this agent —
