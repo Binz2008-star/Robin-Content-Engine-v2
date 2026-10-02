@@ -3106,6 +3106,34 @@ tasks:
       English) titles rotated by job id, a game named only when console tags
       confirm it, #Shorts, and a description linking the full source video.
 
+  - id: RCE-20261002-GROWTHCADENCE
+    title: "Cloud runner: 3 Shorts a day and shorter cuts (growth)"
+    status: review
+    owner: claude
+    branch: claude/gaming-youtube-automation-rtl9xw
+    base_branch: main
+    base_sha: 196aaac55b6a57267a71404bd8df17b23f804ff4
+    allowed_paths:
+      - .github/workflows/daily-short.yml
+      - docs/CLOUD_RUNNER_SETUP.md
+      - AI_WORKSPACE/ACTIVE_TASKS.yaml
+      - AI_WORKSPACE/HANDOFF.md
+    forbidden_paths:
+      - src/**
+      - tests/**
+      - schema.sql
+    merge_allowed: false
+    deploy_allowed: false
+    scope: >-
+      Owner asked for more subscribers (2026-10-02). Studio (last 28 days):
+      401 views, 29 subscribers flat; average view duration 7-16 s; first
+      cloud Short (bjbTTgeyIA4) got 88 views / 45.8% viewed in 18 h - the
+      best recent result. Workflow-only change: three scheduled runs a day
+      (08:07, 12:07, 16:07 UTC = 12:07/16:07/20:07 Dubai), default
+      DAILY_SHORT_CAP 3 (DB cap still enforced per Dubai day), highlight
+      length 15-30 s instead of 25-45 s. Footage supply is large (all
+      channel uploads, segment ledger prevents reuse).
+
 # Other branches observed on origin at the time this registry was created
 # that are NOT yet registered as tasks (owner/scope unknown to this agent —
 # not fabricated here). Whoever owns them should add a task entry above

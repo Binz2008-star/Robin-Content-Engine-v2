@@ -83,13 +83,13 @@ Studio: right game, right title, good cut.
 ## 7. Go live
 
 When the private test looks right, add variable `PUBLISH_PUBLIC` = `true`.
-From then on one Short a day goes public at 20:00 Dubai.
+From then on up to three Shorts a day go public (12:00, 16:00, 20:00 Dubai).
 
 | Variable | Meaning | Default |
 |---|---|---|
 | `CLOUD_RUNNER_ENABLED` | master switch - delete it to stop everything | off |
 | `PUBLISH_PUBLIC` | flip uploads to public after the private upload | off (private) |
-| `DAILY_SHORT_CAP` | max uploads per Dubai day | `1` |
+| `DAILY_SHORT_CAP` | max uploads per Dubai day (3 runs a day) | `3` |
 | `YOUTUBE_METADATA_LANGUAGE` | `arabic` or `english` titles | `arabic` |
 
 ## Safety built in

@@ -12,8 +12,13 @@ name: Daily Short (cloud runner)
 
 on:
   schedule:
-    # 16:00 UTC = 20:00 Asia/Dubai (evening prime time for the channel).
-    - cron: "0 16 * * *"
+    # Three slots a day (one Short per run, the DB cap DAILY_SHORT_CAP stops
+    # extra uploads): 12:00, 16:00 and 20:00 Asia/Dubai. GitHub may start
+    # scheduled runs late; the cap is counted per Dubai day, so a late run
+    # can only ever consume the next slot, never exceed the cap.
+    - cron: "7 8 * * *"
+    - cron: "7 12 * * *"
+    - cron: "7 16 * * *"
   workflow_dispatch:
 
 permissions:
@@ -40,9 +45,11 @@ jobs:
       YOUTUBE_AI_METADATA: "false"
       YOUTUBE_METADATA_LANGUAGE: ${{ vars.YOUTUBE_METADATA_LANGUAGE || 'arabic' }}
       YOUTUBE_PUBLIC_AFTER_UPLOAD: ${{ vars.PUBLISH_PUBLIC == 'true' && 'true' || 'false' }}
-      YOUTUBE_MAX_UPLOADS_PER_DAY: ${{ vars.DAILY_SHORT_CAP || '1' }}
-      HIGHLIGHT_MIN_SECONDS: "25"
-      HIGHLIGHT_MAX_SECONDS: "45"
+      YOUTUBE_MAX_UPLOADS_PER_DAY: ${{ vars.DAILY_SHORT_CAP || '3' }}
+      # Studio (2026-10-02): viewers watch ~7-16 s of a Short on average;
+      # shorter cuts keep a higher share of the clip watched.
+      HIGHLIGHT_MIN_SECONDS: "15"
+      HIGHLIGHT_MAX_SECONDS: "30"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
