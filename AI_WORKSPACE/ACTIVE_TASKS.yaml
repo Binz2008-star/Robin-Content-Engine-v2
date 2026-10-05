@@ -3108,7 +3108,7 @@ tasks:
 
   - id: RCE-20261002-GROWTHCADENCE
     title: "Cloud runner: 3 Shorts a day and shorter cuts (growth)"
-    status: review
+    status: complete
     owner: claude
     branch: claude/gaming-youtube-automation-rtl9xw
     base_branch: main
@@ -3133,6 +3133,35 @@ tasks:
       DAILY_SHORT_CAP 3 (DB cap still enforced per Dubai day), highlight
       length 15-30 s instead of 25-45 s. Footage supply is large (all
       channel uploads, segment ledger prevents reuse).
+
+  - id: RCE-20261005-SOURCEROTATION
+    title: "Cloud runner: rotate source videos (least-used first)"
+    status: review
+    owner: claude
+    branch: claude/gaming-youtube-automation-rtl9xw
+    base_branch: main
+    base_sha: cf5766b7ecc7660a0ed38f5e13d1e04d85f95994
+    allowed_paths:
+      - src/robin_content_engine/drive_runner.py
+      - src/robin_content_engine/segment_ledger.py
+      - tests/test_drive_runner.py
+      - tests/test_segment_ledger.py
+      - AI_WORKSPACE/ACTIVE_TASKS.yaml
+      - AI_WORKSPACE/HANDOFF.md
+    forbidden_paths:
+      - studio/**
+      - schema.sql
+      - .github/**
+    merge_allowed: false
+    deploy_allowed: false
+    scope: >-
+      Finding (Neon, 2026-10-05): all 8 cloud Shorts (jobs 168-175) were cut
+      from the same upload 3xyU0yJwNMw - loose Takeout videos were tried in
+      Drive order, so the first match won until its candidates ran out.
+      Adds segment_ledger.fetch_usage_counts() (one read-only SELECT) and
+      drive_runner.order_loose_videos(): least-used source first, then
+      confirmed game / game priority, then Drive order - decided from file
+      name and Drive duration only, before any download. No schema change.
 
 # Other branches observed on origin at the time this registry was created
 # that are NOT yet registered as tasks (owner/scope unknown to this agent —

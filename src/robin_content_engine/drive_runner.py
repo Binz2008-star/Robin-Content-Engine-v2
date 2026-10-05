@@ -54,7 +54,12 @@ from .drive_source import (
     normalize_title,
 )
 from .production_runner import ProductionRunResult, highlight_candidates, run_production
-from .segment_ledger import fetch_used_segments, first_unused_rank, ledger_url
+from .segment_ledger import (
+    fetch_usage_counts,
+    fetch_used_segments,
+    first_unused_rank,
+    ledger_url,
+)
 
 log = structlog.get_logger()
 
@@ -256,6 +261,7 @@ def produce_next_short(
     produce_fn: ProduceFn = run_production,
     duration_fn: Callable[[Path], float | None] = probe_duration,
     free_bytes_fn: Callable[[Path], int] = free_disk_bytes,
+    usage_fn: Callable[[Settings], dict[str, int]] = fetch_usage_counts,
     repository_factory: Callable[[], JobRepository] | None = None,
 ) -> DriveShortResult | None:
     """Produce ONE new packaged Short from Drive footage, or None when every
@@ -298,7 +304,9 @@ def produce_next_short(
 
     # Loose videos first: no extraction, and their title (and Drive's own
     # duration, when known) is checked BEFORE anything is downloaded.
-    for loose in listing.videos:
+    # Rotate sources: the least-used channel video goes first, so consecutive
+    # Shorts are not all cut from the same upload.
+    for loose in order_loose_videos(listing.videos, ctx, usage_fn(settings)):
         result = _produce_from_loose_video(loose, ctx)
         if result is not None:
             return result
@@ -312,6 +320,42 @@ def produce_next_short(
         loose_videos=len(listing.videos),
     )
     return None
+
+
+def order_loose_videos(
+    videos: Sequence[DriveVideo], ctx: _RunContext, usage: dict[str, int]
+) -> list[DriveVideo]:
+    """Loose Takeout videos ordered least-used source first, then by game
+    evidence and game priority (as order_videos), then Drive order. Uses
+    only the file name (and Drive's duration, when known) - nothing is
+    downloaded. Files matching no channel video keep their place at the end
+    of the order; _produce_from_loose_video skips them."""
+    evidence_rank = {GameEvidence.CONFIRMED: 0, GameEvidence.CLAIMED: 1, GameEvidence.NONE: 2}
+
+    def key(item: tuple[int, DriveVideo]) -> tuple[int, int, int, int]:
+        index, loose = item
+        name_key = normalize_title(loose.title_name)
+        same_title = [ref for ref in ctx.refs if normalize_title(ref.title) == name_key]
+        if not same_title:
+            return (1, 0, 0, index)
+        if loose.duration_seconds is not None:
+            ref = match_channel_video(loose.title_name, loose.duration_seconds, ctx.refs)
+            if ref is not None:
+                same_title = [ref]
+        used = min(usage.get(ref.video_id, 0) for ref in same_title)
+        best_evidence, best_priority = 2, len(ctx.game_priority)
+        for ref in same_title:
+            game, evidence = game_evidence(ctx.by_id[ref.video_id])
+            priority = (
+                ctx.game_priority.index(game)
+                if game in ctx.game_priority
+                else len(ctx.game_priority)
+            )
+            best_evidence = min(best_evidence, evidence_rank[evidence])
+            best_priority = min(best_priority, priority)
+        return (0, used, best_evidence * 100 + best_priority, index)
+
+    return [loose for _, loose in sorted(enumerate(videos), key=key)]
 
 
 def _produce_from_loose_video(loose: DriveVideo, ctx: _RunContext) -> DriveShortResult | None:

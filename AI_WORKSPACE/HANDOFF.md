@@ -2397,3 +2397,22 @@ Change: 3 cron slots/day, default cap 3, highlight 15-30 s. Workflow + docs only
 Tests: workflow YAML parses; no code change.
 Merge authorized: no
 Deploy authorized: no
+
+---
+
+## RCE-20261005-SOURCEROTATION — 2026-10-05
+
+Task ID: RCE-20261005-SOURCEROTATION
+Agent: claude
+Branch: claude/gaming-youtube-automation-rtl9xw
+Base SHA: cf5766b7ecc7660a0ed38f5e13d1e04d85f95994
+Status: review
+Evidence: PR #31 cadence works - 3 public Shorts on 2026-10-03 (v9Di2laA3X0,
+  z88gucHP6yk, zTv93r9G6SA) and 3 on 2026-10-04 (HoorGEuC2eg, E9K6jeyYbkM,
+  oLi6k2Uhezk), all recorded 'uploaded'. But all 8 cloud Shorts came from one
+  upload (3xyU0yJwNMw, no confirmed game -> neutral titles).
+Change: least-used-source-first ordering of loose Takeout videos.
+Tests: ruff, mypy clean; drive_runner/segment_ledger/drive_source/
+  shorts_metadata 67 passed (3 new).
+Merge authorized: no
+Deploy authorized: no
