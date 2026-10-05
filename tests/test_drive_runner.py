@@ -181,6 +181,7 @@ def _run(tmp_path: Path, state: dict[str, Any], **kwargs: Any) -> Any:
         produce_fn=produce,
         duration_fn=lambda p: state["files"].get(p.name),
         free_bytes_fn=lambda path: state.get("free", 10**12),
+        usage_fn=lambda settings: state.get("usage", {}),
         repository_factory=FakeRepository,
         **kwargs,
     )
@@ -493,3 +494,44 @@ def test_drive_produce_never_uploads_a_failed_quality_gate(
 
     assert result.exit_code == 1
     assert cli_env["uploads"] == [] and cli_env["marked"] == []
+
+
+# ---------------------------------------------------------------------------
+# Source rotation (2026-10-04: the first 8 cloud Shorts all came from one upload)
+# ---------------------------------------------------------------------------
+
+
+def test_least_used_source_video_goes_first(tmp_path: Path, fake_drive: dict[str, Any]) -> None:
+    # Drive order puts the heavily used upload first; the unused one must win.
+    fake_drive["files"] = {
+        "Archived Gaming Clip-007.mp4": 9277.0,
+        "Ggg-026.mp4": 6017.0,
+    }
+    fake_drive["loose"] = [
+        DriveVideo("used", "Archived Gaming Clip-007.mp4", 5_000, None),
+        DriveVideo("fresh", "Ggg-026.mp4", 5_000, None),
+    ]
+    fake_drive["usage"] = {ARCHIVE.video_id: 8}
+
+    result, _ = _run(tmp_path, fake_drive)
+
+    assert result is not None
+    assert result.video_id == PS5_FORTNITE.video_id
+    assert fake_drive["downloads"] == ["fresh"]
+
+
+def test_equal_usage_prefers_confirmed_game(tmp_path: Path, fake_drive: dict[str, Any]) -> None:
+    fake_drive["files"] = {
+        "Archived Gaming Clip-007.mp4": 9277.0,
+        "Ggg-026.mp4": 6017.0,
+    }
+    fake_drive["loose"] = [
+        DriveVideo("neutral", "Archived Gaming Clip-007.mp4", 5_000, None),
+        DriveVideo("fortnite", "Ggg-026.mp4", 5_000, None),
+    ]
+
+    result, _ = _run(tmp_path, fake_drive)
+
+    assert result is not None
+    assert result.evidence is GameEvidence.CONFIRMED
+    assert fake_drive["downloads"] == ["fortnite"]

@@ -96,6 +96,23 @@ def fetch_used_segments(settings: Settings, video_id: str) -> list[UsedSegment]:
     )
 
 
+def fetch_usage_counts(settings: Settings) -> dict[str, int]:
+    """How many segments of each channel video are already recorded in the
+    queue (any status). One read-only SELECT; used to rotate source videos
+    so consecutive Shorts do not all come from the same upload."""
+    with psycopg.connect(settings.database_url) as conn:
+        rows = conn.execute(
+            "SELECT source_url FROM video_queue WHERE source_url LIKE %s",
+            ("https://www.youtube.com/watch?v=%#segment=%",),
+        ).fetchall()
+    counts: dict[str, int] = {}
+    for row in rows:
+        segment = parse_ledger_url(row[0])
+        if segment is not None:
+            counts[segment.video_id] = counts.get(segment.video_id, 0) + 1
+    return counts
+
+
 def overlap_seconds(start: float, end: float, used: UsedSegment) -> float:
     return max(0.0, min(end, used.end_seconds) - max(start, used.start_seconds))
 

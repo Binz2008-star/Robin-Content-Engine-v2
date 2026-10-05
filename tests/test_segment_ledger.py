@@ -152,3 +152,22 @@ def test_fetch_used_segments_parses_and_sorts(monkeypatch: pytest.MonkeyPatch) -
 def test_fetch_used_segments_rejects_bad_video_id() -> None:
     with pytest.raises(SegmentLedgerError):
         fetch_used_segments(SimpleNamespace(database_url="x"), "x%' OR 1=1")  # type: ignore[arg-type]
+
+
+def test_fetch_usage_counts_counts_segments_per_video(monkeypatch: pytest.MonkeyPatch) -> None:
+    other = "3xyU0yJwNMw"
+    conn = FakeConn(
+        [
+            (ledger_url(VID, 10, 40),),
+            (ledger_url(other, 1, 20),),
+            (ledger_url(other, 50, 70),),
+            ("garbage",),
+        ]
+    )
+    monkeypatch.setattr(sl.psycopg, "connect", lambda url: conn)
+
+    counts = sl.fetch_usage_counts(SimpleNamespace(database_url="x"))  # type: ignore[arg-type]
+
+    assert counts == {VID: 1, other: 2}
+    sql, _params = conn.executed[0]
+    assert sql.strip().upper().startswith("SELECT")
