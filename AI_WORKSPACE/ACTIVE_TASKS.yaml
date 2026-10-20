@@ -3165,12 +3165,13 @@ tasks:
 
   - id: RCE-20261021-SERIESMETA
     title: Shorts series metadata + Arabic-consistent no-AI fallback (PR B1)
-    status: active
+    status: review
     owner: opencode-agent
     branch: feat/shorts-series-metadata
     base_branch: main
     base_sha: 9acc1ac4110c494e154ca71006292af7a400895e
-    pr: pending
+    current_sha: 6cdfd3f933a54ca866b3fd009da4379b6c779d61
+    pr: 33
     merge_allowed: false
     deploy_allowed: false
     allowed_paths:
