@@ -530,7 +530,7 @@ def test_production_run_once_selects_and_publishes_dry_run_with_deterministic_me
 
     assert result.exit_code == 0, result.output
     assert "Job 1: clip" in result.output
-    assert "Title: clip — Highlight" in result.output
+    assert "Title: clip — لقطة" in result.output
     assert "PUBLISH DRY RUN PASS" in result.output
     assert "Privacy: private" in result.output
 

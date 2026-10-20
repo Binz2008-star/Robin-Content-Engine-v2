@@ -535,21 +535,36 @@ def _load_rank_hook(job_id: int, rank: int, rankings_dir: Path) -> str | None:
 # and publishable instead of failing at the last step).
 _TITLE_MAX_LENGTH = 100
 _TITLE_SUFFIX = " — Highlight"
+_TITLE_SUFFIX_AR = " — لقطة"
 _TITLE_ELLIPSIS = "..."
+_AUTOMATIC_DESCRIPTION_EN = (
+    "Automatically processed from operator-owned gameplay by Robin Content Engine."
+)
+_AUTOMATIC_DESCRIPTION_AR = (
+    "تمت المعالجة تلقائيًا من لقطات اللعب المملوكة للمشغّل عبر Robin Content Engine."
+)
 
 
-def build_automatic_metadata(source_title: str) -> tuple[str, str]:
+def build_automatic_metadata(
+    source_title: str, language: str = "arabic"
+) -> tuple[str, str]:
     """Fixed, deterministic, truthful metadata for production-run-once.
-    Never an LLM call, never TTS, never requires operator input for
-    normal automatic operation. Long source titles are truncated so the
-    resulting title always fits YouTube's 100-character limit while
-    keeping the truthful " — Highlight" suffix; the ellipsis marks the
-    truncation, and the result is deterministic for the same input."""
-    title = f"{source_title}{_TITLE_SUFFIX}"
+
+    Never an LLM call, never TTS, never requires operator input for normal
+    automatic operation. The language follows `youtube_metadata_language` so
+    the local/Studio no-AI path matches the Arabic channel instead of always
+    returning English; `english` remains available explicitly. Long source
+    titles are truncated so the resulting title always fits YouTube's
+    100-character limit while keeping the truthful suffix; the ellipsis marks
+    the truncation, and the result is deterministic for the same input.
+    """
+    english = language.strip().lower() == "english"
+    suffix = _TITLE_SUFFIX if english else _TITLE_SUFFIX_AR
+    title = f"{source_title}{suffix}"
     if len(title) > _TITLE_MAX_LENGTH:
-        prefix_budget = _TITLE_MAX_LENGTH - len(_TITLE_SUFFIX) - len(_TITLE_ELLIPSIS)
-        title = f"{source_title[:prefix_budget].rstrip()}{_TITLE_ELLIPSIS}{_TITLE_SUFFIX}"
-    description = "Automatically processed from operator-owned gameplay by Robin Content Engine."
+        prefix_budget = _TITLE_MAX_LENGTH - len(suffix) - len(_TITLE_ELLIPSIS)
+        title = f"{source_title[:prefix_budget].rstrip()}{_TITLE_ELLIPSIS}{suffix}"
+    description = _AUTOMATIC_DESCRIPTION_EN if english else _AUTOMATIC_DESCRIPTION_AR
     return title, description
 
 
@@ -590,7 +605,8 @@ def build_production_metadata(
                 source_title,
                 exc_info=True,
             )
-    title, description = build_automatic_metadata(source_title)
+    language = getattr(settings, "youtube_metadata_language", "arabic")
+    title, description = build_automatic_metadata(source_title, language=language)
     cleaned_hook = " ".join(hook.split()).strip() if hook else ""
     if cleaned_hook:
         description = f"{cleaned_hook}\n\n{description}"
