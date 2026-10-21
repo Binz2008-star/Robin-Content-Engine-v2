@@ -3244,6 +3244,49 @@ tasks:
       explicitly authorized the merge in direct chat on 2026-10-21; merged by
       squash after green CI on the code head. deploy_allowed remains false.
 
+  - id: RCE-20261021-SCOPEGUARD-SHORTS
+    title: Scope guard rules for feat/shorts-* and fix/shorts-*
+    status: active
+    owner: opencode-agent
+    branch: chore/scope-guard-shorts
+    base_branch: main
+    base_sha: 4a68e5607f4b458f231f5e4c978850ca983d57c9
+    pr: pending
+    merge_allowed: false
+    deploy_allowed: false
+    allowed_paths:
+      - .github/workflows/agent-scope-guard.yml
+      - AI_WORKSPACE/ACTIVE_TASKS.yaml
+    forbidden_paths:
+      - src/**
+      - studio/**
+      - schema.sql
+      - main.py
+    scope: >-
+      Add a feat/shorts-*|fix/shorts-* case to Agent Scope Guard so Shorts
+      branches fail on the same forbidden paths the B1 task registered
+      (captioner, vertical_reframe, quality_gate, uploader, publishing,
+      youtube_auth, config, schema, .env.example, .github/** and main.py).
+      This closes the fail-open observed on PR #33 for the shorts family.
+    acceptance:
+      - "a shorts-branch PR touching a forbidden path fails the guard"
+      - "a shorts-branch PR touching only allowed paths passes"
+      - "main.py is forbidden (not the old bare main)"
+      - "no product code, schema, env or upload behavior changes"
+    tests:
+      - "manual: simulate the guard case block with sample changed-files lists"
+    rollback: >-
+      Revert the merge commit; the previous guard returns. No product code,
+      schema, env or channel changes.
+    stop_conditions:
+      - do not change product code under src/
+      - do not change schema, env, upload, OAuth or channel behavior
+      - do not merge or deploy
+    note: >-
+      Registered 2026-10-21. Resolution for issue 34 (guard fail-open) for the
+      shorts branch family. A fully registry-driven guard remains a larger
+      follow-up because it would read self-declared task rules.
+
 # Other branches observed on origin at the time this registry was created
 # that are NOT yet registered as tasks (owner/scope unknown to this agent —
 # not fabricated here). Whoever owns them should add a task entry above
