@@ -107,6 +107,24 @@ def test_series_title_stays_within_100_chars_and_keeps_shorts() -> None:
     assert "| الحلقة 999 #Shorts" in title
 
 
+@pytest.mark.parametrize("language", ["arabic", "english"])
+def test_empty_series_ignores_an_explicit_part_number(language: str) -> None:
+    title, description, _ = drive_short_metadata(
+        job_id=1,
+        source_video_id="v",
+        confirmed_game=None,
+        language=language,
+        series="",
+        part=5,
+    )
+
+    assert "الحلقة" not in title
+    assert "Part" not in title
+    assert "الحلقة" not in description
+    assert "Part" not in description
+    assert "📺" not in description
+
+
 def test_explicit_arabic_part_number_appears_before_shorts() -> None:
     title, description, _ = drive_short_metadata(
         job_id=7, source_video_id="v", confirmed_game=None, part=7

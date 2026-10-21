@@ -121,7 +121,7 @@ def drive_short_metadata(
     title = templates[job_id % len(templates)].format(game=game or "")
     if len(title) > _TITLE_MAX_LENGTH:
         title = title[: _TITLE_MAX_LENGTH - 1].rstrip() + "…"
-    if part_number is not None:
+    if series_name and part_number is not None:
         marker = f"Part {part_number}" if english else f"الحلقة {part_number}"
         title = _with_episode_marker(title, marker)
 
