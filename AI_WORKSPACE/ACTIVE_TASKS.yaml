@@ -3165,14 +3165,18 @@ tasks:
 
   - id: RCE-20261021-SERIESMETA
     title: Shorts series metadata + Arabic-consistent no-AI fallback (PR B1)
-    status: review
+    status: complete
     owner: opencode-agent
     branch: feat/shorts-series-metadata
     base_branch: main
     base_sha: 9acc1ac4110c494e154ca71006292af7a400895e
-    current_sha: 6cdfd3f933a54ca866b3fd009da4379b6c779d61
+    current_sha: 9802b639b2feceeb99f87d24ec3d54f0e64e34a8
     pr: 33
-    merge_allowed: false
+    merge_method: squash
+    merged: true
+    merged_into: main
+    merged_by: Binz2008-star (explicit chat authorization 2026-10-21)
+    merge_allowed: true
     deploy_allowed: false
     allowed_paths:
       - src/robin_content_engine/shorts_metadata.py
@@ -3229,8 +3233,9 @@ tasks:
       - do not merge or deploy
       - do not touch production, the channel, or real credentials
     note: >-
-      Registered 2026-10-21 before implementation per AGENTS.md. The PR is a
-      draft; merge_allowed and deploy_allowed are false.
+      Registered 2026-10-21 before implementation per AGENTS.md. The owner
+      explicitly authorized the merge in direct chat on 2026-10-21; merged by
+      squash after green CI on the code head. deploy_allowed remains false.
 
 # Other branches observed on origin at the time this registry was created
 # that are NOT yet registered as tasks (owner/scope unknown to this agent —
