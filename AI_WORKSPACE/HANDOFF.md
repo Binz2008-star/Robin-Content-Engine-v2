@@ -2416,3 +2416,26 @@ Tests: ruff, mypy clean; drive_runner/segment_ledger/drive_source/
   shorts_metadata 67 passed (3 new).
 Merge authorized: no
 Deploy authorized: no
+
+---
+
+## RCE-20261021-STUDIOCANCEL - 2026-10-21 (CLOSED - cancelled by operator)
+
+Task ID: RCE-20260807-STUDIO
+Agent: opencode
+Branch: feat/studio-api-readiness
+Base SHA: 9acc1ac (main, after pull --ff-only)
+PR: 3 (draft) - CLOSED without merge. PR 2 was already MERGED into
+  feat/initial-engine on 2026-10-01 (merge commit 21433e1), never main.
+Status: cancelled
+Files changed: AI_WORKSPACE/ACTIVE_TASKS.yaml, AI_WORKSPACE/HANDOFF.md
+Change: operator stated the Studio sub-project is not needed. Registry
+  status review -> cancelled with rationale. No studio/** paths exist in
+  main, so no code revert was required.
+Tests: none required (docs/registry only)
+CI: not re-run locally; docs-only change, CI runs on push to main
+Known blockers: none
+Next action: none for this task. Branch feat/studio-api-readiness left in
+  place for a human to delete if desired.
+Merge authorized: no
+Deploy authorized: no

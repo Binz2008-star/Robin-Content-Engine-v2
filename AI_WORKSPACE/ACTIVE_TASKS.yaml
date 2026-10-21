@@ -45,7 +45,7 @@ tasks:
 
   - id: RCE-20260807-STUDIO
     title: Studio API Readiness
-    status: review
+    status: cancelled
     owner: google-studio
     branch: feat/studio-api-readiness
     current_sha: 938d4c23f2ea96d3444886ca89fe748d8175b7ea
@@ -58,7 +58,14 @@ tasks:
       - tests/**
     merge_allowed: false
     deploy_allowed: false
-    note: Frozen pending live FastAPI integration.
+    note: >-
+      CANCELLED 2026-10-21 by explicit operator decision ("dont need it so
+      close it"). PR #3 (draft) closed without merge; PR #2 (studio UI)
+      merged only into feat/initial-engine (21433e1) and never reached
+      main, so no studio/** paths exist in the trunk and nothing needs
+      reverting. Branch feat/studio-api-readiness retained - deletion is a
+      human action per AGENTS.md §3. Previously: frozen pending live FastAPI
+      integration.
 
   - id: RCE-20260807-CONTROL
     title: Multi-Agent Repository Control Plane
