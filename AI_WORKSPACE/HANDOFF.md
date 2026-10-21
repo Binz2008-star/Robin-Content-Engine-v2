@@ -2439,3 +2439,47 @@ Next action: none for this task. Branch feat/studio-api-readiness left in
   place for a human to delete if desired.
 Merge authorized: no
 Deploy authorized: no
+
+---
+
+## RCE-20261021-SERIESMETA - 2026-10-21
+
+Task ID: RCE-20261021-SERIESMETA
+Agent: opencode-agent
+Branch: feat/shorts-series-metadata
+Base SHA: 9acc1ac4110c494e154ca71006292af7a400895e
+PR: 33 (MERGED, squash)
+Merge commit: 4a68e5607f4b458f231f5e4c978850ca983d57c9
+Status: complete
+Files changed: AI_WORKSPACE/ACTIVE_TASKS.yaml,
+  src/robin_content_engine/shorts_metadata.py,
+  src/robin_content_engine/production_runner.py,
+  tests/test_shorts_metadata.py, tests/test_production_runner.py,
+  tests/test_production_run_cli.py
+Change: series label + optional part marker; hook-first titles; no job-id
+  episode numbers; strict youtube_metadata_language validation; Arabic
+  no-AI description reworded for viewers.
+Tests: 138 targeted passed; ruff clean; scoped mypy clean; PR CI green on
+  9802b63 (test 19m0s); main CI green on 4a68e56.
+Deploy authorized: no
+Merge authorized: yes (owner direct chat 2026-10-21)
+
+---
+
+## RCE-20261021-SCOPEGUARD-SHORTS - 2026-10-21
+
+Task ID: RCE-20261021-SCOPEGUARD-SHORTS
+Agent: opencode-agent
+Branch: chore/scope-guard-shorts
+Base SHA: 4a68e5607f4b458f231f5e4c978850ca983d57c9
+PR: 35
+Status: review (merge authorized)
+Files changed: .github/workflows/agent-scope-guard.yml,
+  AI_WORKSPACE/ACTIVE_TASKS.yaml, AI_WORKSPACE/HANDOFF.md
+Change: added feat/shorts-*|fix/shorts-* case; forbids the B1-protected
+  files, including main.py (not the old bare main). No product code.
+Tests: YAML parse; Git Bash simulation (allowed pass; quality_gate.py,
+  main.py and the .github workflow fail as expected); CI test job green on
+  df1383a.
+Deploy authorized: no
+Merge authorized: yes (owner direct chat 2026-10-21)
