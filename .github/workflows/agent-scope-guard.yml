@@ -91,6 +91,26 @@ jobs:
               check_forbidden "package.json"         '^package\.json$'
               check_forbidden "package-lock.json"    '^package-lock\.json$'
               ;;
+            feat/shorts-*|fix/shorts-*)
+              echo "Task family: shorts"
+              check_forbidden "src/robin_content_engine/captioner.py" '^src/robin_content_engine/captioner\.py$'
+              check_forbidden "src/robin_content_engine/vertical_reframe.py" '^src/robin_content_engine/vertical_reframe\.py$'
+              check_forbidden "src/robin_content_engine/quality_gate.py" '^src/robin_content_engine/quality_gate\.py$'
+              check_forbidden "src/robin_content_engine/uploader.py" '^src/robin_content_engine/uploader\.py$'
+              check_forbidden "src/robin_content_engine/publishing.py" '^src/robin_content_engine/publishing\.py$'
+              check_forbidden "src/robin_content_engine/youtube_auth.py" '^src/robin_content_engine/youtube_auth\.py$'
+              check_forbidden "src/robin_content_engine/config.py" '^src/robin_content_engine/config\.py$'
+              check_forbidden "schema.sql" '^schema\.sql$'
+              check_forbidden ".env.example" '^\.env\.example$'
+              check_forbidden ".github/**" '^\.github/'
+              check_forbidden "studio/**" '^studio/'
+              check_forbidden "main.py" '^main\.py$'
+              check_forbidden "AGENTS.md" '^AGENTS\.md$'
+              check_forbidden "CLAUDE.md" '^CLAUDE\.md$'
+              check_forbidden "client_secret.json" '^client_secret.*\.json$'
+              check_forbidden "token.json" '^token\.json$'
+              check_forbidden ".env" '^\.env$'
+              ;;
             *)
               echo "No scope rules defined for branch family '${BRANCH}'. Skipping (registry-only check, not a hard requirement)."
               ;;
