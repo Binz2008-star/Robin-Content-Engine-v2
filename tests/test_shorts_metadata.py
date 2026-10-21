@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import hashlib
 import sys
 from pathlib import Path
+
+import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / "src"
@@ -47,6 +50,112 @@ def test_english_language_uses_english_templates() -> None:
     )
     assert "#Shorts" in title and not any("\u0600" <= ch <= "\u06ff" for ch in title)
     assert "Full video" in description
+
+
+def test_series_label_and_part_number_appear_in_title_and_description() -> None:
+    title, description, _ = drive_short_metadata(
+        job_id=7,
+        source_video_id="v",
+        confirmed_game="Fortnite",
+        language="english",
+        series="Fortnite Files",
+        part=12,
+    )
+
+    assert "| Part 12 #Shorts" in title
+    assert "📺 Fortnite Files — Part 12" in description
+
+
+def test_no_part_number_is_published_by_default() -> None:
+    title, description, _ = drive_short_metadata(
+        job_id=42, source_video_id="v", confirmed_game=None
+    )
+
+    assert "الحلقة" not in title
+    assert "الحلقة" not in description
+    assert "📺" in description  # the series label is still shown
+
+
+def test_empty_series_omits_series_markings() -> None:
+    title, description, _ = drive_short_metadata(
+        job_id=1, source_video_id="v", confirmed_game=None, series=""
+    )
+
+    assert "| الحلقة" not in title
+    assert "| Part" not in title
+    assert "📺" not in description
+
+
+def test_negative_part_number_is_rejected() -> None:
+    with pytest.raises(ValueError):
+        drive_short_metadata(
+            job_id=1, source_video_id="v", confirmed_game=None, part=-1
+        )
+
+
+def test_series_title_stays_within_100_chars_and_keeps_shorts() -> None:
+    title, _, _ = drive_short_metadata(
+        job_id=1,
+        source_video_id="v",
+        confirmed_game="Call of Duty Black Ops",
+        series="Robinzo Archive Extended Cut",
+        part=999,
+    )
+
+    assert len(title) <= 100
+    assert title.endswith("#Shorts")
+    assert "| الحلقة 999 #Shorts" in title
+
+
+@pytest.mark.parametrize("language", ["arabic", "english"])
+def test_empty_series_ignores_an_explicit_part_number(language: str) -> None:
+    title, description, _ = drive_short_metadata(
+        job_id=1,
+        source_video_id="v",
+        confirmed_game=None,
+        language=language,
+        series="",
+        part=5,
+    )
+
+    assert "الحلقة" not in title
+    assert "Part" not in title
+    assert "الحلقة" not in description
+    assert "Part" not in description
+    assert "📺" not in description
+
+
+def test_explicit_arabic_part_number_appears_before_shorts() -> None:
+    title, description, _ = drive_short_metadata(
+        job_id=7, source_video_id="v", confirmed_game=None, part=7
+    )
+
+    assert "| الحلقة 7 #Shorts" in title
+    assert "📺 أرشيف روبنزو — الحلقة 7" in description
+
+
+def test_unknown_language_is_rejected() -> None:
+    with pytest.raises(ValueError):
+        drive_short_metadata(
+            job_id=1, source_video_id="v", confirmed_game=None, language="fr"
+        )
+
+
+def test_metadata_generation_leaves_a_rendered_artifact_byte_identical(
+    tmp_path: Path,
+) -> None:
+    """Golden guard: B1 is metadata-only and must not touch rendered bytes."""
+    from robin_content_engine.production_runner import build_automatic_metadata
+
+    artifact = tmp_path / "short.mp4"
+    artifact.write_bytes(b"\x00\x00\x00\x18ftypmp42" + b"golden rendered bytes" * 8)
+    before = hashlib.sha256(artifact.read_bytes()).hexdigest()
+
+    drive_short_metadata(job_id=3, source_video_id="v", confirmed_game="Fortnite")
+    build_automatic_metadata("Fortnite match", language="arabic")
+    build_automatic_metadata("Fortnite match", language="english")
+
+    assert hashlib.sha256(artifact.read_bytes()).hexdigest() == before
 
 
 def test_every_template_passes_publishing_validation() -> None:

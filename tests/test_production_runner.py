@@ -178,6 +178,8 @@ def _fake_settings(work_dir: Path, capture_dir: Path | None = None) -> SimpleNam
         capture_stability_wait_seconds=0.0,
         highlight_min_seconds=15.0,
         highlight_max_seconds=60.0,
+        youtube_ai_metadata=False,
+        youtube_metadata_language="arabic",
     )
 
 
@@ -498,8 +500,20 @@ def test_build_production_metadata_deterministic_prepends_hook(tmp_path: Path) -
     title, description, tags = pr_module.build_production_metadata(
         "Fortnite match", settings, hook="  Nice  clutch  "
     )
-    assert title == "Fortnite match — Highlight"
+    assert title == "Fortnite match — لقطة"
     assert description.startswith("Nice clutch\n\n")
+    assert tags == []
+
+
+def test_build_production_metadata_deterministic_honours_english(tmp_path: Path) -> None:
+    settings = _fake_settings(tmp_path / "work")
+    settings.youtube_metadata_language = "english"  # type: ignore[attr-defined]
+    title, description, tags = pr_module.build_production_metadata("Fortnite match", settings)
+
+    assert title == "Fortnite match — Highlight"
+    assert description == (
+        "Automatically processed from operator-owned gameplay by Robin Content Engine."
+    )
     assert tags == []
 
 
@@ -1066,12 +1080,35 @@ def test_reconcile_naive_timestamps_are_treated_as_utc(tmp_path: Path) -> None:
 def test_build_automatic_metadata_is_deterministic_and_truthful() -> None:
     title, description = build_automatic_metadata("Fortnite 2026-08-08 16-03-14")
 
+    assert title == "Fortnite 2026-08-08 16-03-14 — لقطة"
+    assert description == (
+        "من أرشيف روبنزو: لقطة جيمنغ أصلية من قناتنا. استمتع بالمشاهدة! 🎮"
+    )
+    # deterministic: same input always yields the same output
+    assert build_automatic_metadata("Fortnite 2026-08-08 16-03-14") == (title, description)
+
+
+def test_build_automatic_metadata_english_is_available_explicitly() -> None:
+    title, description = build_automatic_metadata(
+        "Fortnite 2026-08-08 16-03-14", language="english"
+    )
+
     assert title == "Fortnite 2026-08-08 16-03-14 — Highlight"
     assert description == (
         "Automatically processed from operator-owned gameplay by Robin Content Engine."
     )
-    # deterministic: same input always yields the same output
-    assert build_automatic_metadata("Fortnite 2026-08-08 16-03-14") == (title, description)
+
+
+def test_build_automatic_metadata_rejects_unknown_language() -> None:
+    with pytest.raises(ValueError):
+        build_automatic_metadata("Fortnite match", language="fr")
+
+
+def test_build_production_metadata_rejects_unknown_language(tmp_path: Path) -> None:
+    settings = _fake_settings(tmp_path / "work")
+    settings.youtube_metadata_language = "fr"  # type: ignore[attr-defined]
+    with pytest.raises(ValueError):
+        pr_module.build_production_metadata("Fortnite match", settings)
 
 
 # ---------------------------------------------------------------------------
@@ -2013,7 +2050,7 @@ def _title_of_length(n: int, char: str = "a") -> str:
 
 def test_build_automatic_metadata_no_truncation_at_100_chars() -> None:
     source = _title_of_length(88)  # 88 + 12 = 100 exactly
-    title, _ = build_automatic_metadata(source)
+    title, _ = build_automatic_metadata(source, language="english")
 
     assert title == f"{source} — Highlight"
     assert len(title) == 100
@@ -2021,21 +2058,40 @@ def test_build_automatic_metadata_no_truncation_at_100_chars() -> None:
 
 def test_build_automatic_metadata_truncates_beyond_100_chars() -> None:
     source = _title_of_length(89)  # 89 + 12 = 101 > 100
-    title, _ = build_automatic_metadata(source)
+    title, _ = build_automatic_metadata(source, language="english")
 
     assert len(title) == 100
     assert title.endswith(" — Highlight")
     assert "..." in title
     assert title.startswith("a" * 85)
     # deterministic for the same input
-    assert build_automatic_metadata(source)[0] == title
+    assert build_automatic_metadata(source, language="english")[0] == title
+
+
+def test_build_automatic_metadata_arabic_no_truncation_at_100_chars() -> None:
+    suffix = " — لقطة"
+    source = _title_of_length(100 - len(suffix))
+    title, _ = build_automatic_metadata(source)
+
+    assert title == f"{source}{suffix}"
+    assert len(title) == 100
+
+
+def test_build_automatic_metadata_arabic_truncates_beyond_100_chars() -> None:
+    suffix = " — لقطة"
+    source = _title_of_length(100 - len(suffix) + 1)
+    title, _ = build_automatic_metadata(source)
+
+    assert len(title) == 100
+    assert title.endswith(suffix)
+    assert "..." in title
 
 
 def test_build_automatic_metadata_truncation_strips_trailing_whitespace() -> None:
     # the cut lands on trailing whitespace (positions 82-84 are spaces):
     # rstrip() must remove them so the ellipsis never follows a gap
     source = "a" * 82 + "   " + "b" * 4  # 89 chars total
-    title, _ = build_automatic_metadata(source)
+    title, _ = build_automatic_metadata(source, language="english")
 
     assert title == "a" * 82 + "..." + " — Highlight"
     assert len(title) == 97
@@ -2044,7 +2100,7 @@ def test_build_automatic_metadata_truncation_strips_trailing_whitespace() -> Non
 
 def test_build_automatic_metadata_unicode_counts_characters_not_bytes() -> None:
     source = "é" * 89
-    title, _ = build_automatic_metadata(source)
+    title, _ = build_automatic_metadata(source, language="english")
 
     assert len(title) == 100
     assert title.endswith(" — Highlight")

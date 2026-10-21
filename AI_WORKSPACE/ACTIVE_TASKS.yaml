@@ -3170,6 +3170,80 @@ tasks:
       confirmed game / game priority, then Drive order - decided from file
       name and Drive duration only, before any download. No schema change.
 
+  - id: RCE-20261021-SERIESMETA
+    title: Shorts series metadata + Arabic-consistent no-AI fallback (PR B1)
+    status: complete
+    owner: opencode-agent
+    branch: feat/shorts-series-metadata
+    base_branch: main
+    base_sha: 9acc1ac4110c494e154ca71006292af7a400895e
+    current_sha: 9802b639b2feceeb99f87d24ec3d54f0e64e34a8
+    pr: 33
+    merge_method: squash
+    merged: true
+    merged_into: main
+    merged_by: Binz2008-star (explicit chat authorization 2026-10-21)
+    merge_allowed: true
+    deploy_allowed: false
+    allowed_paths:
+      - src/robin_content_engine/shorts_metadata.py
+      - src/robin_content_engine/production_runner.py
+      - tests/test_shorts_metadata.py
+      - tests/test_production_runner.py
+      - tests/test_production_run_cli.py
+      - AI_WORKSPACE/ACTIVE_TASKS.yaml
+    forbidden_paths:
+      - studio/**
+      - AGENTS.md
+      - CLAUDE.md
+      - main.py
+      - schema.sql
+      - .env.example
+      - .github/**
+      - src/robin_content_engine/captioner.py
+      - src/robin_content_engine/vertical_reframe.py
+      - src/robin_content_engine/quality_gate.py
+      - src/robin_content_engine/uploader.py
+      - src/robin_content_engine/publishing.py
+      - src/robin_content_engine/youtube_auth.py
+      - src/robin_content_engine/config.py
+      - client_secret.json
+      - client_secret*.json
+      - token.json
+      - .env
+    scope: >-
+      PR B1 only: add series naming + part numbering to the cloud Shorts
+      metadata (shorts_metadata.drive_short_metadata) and make the
+      local/Studio no-AI fallback (production_runner.build_automatic_metadata)
+      honor YOUTUBE_METADATA_LANGUAGE (Arabic default). Metadata only: no
+      render, caption, scope, upload, schema, env or GitHub-workflow changes.
+      Part numbering defaults to the queue job id; callers may pass a clean
+      series part later without a schema change.
+    acceptance:
+      - "series label + #part appear in Arabic/English titles and descriptions"
+      - part numbering is deterministic and overridable
+      - the no-AI fallback produces Arabic when youtube_metadata_language=arabic
+      - English remains available when the setting is english
+      - a golden test proves metadata generation leaves a rendered artifact byte-identical
+      - existing publish metadata validation still passes
+      - the production-run-once CLI golden assertion is updated to the Arabic default
+    tests:
+      - pytest tests/test_shorts_metadata.py tests/test_production_runner.py -q
+      - ruff check .
+      - mypy
+    rollback: >-
+      Revert the merge commit. No schema, env, render, upload or workflow
+      changes are part of this task.
+    stop_conditions:
+      - do not change render/caption/reframe/quality_gate/upload code
+      - do not change OAuth scopes, env vars, schema or workflows
+      - do not merge or deploy
+      - do not touch production, the channel, or real credentials
+    note: >-
+      Registered 2026-10-21 before implementation per AGENTS.md. The owner
+      explicitly authorized the merge in direct chat on 2026-10-21; merged by
+      squash after green CI on the code head. deploy_allowed remains false.
+
 # Other branches observed on origin at the time this registry was created
 # that are NOT yet registered as tasks (owner/scope unknown to this agent —
 # not fabricated here). Whoever owns them should add a task entry above

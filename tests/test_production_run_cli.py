@@ -132,6 +132,8 @@ class FakeSettings:
         self.youtube_expected_channel_id = expected_channel_id
         self.youtube_privacy_status = "public"  # deliberately not "private"
         self.youtube_max_uploads_per_day = 10
+        self.youtube_ai_metadata = False
+        self.youtube_metadata_language = "arabic"
 
 
 class FakeAuth:
@@ -530,7 +532,7 @@ def test_production_run_once_selects_and_publishes_dry_run_with_deterministic_me
 
     assert result.exit_code == 0, result.output
     assert "Job 1: clip" in result.output
-    assert "Title: clip — Highlight" in result.output
+    assert "Title: clip — لقطة" in result.output
     assert "PUBLISH DRY RUN PASS" in result.output
     assert "Privacy: private" in result.output
 
