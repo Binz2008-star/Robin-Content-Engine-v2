@@ -24,11 +24,11 @@ from __future__ import annotations
 _TITLE_MAX_LENGTH = 100
 
 # The stable series label used when the caller does not supply one. The part
-# number defaults to the queue job id: it is deterministic and available
-# without a schema change, and callers may pass a clean per-series counter
-# later. A leading zero is not used; the id is shown as-is.
+# number is optional: omit it until a real per-series counter exists, so the
+# queue job id is never published as a public episode number.
 _SERIES_AR = "أرشيف روبنزو"
 _SERIES_EN = "Robinzo Archive"
+_METADATA_LANGUAGES = frozenset({"arabic", "english"})
 
 _AR_GAME_TITLES: tuple[str, ...] = (
     "{game} | لحظة نار 🔥 #Shorts",
@@ -63,22 +63,27 @@ def _hashtag(game: str) -> str:
     return "#" + "".join(ch for ch in game if ch.isalnum())
 
 
-def _fit_series_title(prefix: str, title: str) -> str:
-    """Join a series prefix and a template title within YouTube's 100 chars.
+def _with_episode_marker(title: str, marker: str) -> str:
+    """Append an episode marker before #Shorts, within YouTube's 100 chars.
 
-    Keeps the trailing `#Shorts` tag when the base title has one, so a long
-    series prefix truncates the descriptive part instead of dropping the tag.
+    The hook/descriptive part stays first; the marker goes at the end. A long
+    title truncates the descriptive part and keeps both the marker and
+    #Shorts.
     """
-    combined = f"{prefix}{title}"
+    if "#Shorts" in title:
+        body = title[: title.rfind("#Shorts")].rstrip()
+        suffix = " #Shorts"
+    else:
+        body, suffix = title, ""
+
+    combined = f"{body} | {marker}{suffix}"
     if len(combined) <= _TITLE_MAX_LENGTH:
         return combined
 
-    suffix = " #Shorts" if "#Shorts" in title else ""
-    body = title[: title.rfind("#Shorts")].rstrip() if suffix else title
-    budget = _TITLE_MAX_LENGTH - len(prefix) - len(suffix) - 1
+    budget = _TITLE_MAX_LENGTH - len(marker) - len(suffix) - len(" | ") - 1
     if budget <= 0:
         return combined[: _TITLE_MAX_LENGTH - 1].rstrip() + "…"
-    return f"{prefix}{body[:budget].rstrip()}…{suffix}"
+    return f"{body[:budget].rstrip()}… | {marker}{suffix}"
 
 
 def drive_short_metadata(
@@ -93,16 +98,19 @@ def drive_short_metadata(
     """(title, description, tags) for one cloud-runner Short.
 
     `series` defaults to the channel's archive label; an empty string omits
-    all series markings. `part` defaults to `job_id` (deterministic, no
-    schema change) and may be overridden by a caller that keeps its own
-    per-series counter.
+    all series markings. `part` is optional and must be a real per-series
+    counter when supplied; when omitted, no episode number is published, so
+    the queue job id never leaks as a public part number.
     """
-    english = language.strip().lower() == "english"
+    normalized = language.strip().lower()
+    if normalized not in _METADATA_LANGUAGES:
+        raise ValueError("language must be 'arabic' or 'english'")
+    english = normalized == "english"
     series_name = (
         series if series is not None else (_SERIES_EN if english else _SERIES_AR)
     ).strip()
-    part_number = job_id if part is None else part
-    if part_number < 0:
+    part_number = part
+    if part_number is not None and part_number < 0:
         raise ValueError("part must be >= 0")
 
     game = (confirmed_game or "").strip() or None
@@ -113,8 +121,9 @@ def drive_short_metadata(
     title = templates[job_id % len(templates)].format(game=game or "")
     if len(title) > _TITLE_MAX_LENGTH:
         title = title[: _TITLE_MAX_LENGTH - 1].rstrip() + "…"
-    if series_name:
-        title = _fit_series_title(f"{series_name} #{part_number} | ", title)
+    if part_number is not None:
+        marker = f"Part {part_number}" if english else f"الحلقة {part_number}"
+        title = _with_episode_marker(title, marker)
 
     source_url = f"https://www.youtube.com/watch?v={source_video_id}"
     hashtags = ["#Shorts", "#gaming"] + ([_hashtag(game)] if game else [])
@@ -124,7 +133,10 @@ def drive_short_metadata(
             "A moment from the Robinzo archive.",
         ]
         if series_name:
-            lines.append(f"📺 {series_name} — Part {part_number}")
+            series_line = f"📺 {series_name}"
+            if part_number is not None:
+                series_line += f" — Part {part_number}"
+            lines.append(series_line)
         lines.extend(
             [
                 f"🎬 Full video: {source_url}",
@@ -136,7 +148,10 @@ def drive_short_metadata(
             f"لقطة {game} من أرشيف روبنزو." if game else "لقطة من أرشيف روبنزو.",
         ]
         if series_name:
-            lines.append(f"📺 {series_name} — الحلقة {part_number}")
+            series_line = f"📺 {series_name}"
+            if part_number is not None:
+                series_line += f" — الحلقة {part_number}"
+            lines.append(series_line)
         lines.extend(
             [
                 f"🎬 الفيديو الكامل: {source_url}",

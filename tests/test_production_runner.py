@@ -178,6 +178,8 @@ def _fake_settings(work_dir: Path, capture_dir: Path | None = None) -> SimpleNam
         capture_stability_wait_seconds=0.0,
         highlight_min_seconds=15.0,
         highlight_max_seconds=60.0,
+        youtube_ai_metadata=False,
+        youtube_metadata_language="arabic",
     )
 
 
@@ -1080,7 +1082,7 @@ def test_build_automatic_metadata_is_deterministic_and_truthful() -> None:
 
     assert title == "Fortnite 2026-08-08 16-03-14 — لقطة"
     assert description == (
-        "تمت المعالجة تلقائيًا من لقطات اللعب المملوكة للمشغّل عبر Robin Content Engine."
+        "من أرشيف روبنزو: لقطة جيمنغ أصلية من قناتنا. استمتع بالمشاهدة! 🎮"
     )
     # deterministic: same input always yields the same output
     assert build_automatic_metadata("Fortnite 2026-08-08 16-03-14") == (title, description)
@@ -1095,6 +1097,18 @@ def test_build_automatic_metadata_english_is_available_explicitly() -> None:
     assert description == (
         "Automatically processed from operator-owned gameplay by Robin Content Engine."
     )
+
+
+def test_build_automatic_metadata_rejects_unknown_language() -> None:
+    with pytest.raises(ValueError):
+        build_automatic_metadata("Fortnite match", language="fr")
+
+
+def test_build_production_metadata_rejects_unknown_language(tmp_path: Path) -> None:
+    settings = _fake_settings(tmp_path / "work")
+    settings.youtube_metadata_language = "fr"  # type: ignore[attr-defined]
+    with pytest.raises(ValueError):
+        pr_module.build_production_metadata("Fortnite match", settings)
 
 
 # ---------------------------------------------------------------------------

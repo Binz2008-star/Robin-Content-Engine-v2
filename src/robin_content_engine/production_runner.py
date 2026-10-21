@@ -541,8 +541,9 @@ _AUTOMATIC_DESCRIPTION_EN = (
     "Automatically processed from operator-owned gameplay by Robin Content Engine."
 )
 _AUTOMATIC_DESCRIPTION_AR = (
-    "تمت المعالجة تلقائيًا من لقطات اللعب المملوكة للمشغّل عبر Robin Content Engine."
+    "من أرشيف روبنزو: لقطة جيمنغ أصلية من قناتنا. استمتع بالمشاهدة! 🎮"
 )
+_METADATA_LANGUAGES = frozenset({"arabic", "english"})
 
 
 def build_automatic_metadata(
@@ -558,7 +559,10 @@ def build_automatic_metadata(
     100-character limit while keeping the truthful suffix; the ellipsis marks
     the truncation, and the result is deterministic for the same input.
     """
-    english = language.strip().lower() == "english"
+    normalized = language.strip().lower()
+    if normalized not in _METADATA_LANGUAGES:
+        raise ValueError("language must be 'arabic' or 'english'")
+    english = normalized == "english"
     suffix = _TITLE_SUFFIX if english else _TITLE_SUFFIX_AR
     title = f"{source_title}{suffix}"
     if len(title) > _TITLE_MAX_LENGTH:
@@ -576,16 +580,19 @@ def build_production_metadata(
     When settings.youtube_ai_metadata is enabled (and a DeepSeek API key is
     configured), generates natural Gulf-Arabic title/description/tags via
     ContentGenerator using the same improved prompt as the rest of the
-    pipeline. Any AI failure falls back to the deterministic English
-    metadata so the scheduled task can never be blocked by the LLM being
-    unavailable. Returns (title, description, tags).
+    pipeline. Any AI failure falls back to the deterministic metadata in the
+    configured language so the scheduled task can never be blocked by the LLM
+    being unavailable. Returns (title, description, tags).
 
     When an optional AI-suggested hook is supplied, it is used in the
     metadata: it is passed into the AI context so the generated description
     references it naturally, and on the deterministic fallback it is
     prepended as the first line of the description. A missing/blank hook
     changes nothing."""
-    if getattr(settings, "youtube_ai_metadata", False) and settings.deepseek_api_key:
+    language = settings.youtube_metadata_language.strip().lower()
+    if language not in _METADATA_LANGUAGES:
+        raise ValueError("youtube_metadata_language must be 'arabic' or 'english'")
+    if settings.youtube_ai_metadata and settings.deepseek_api_key:
         try:
             from .ai_logic import ContentGenerator, build_ai_context
 
@@ -594,7 +601,6 @@ def build_production_metadata(
                 settings.deepseek_base_url,
                 settings.deepseek_model,
             )
-            language = getattr(settings, "youtube_metadata_language", "arabic")
             generated = generator.generate(
                 build_ai_context(source_title, hook), language=language
             )
@@ -605,7 +611,6 @@ def build_production_metadata(
                 source_title,
                 exc_info=True,
             )
-    language = getattr(settings, "youtube_metadata_language", "arabic")
     title, description = build_automatic_metadata(source_title, language=language)
     cleaned_hook = " ".join(hook.split()).strip() if hook else ""
     if cleaned_hook:

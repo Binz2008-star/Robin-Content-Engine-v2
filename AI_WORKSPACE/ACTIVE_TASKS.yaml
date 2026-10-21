@@ -3185,7 +3185,7 @@ tasks:
       - studio/**
       - AGENTS.md
       - CLAUDE.md
-      - main
+      - main.py
       - schema.sql
       - .env.example
       - .github/**

@@ -132,6 +132,8 @@ class FakeSettings:
         self.youtube_expected_channel_id = expected_channel_id
         self.youtube_privacy_status = "public"  # deliberately not "private"
         self.youtube_max_uploads_per_day = 10
+        self.youtube_ai_metadata = False
+        self.youtube_metadata_language = "arabic"
 
 
 class FakeAuth:

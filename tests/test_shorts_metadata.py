@@ -62,17 +62,18 @@ def test_series_label_and_part_number_appear_in_title_and_description() -> None:
         part=12,
     )
 
-    assert "Fortnite Files #12" in title
+    assert "| Part 12 #Shorts" in title
     assert "📺 Fortnite Files — Part 12" in description
 
 
-def test_part_number_defaults_to_the_job_id() -> None:
+def test_no_part_number_is_published_by_default() -> None:
     title, description, _ = drive_short_metadata(
         job_id=42, source_video_id="v", confirmed_game=None
     )
 
-    assert "#42" in title
-    assert "الحلقة 42" in description
+    assert "الحلقة" not in title
+    assert "الحلقة" not in description
+    assert "📺" in description  # the series label is still shown
 
 
 def test_empty_series_omits_series_markings() -> None:
@@ -80,7 +81,8 @@ def test_empty_series_omits_series_markings() -> None:
         job_id=1, source_video_id="v", confirmed_game=None, series=""
     )
 
-    assert "#1 | " not in title
+    assert "| الحلقة" not in title
+    assert "| Part" not in title
     assert "📺" not in description
 
 
@@ -102,6 +104,23 @@ def test_series_title_stays_within_100_chars_and_keeps_shorts() -> None:
 
     assert len(title) <= 100
     assert title.endswith("#Shorts")
+    assert "| الحلقة 999 #Shorts" in title
+
+
+def test_explicit_arabic_part_number_appears_before_shorts() -> None:
+    title, description, _ = drive_short_metadata(
+        job_id=7, source_video_id="v", confirmed_game=None, part=7
+    )
+
+    assert "| الحلقة 7 #Shorts" in title
+    assert "📺 أرشيف روبنزو — الحلقة 7" in description
+
+
+def test_unknown_language_is_rejected() -> None:
+    with pytest.raises(ValueError):
+        drive_short_metadata(
+            job_id=1, source_video_id="v", confirmed_game=None, language="fr"
+        )
 
 
 def test_metadata_generation_leaves_a_rendered_artifact_byte_identical(
