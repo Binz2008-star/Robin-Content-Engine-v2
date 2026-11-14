@@ -3305,12 +3305,12 @@ tasks:
 
   - id: RCE-20261115-FFMPEG-INTEGRITY
     title: Reject truncated Shorts when ffmpeg decode exits cleanly but stops early
-    status: active
+    status: review
     owner: chatgpt
     branch: fix/shorts-ffmpeg-truncation-gate
     base_branch: main
     base_sha: 2611da28495dfd9a6dcc07756f20dda6c11df52a
-    pr: null
+    pr: 39
     allowed_paths:
       - src/robin_content_engine/quality_gate.py
       - tests/test_quality_gate.py
