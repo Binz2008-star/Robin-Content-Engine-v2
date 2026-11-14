@@ -146,3 +146,29 @@ def test_upload_preserves_privacy_category_and_kids_flag(
     assert insert_kwargs["body"]["status"]["privacyStatus"] == "private"
     assert insert_kwargs["body"]["status"]["selfDeclaredMadeForKids"] is False
     assert insert_kwargs["body"]["snippet"]["categoryId"] == "20"
+
+
+def test_upload_mirrors_original_made_for_kids_audience(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Targeted archived Shorts must keep the source's declared kid audience."""
+    video = tmp_path / "kids-video.mp4"
+    video.write_bytes(b"test-media")
+    client = FakeYouTubeClient({"id": "newshort123"})
+
+    monkeypatch.setattr(uploader_module, "build", lambda *_args, **_kwargs: client)
+    monkeypatch.setattr(YouTubeAuth, "load_credentials", lambda self: object())
+
+    uploader = YouTubeUploader(
+        client_secret_file=tmp_path / "client.json",
+        token_file=tmp_path / "token.json",
+        privacy_status="private",
+        category_id="20",
+        made_for_kids=True,
+    )
+    result = uploader.upload(video, _content())
+
+    assert result.youtube_id == "newshort123"
+    status = client.videos_resource.insert_calls[0]["body"]["status"]
+    assert status["privacyStatus"] == "private"
+    assert status["selfDeclaredMadeForKids"] is True
