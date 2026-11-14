@@ -2483,3 +2483,22 @@ Tests: YAML parse; Git Bash simulation (allowed pass; quality_gate.py,
   df1383a.
 Deploy authorized: no
 Merge authorized: yes (owner direct chat 2026-10-21)
+
+---
+
+## RCE-20261115-FFMPEG-INTEGRITY — 2026-11-15
+
+Task ID: RCE-20261115-FFMPEG-INTEGRITY
+Agent: chatgpt
+Branch: fix/shorts-ffmpeg-truncation-gate
+Base SHA: 2611da28495dfd9a6dcc07756f20dda6c11df52a
+Current HEAD: 84b473344414c6a7b137d5226c9562654ab56cf1 (before this append)
+PR: #39 (draft)
+Status: review
+Files changed: src/robin_content_engine/quality_gate.py, tests/test_quality_gate.py, AI_WORKSPACE/ACTIVE_TASKS.yaml, AI_WORKSPACE/HANDOFF.md
+Tests: New tests cover clean-but-short decode, successful full decode, incomplete FFmpeg progress. Isolated local FFmpeg v7.0.2 probe confirmed 6s clean vs 2.75s truncated. Full pytest not run locally.
+CI: Awaiting PR #39 GitHub Actions; do not infer green.
+Known blockers: CI safety failure in PR #36, test_truncated_file_fails_ffmpeg_decode_integrity, 696 passed/1 failed/8 skipped; the baseline integrity check had accepted early EOF. Proposed fail-closed fix compares decode end timestamp to probed duration.
+Next action: Verify PR #39 CI, evaluate possible false positives on healthy shorts, merge only with operator authorization and completed tests. Re-run PR #36 against fixed main; do not bypass a failing CI check or publish experimental footage.
+Merge authorized: no (for new safety task)
+Deploy authorized: no
