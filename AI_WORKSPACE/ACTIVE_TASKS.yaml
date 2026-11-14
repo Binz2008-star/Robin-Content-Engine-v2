@@ -3306,7 +3306,8 @@ tasks:
   - id: RCE-20261115-ARCHIVE-GGG
     title: Target owned Ggg archival footage with correct audience metadata
     owner: chatgpt
-    status: active
+    status: review
+    pr: 42
     branch: feat/archive-targeted-publishing
     base_branch: main
     base_sha: 2611da28495dfd9a6dcc07756f20dda6c11df52a
