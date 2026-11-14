@@ -672,6 +672,57 @@ def test_attempt_marker_contains_no_secrets_on_failure(package_dir: Path) -> Non
         assert forbidden not in attempt_text
 
 
+
+
+def test_execute_reports_final_public_status_after_successful_flip(
+    package_dir: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from robin_content_engine import publishing as publishing_module
+
+    published: list[str] = []
+    monkeypatch.setattr(
+        publishing_module,
+        "_set_video_public",
+        lambda _auth, youtube_id: published.append(youtube_id),
+    )
+    settings = _fake_settings()
+    settings.youtube_public_after_upload = True
+    uploader = FakeUploader()
+    factory = RecordingUploaderFactory(uploader)
+
+    result = execute_private_upload(
+        package_dir, "Title", "Description.", [], settings, FakeAuth(), factory,
+        quality_gate_config=TEST_CONFIG,
+    )
+
+    receipt = json.loads((package_dir / "upload_receipt.json").read_text(encoding="utf-8"))
+    assert factory.calls[0]["privacy_status"] == "private"
+    assert published == [result.youtube_id]
+    assert result.privacy_status == "public"
+    assert receipt["privacy_status"] == "public"
+
+
+def test_execute_failed_public_flip_does_not_claim_public(
+    package_dir: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from robin_content_engine import publishing as publishing_module
+
+    def denied(_auth: Any, _youtube_id: str) -> None:
+        raise PublishingError("simulated public flip failure")
+
+    monkeypatch.setattr(publishing_module, "_set_video_public", denied)
+    settings = _fake_settings()
+    settings.youtube_public_after_upload = True
+
+    with pytest.raises(PublishingError, match="simulated public flip failure"):
+        execute_private_upload(
+            package_dir, "Title", "Description.", [], settings, FakeAuth(),
+            _factory_for(FakeUploader()), quality_gate_config=TEST_CONFIG,
+        )
+
+    receipt = json.loads((package_dir / "upload_receipt.json").read_text(encoding="utf-8"))
+    assert receipt["privacy_status"] == "private"
+
 # ---------------------------------------------------------------------------
 # CTO review round 1, item 1: the SERVICE (not merely the caller) owns the
 # private-only invariant - execute_private_upload() itself must supply
