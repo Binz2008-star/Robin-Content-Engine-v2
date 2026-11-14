@@ -1731,7 +1731,7 @@ def drive_produce_command(
     target_ids = [item.strip() for item in target_raw.split(",") if item.strip()]
     if target_ids and any(
         len(video_id) != 11
-        or not all(ch.isalnum() and ch.isascii() or ch in "_-" for ch in video_id)
+        or not all((ch.isalnum() and ch.isascii()) or ch in "_-" for ch in video_id)
         for video_id in target_ids
     ):
         typer.echo(
@@ -1777,7 +1777,7 @@ def drive_produce_command(
             result = produce_next_short(settings, service, folder, channel_videos=chosen)
             if result is None:
                 typer.echo(
-                    "Target archived sources exhausted or unavailable; using standard source rotation."
+                    "Target sources exhausted or unavailable; using standard source rotation."
                 )
                 result = produce_next_short(settings, service, folder)
         else:
