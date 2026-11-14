@@ -127,15 +127,26 @@ def _mean_luma(frame: np.ndarray) -> float:
     return float(np.mean(gray))
 
 
-def _ffmpeg_decode_error_count(path: Path) -> int:
-    """Fully decode the file with ffmpeg at error verbosity and count
-    emitted error lines. This catches corruption the lenient sampling-based
-    checks miss - e.g. a TRUNCATED mp4 whose moov atom (faststart) survives
-    and whose few sampled frames still decode, but whose stream is actually
-    broken mid-file. A healthy file emits zero error lines; anything else
-    is a corrupted/partial artifact and must never be published or reused.
-    Returns -1 when the decode could not be verified at all (subprocess
-    failure or timeout) - treated as a failed check, conservatively."""
+# An MP4 with an intact faststart moov atom may report its *original*
+# duration even if media packets are missing after a truncated upload.
+# Allow for encoder frame and audio packet rounding, not missing seconds.
+_DECODE_END_TOLERANCE_SECONDS = 0.75
+
+
+def _ffmpeg_decode_error_count(path: Path, expected_duration_seconds: float | None) -> int:
+    """Fail closed on corrupt, incomplete or unverifiable video streams.
+
+    FFmpeg sometimes exits 0 with no error lines on a truncated faststart
+    MP4: decoding simply stops when the file ends, while its container still
+    reports the full original duration. Checking process status and STDERR
+    alone is insufficient. Also compare the end-of-decode media timestamp
+    (reported by FFmpeg's machine-readable progress output) with the
+    independently probed container duration.
+
+    Returns 0 for a verified full decode, >0 for detected damage/early EOF,
+    and -1 for an unknown result or FFmpeg failure. All nonzero values fail
+    the upload quality gate.
+    """
     ffmpeg = imageio_ffmpeg.get_ffmpeg_exe()
     try:
         result = subprocess.run(
@@ -144,11 +155,17 @@ def _ffmpeg_decode_error_count(path: Path) -> int:
                 "-nostdin",
                 "-v",
                 "error",
+                "-xerror",
+                "-err_detect",
+                "explode",
                 "-i",
                 str(path),
                 "-f",
                 "null",
                 "-",
+                "-progress",
+                "pipe:1",
+                "-nostats",
             ],
             capture_output=True,
             text=True,
@@ -156,7 +173,31 @@ def _ffmpeg_decode_error_count(path: Path) -> int:
         )
     except (OSError, subprocess.TimeoutExpired):
         return -1
-    return len([line for line in result.stderr.splitlines() if line.strip()])
+
+    if result.returncode != 0:
+        return -1
+    error_lines = [line for line in result.stderr.splitlines() if line.strip()]
+    if error_lines:
+        return len(error_lines)
+    if expected_duration_seconds is None or not math.isfinite(expected_duration_seconds):
+        return -1
+
+    # out_time_us is microseconds, and can appear multiple times while FFmpeg
+    # decodes. Use the LAST progress timestamp (progress=end is expected).
+    # Missing/malformed progress is NOT treated as a clean decode.
+    timestamps: list[int] = []
+    for line in result.stdout.splitlines():
+        if line.startswith("out_time_us="):
+            try:
+                timestamps.append(int(line.partition("=")[2]))
+            except ValueError:
+                return -1
+    if "progress=end" not in result.stdout.splitlines() or not timestamps:
+        return -1
+    decoded_seconds = timestamps[-1] / 1_000_000
+    if decoded_seconds + _DECODE_END_TOLERANCE_SECONDS < expected_duration_seconds:
+        return 1
+    return 0
 
 
 def _read_frame_at(cap: cv2.VideoCapture, frame_index: int) -> np.ndarray | None:
@@ -314,7 +355,7 @@ def run_quality_gate(path: Path, config: QualityGateConfig | None = None) -> Qua
     )
     media = MediaMetadata(duration, width, height, fps, has_audio)
 
-    error_count = _ffmpeg_decode_error_count(path)
+    error_count = _ffmpeg_decode_error_count(path, duration)
     if error_count < 0:
         record(
             "decode_integrity_ffmpeg",

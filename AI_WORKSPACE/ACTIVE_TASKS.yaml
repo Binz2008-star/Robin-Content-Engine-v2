@@ -3303,6 +3303,47 @@ tasks:
 #   - feat/studio-ui
 #   - fix/studio-copilot-review
 
+  - id: RCE-20261115-FFMPEG-INTEGRITY
+    title: Reject truncated Shorts when ffmpeg decode exits cleanly but stops early
+    status: review
+    owner: chatgpt
+    branch: fix/ffmpeg-truncated-media-gate
+    base_branch: main
+    base_sha: 2611da28495dfd9a6dcc07756f20dda6c11df52a
+    pr: 41
+    allowed_paths:
+      - src/robin_content_engine/quality_gate.py
+      - tests/test_quality_gate.py
+      - AI_WORKSPACE/ACTIVE_TASKS.yaml
+      - AI_WORKSPACE/HANDOFF.md
+    forbidden_paths:
+      - src/robin_content_engine/publishing.py
+      - src/robin_content_engine/cli.py
+      - src/robin_content_engine/drive_runner.py
+      - schema.sql
+      - .github/**
+      - .env
+      - token.json
+      - client_secret*.json
+    merge_allowed: true
+    merge_authority_note: Owner explicitly requested merge in current Robinzo channel conversation; only after verified clean CI and scope guard.
+    deploy_allowed: false
+    notes: >-
+      Previous branch fix/shorts-ffmpeg-truncation-gate was superseded because its
+      fix/shorts-* name triggered a protected forbidden-path guard;
+      no guard rule was changed. Separate fail-closed integrity gate correction for GitHub issue #38,
+      discovered as a baseline-unrelated CI failure while reviewing PR #36.
+      Before any deploy/merge, verify full CI and review the new rejection
+      semantics to avoid dropping healthy videos.
+    tests:
+      - tests/test_quality_gate.py
+      - ruff check .
+      - mypy
+    stop_conditions:
+      - Do not loosen media quality gate or bypass rights/caps.
+      - Keep PR draft until CI is green and operator authorizes merge.
+      - Do not alter live YouTube, Drive, or Neon data.
+
   - id: RCE-20261115-ARCHIVE-GGG
     title: Target owned Ggg archival footage with correct audience metadata
     owner: chatgpt
