@@ -3344,6 +3344,47 @@ tasks:
       - Keep PR draft until CI is green and operator authorizes merge.
       - Do not alter live YouTube, Drive, or Neon data.
 
+  - id: RCE-20261114-PRIVACYREPORT
+    title: Report the verified final privacy of uploaded Shorts
+    status: review
+    pr: 36
+    owner: chatgpt
+    branch: fix/publish-final-privacy-report
+    base_branch: main
+    base_sha: 2611da28495dfd9a6dcc07756f20dda6c11df52a
+    allowed_paths:
+      - src/robin_content_engine/publishing.py
+      - tests/test_publishing.py
+      - AI_WORKSPACE/ACTIVE_TASKS.yaml
+      - AI_WORKSPACE/HANDOFF.md
+    forbidden_paths:
+      - .github/**
+      - schema.sql
+      - src/robin_content_engine/uploader.py
+      - src/robin_content_engine/drive_runner.py
+      - src/robin_content_engine/cli.py
+      - .env
+      - token.json
+      - client_secret*.json
+    merge_allowed: true
+    merge_authority_note: Owner authorized merging Robinzo safe fixes; only after CI and scope guard green.
+    deploy_allowed: false
+    note: >-
+      Operator requested GitHub audit and fixes for Robinzo channel.
+      Daily Short run 43514384077 uploaded mafX6We2IbI; log reported
+      Privacy private despite public-flip configuration. Fix returned
+      UploadResult to reflect final receipt state; preserve private-first
+      upload and all security gates. Separate performance/retention
+      recommendations are advisory only.
+    tests:
+      - tests/test_publishing.py
+      - ruff check .
+      - mypy
+    stop_conditions:
+      - Merge only after verified green CI and scope guard; no deploy without owner approval.
+      - Do not modify production YouTube, Drive or Neon data.
+      - Mark PR ready only after verification, then merge with owner's explicit authorization.
+
   - id: RCE-20261115-ARCHIVE-GGG
     title: Target owned Ggg archival footage with correct audience metadata
     owner: chatgpt

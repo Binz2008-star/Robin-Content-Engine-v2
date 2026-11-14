@@ -551,4 +551,7 @@ def execute_private_upload(
     if flip_error is not None:
         raise flip_error
 
-    return result
+    # The uploader result describes the initial PRIVATE insertion. A successful
+    # public flip is already stored in the receipt, so report that same final
+    # state to CLI callers rather than incorrectly logging 'Privacy: private'.
+    return UploadResult(youtube_id=result.youtube_id, privacy_status=final_privacy)
