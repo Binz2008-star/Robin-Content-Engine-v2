@@ -3305,7 +3305,8 @@ tasks:
 
   - id: RCE-20261114-PRIVACYREPORT
     title: Report the verified final privacy of uploaded Shorts
-    status: active
+    status: review
+    pr: 36
     owner: chatgpt
     branch: fix/publish-final-privacy-report
     base_branch: main
