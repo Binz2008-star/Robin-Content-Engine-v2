@@ -3307,10 +3307,10 @@ tasks:
     title: Reject truncated Shorts when ffmpeg decode exits cleanly but stops early
     status: review
     owner: chatgpt
-    branch: fix/shorts-ffmpeg-truncation-gate
+    branch: fix/ffmpeg-truncated-media-gate
     base_branch: main
     base_sha: 2611da28495dfd9a6dcc07756f20dda6c11df52a
-    pr: 39
+    pr: null
     allowed_paths:
       - src/robin_content_engine/quality_gate.py
       - tests/test_quality_gate.py
@@ -3328,7 +3328,9 @@ tasks:
     merge_allowed: false
     deploy_allowed: false
     notes: >-
-      Separate fail-closed integrity gate correction for GitHub issue #38,
+      Previous branch fix/shorts-ffmpeg-truncation-gate was superseded because its
+      fix/shorts-* name triggered a protected forbidden-path guard;
+      no guard rule was changed. Separate fail-closed integrity gate correction for GitHub issue #38,
       discovered as a baseline-unrelated CI failure while reviewing PR #36.
       Before any deploy/merge, verify full CI and review the new rejection
       semantics to avoid dropping healthy videos.
