@@ -29,7 +29,13 @@ from .clip_selector import (
 from .config import APP_ROOT, Settings
 from .database import JobRepository
 from .device_auth import DeviceAuthError, poll_for_tokens, request_device_code
-from .drive_runner import DriveRunnerError, DriveShortResult, GameEvidence, produce_next_short
+from .drive_runner import (
+    DriveRunnerError,
+    DriveShortResult,
+    GameEvidence,
+    fetch_channel_videos,
+    produce_next_short,
+)
 from .drive_source import DriveSourceError, build_drive_service
 from .game_performance import (
     UNCLASSIFIED,
@@ -1721,6 +1727,14 @@ def drive_produce_command(
         raise typer.Exit(code=2) from exc
 
     settings = Settings()  # type: ignore[call-arg]
+    target_raw = os.environ.get("DRIVE_TARGET_SOURCE_VIDEO_IDS", "").strip()
+    target_ids = [item.strip() for item in target_raw.split(",") if item.strip()]
+    if target_ids and any(
+        len(video_id) != 11 or not all(ch.isalnum() and ch.isascii() or ch in "_-" for ch in video_id)
+        for video_id in target_ids
+    ):
+        typer.echo("Invalid DRIVE_TARGET_SOURCE_VIDEO_IDS; expected comma-separated YouTube IDs.", err=True)
+        raise typer.Exit(code=2)
     if execute_upload and not db_upload_allowed(settings):
         # Checked before producing so a capped day burns no runner time and
         # no ledger segment.
@@ -1729,8 +1743,33 @@ def drive_produce_command(
             "nothing produced or uploaded today."
         )
         return
+    source_audience: dict[str, bool] = {}
     try:
-        result = produce_next_short(settings, build_drive_service(key_info), folder)
+        service = build_drive_service(key_info)
+        if target_ids:
+            # Target only known channel uploads; never guess by duplicate title.
+            import psycopg
+
+            all_videos = fetch_channel_videos(settings)
+            target_set = set(target_ids)
+            chosen = [video for video in all_videos if video.video_id in target_set]
+            if len(chosen) != len(target_set):
+                raise DriveRunnerError("One or more target source IDs are absent from the channel inventory.")
+            with psycopg.connect(settings.database_url) as conn:
+                audience_rows = conn.execute(
+                    "SELECT video_id, made_for_kids FROM youtube_videos "
+                    "WHERE video_id = ANY(%s) AND is_current = TRUE",
+                    (list(target_set),),
+                ).fetchall()
+            if len(audience_rows) != len(target_set) or any(kids is None for _, kids in audience_rows):
+                raise DriveRunnerError("Target source audience setting missing; publication refused.")
+            source_audience = {str(video_id): bool(kids) for video_id, kids in audience_rows}
+            result = produce_next_short(settings, service, folder, channel_videos=chosen)
+            if result is None:
+                typer.echo("Target archived sources exhausted or unavailable; using standard source rotation.")
+                result = produce_next_short(settings, service, folder)
+        else:
+            result = produce_next_short(settings, service, folder)
     except (DriveRunnerError, DriveSourceError, ProductionRunError) as exc:
         typer.echo(f"drive-produce failed: {exc}", err=True)
         raise typer.Exit(code=1) from exc
@@ -1757,11 +1796,18 @@ def drive_produce_command(
             f"game={result.game or '-'} ({result.evidence.value}), "
             f"source title '{result.source_title}'."
         )
-    _publish_drive_short(result, settings, execute_upload)
+    _publish_drive_short(
+        result, settings, execute_upload,
+        made_for_kids=source_audience.get(result.video_id),
+    )
 
 
 def _publish_drive_short(
-    result: DriveShortResult, settings: Settings, execute_upload: bool
+    result: DriveShortResult,
+    settings: Settings,
+    execute_upload: bool,
+    *,
+    made_for_kids: bool | None = None,
 ) -> None:
     """Metadata + (dry-run | private-first upload) for a drive-produce job.
     Mirrors production-run-once's publishing tail, plus a durable
@@ -1796,9 +1842,17 @@ def _publish_drive_short(
         return
 
     auth = YouTubeAuth(settings.youtube_client_secret_file, settings.youtube_token_file)
+    # The default path remains untouched. For targeted archive footage, use
+    # the actual source's YouTube audience setting on the initial PRIVATE upload.
+    # Never publish a source marked Made for Kids as 'not made for kids'.
+    uploader_factory = (
+        YouTubeUploader
+        if made_for_kids is None
+        else lambda **kwargs: YouTubeUploader(**kwargs, made_for_kids=made_for_kids)
+    )
     try:
         upload = execute_private_upload(
-            package_dir, title, description, tags, settings, auth, YouTubeUploader
+            package_dir, title, description, tags, settings, auth, uploader_factory
         )
     except PublishingError as exc:
         typer.echo(f"Upload failed: {exc}", err=True)
