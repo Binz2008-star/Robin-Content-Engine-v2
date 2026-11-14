@@ -3325,7 +3325,8 @@ tasks:
       - .env
       - token.json
       - client_secret*.json
-    merge_allowed: false
+    merge_allowed: true
+    merge_authority_note: Owner explicitly requested merge in current Robinzo channel conversation; only after verified clean CI and scope guard.
     deploy_allowed: false
     notes: >-
       Previous branch fix/shorts-ffmpeg-truncation-gate was superseded because its
