@@ -3310,7 +3310,7 @@ tasks:
     branch: fix/ffmpeg-truncated-media-gate
     base_branch: main
     base_sha: 2611da28495dfd9a6dcc07756f20dda6c11df52a
-    pr: null
+    pr: 41
     allowed_paths:
       - src/robin_content_engine/quality_gate.py
       - tests/test_quality_gate.py
