@@ -1730,10 +1730,14 @@ def drive_produce_command(
     target_raw = os.environ.get("DRIVE_TARGET_SOURCE_VIDEO_IDS", "").strip()
     target_ids = [item.strip() for item in target_raw.split(",") if item.strip()]
     if target_ids and any(
-        len(video_id) != 11 or not all(ch.isalnum() and ch.isascii() or ch in "_-" for ch in video_id)
+        len(video_id) != 11
+        or not all(ch.isalnum() and ch.isascii() or ch in "_-" for ch in video_id)
         for video_id in target_ids
     ):
-        typer.echo("Invalid DRIVE_TARGET_SOURCE_VIDEO_IDS; expected comma-separated YouTube IDs.", err=True)
+        typer.echo(
+            "Invalid DRIVE_TARGET_SOURCE_VIDEO_IDS; expected comma-separated YouTube IDs.",
+            err=True,
+        )
         raise typer.Exit(code=2)
     if execute_upload and not db_upload_allowed(settings):
         # Checked before producing so a capped day burns no runner time and
@@ -1754,19 +1758,27 @@ def drive_produce_command(
             target_set = set(target_ids)
             chosen = [video for video in all_videos if video.video_id in target_set]
             if len(chosen) != len(target_set):
-                raise DriveRunnerError("One or more target source IDs are absent from the channel inventory.")
+                raise DriveRunnerError(
+                    "One or more target source IDs are absent from the channel inventory."
+                )
             with psycopg.connect(settings.database_url) as conn:
                 audience_rows = conn.execute(
                     "SELECT video_id, made_for_kids FROM youtube_videos "
                     "WHERE video_id = ANY(%s) AND is_current = TRUE",
                     (list(target_set),),
                 ).fetchall()
-            if len(audience_rows) != len(target_set) or any(kids is None for _, kids in audience_rows):
-                raise DriveRunnerError("Target source audience setting missing; publication refused.")
+            if len(audience_rows) != len(target_set) or any(
+                kids is None for _, kids in audience_rows
+            ):
+                raise DriveRunnerError(
+                    "Target source audience setting missing; publication refused."
+                )
             source_audience = {str(video_id): bool(kids) for video_id, kids in audience_rows}
             result = produce_next_short(settings, service, folder, channel_videos=chosen)
             if result is None:
-                typer.echo("Target archived sources exhausted or unavailable; using standard source rotation.")
+                typer.echo(
+                    "Target archived sources exhausted or unavailable; using standard source rotation."
+                )
                 result = produce_next_short(settings, service, folder)
         else:
             result = produce_next_short(settings, service, folder)
