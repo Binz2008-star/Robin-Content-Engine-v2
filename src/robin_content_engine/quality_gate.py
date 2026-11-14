@@ -179,7 +179,7 @@ def _ffmpeg_decode_error_count(path: Path, expected_duration_seconds: float | No
     error_lines = [line for line in result.stderr.splitlines() if line.strip()]
     if error_lines:
         return len(error_lines)
-    if not _is_finite(expected_duration_seconds):
+    if expected_duration_seconds is None or not math.isfinite(expected_duration_seconds):
         return -1
 
     # out_time_us is microseconds, and can appear multiple times while FFmpeg
