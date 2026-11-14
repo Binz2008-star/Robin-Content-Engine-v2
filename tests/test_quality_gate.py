@@ -287,6 +287,50 @@ def test_truncated_file_fails_ffmpeg_decode_integrity(tmp_path: Path) -> None:
     assert result.passed is False
 
 
+
+def test_decode_integrity_rejects_early_eof_even_with_clean_ffmpeg_exit(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+) -> None:
+    """A syntactically clean ffmpeg exit is not enough if decoding stopped early."""
+    def fake_run(*_args: object, **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        return subprocess.CompletedProcess(
+            args=[],
+            returncode=0,
+            stdout="out_time_us=2000000\\nprogress=end\\n".replace("\\n", "\n"),
+            stderr="",
+        )
+
+    monkeypatch.setattr(quality_gate_module.subprocess, "run", fake_run)
+    assert quality_gate_module._ffmpeg_decode_error_count(tmp_path / "fake.mp4", 6.0) == 1
+
+
+def test_decode_integrity_accepts_clean_full_duration(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+) -> None:
+    def fake_run(*_args: object, **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        return subprocess.CompletedProcess(
+            args=[],
+            returncode=0,
+            stdout="out_time_us=6000000\\nprogress=end\\n".replace("\\n", "\n"),
+            stderr="",
+        )
+
+    monkeypatch.setattr(quality_gate_module.subprocess, "run", fake_run)
+    assert quality_gate_module._ffmpeg_decode_error_count(tmp_path / "fake.mp4", 6.0) == 0
+
+
+def test_decode_integrity_fails_closed_without_complete_progress(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+) -> None:
+    def fake_run(*_args: object, **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        return subprocess.CompletedProcess(
+            args=[], returncode=0, stdout="out_time_us=6000000\n", stderr="",
+        )
+
+    monkeypatch.setattr(quality_gate_module.subprocess, "run", fake_run)
+    assert quality_gate_module._ffmpeg_decode_error_count(tmp_path / "fake.mp4", 6.0) == -1
+
+
 # ---------------------------------------------------------------------------
 # 5. Landscape video -> FAIL aspect ratio
 # ---------------------------------------------------------------------------
