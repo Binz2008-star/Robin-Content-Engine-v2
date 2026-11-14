@@ -24,8 +24,11 @@ TARGET_2 = "knFnj6dQURg"
 
 
 class FakeConnection:
-    def __init__(self, rows: list[tuple[str, bool | None]]) -> None:
+    def __init__(
+        self, rows: list[tuple[str, bool | None]], fallback_audience: bool | None = None
+    ) -> None:
         self.rows = rows
+        self.fallback_audience = fallback_audience
 
     def __enter__(self) -> FakeConnection:
         return self
@@ -35,11 +38,17 @@ class FakeConnection:
 
     def execute(self, query: str, params: object) -> FakeConnection:
         assert "made_for_kids" in query
-        assert set(params[0]) == {TARGET_1, TARGET_2}  # type: ignore[index]
+        if "ANY(%s)" in query:
+            assert set(params[0]) == {TARGET_1, TARGET_2}  # type: ignore[index]
+        else:
+            assert params == ("other123456",)
         return self
 
     def fetchall(self) -> list[tuple[str, bool | None]]:
         return self.rows
+
+    def fetchone(self) -> tuple[bool | None]:
+        return (self.fallback_audience,)
 
 
 @pytest.fixture
@@ -129,4 +138,41 @@ def test_targeted_archive_refuses_unknown_audience(
     assert outcome.exit_code == 1
     assert "audience setting missing" in outcome.output
     assert setup_target["selections"] == []
+    assert setup_target["published"] == []
+
+
+def test_fallback_upload_uses_actual_source_audience(
+    setup_target: dict[str, Any], monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Fallback must not silently upload an existing kids video as non-kids."""
+    setup_target["result"].video_id = "other123456"
+    monkeypatch.setattr(
+        psycopg, "connect",
+        lambda _db: FakeConnection([(TARGET_1, True), (TARGET_2, True)], True),
+    )
+
+    def fake_produce(_settings: Any, _service: Any, _folder: str, **kwargs: Any) -> Any:
+        chosen = kwargs.get("channel_videos")
+        setup_target["selections"].append(None if chosen is None else [v.video_id for v in chosen])
+        return None if chosen is not None else setup_target["result"]
+
+    monkeypatch.setattr(cli, "produce_next_short", fake_produce)
+    outcome = CliRunner().invoke(cli.app, ["drive-produce", "--execute-private-upload"])
+    assert outcome.exit_code == 0, outcome.output
+    assert setup_target["selections"] == [[TARGET_1, TARGET_2], None]
+    assert setup_target["published"] == [True]
+
+
+def test_fallback_refuses_unknown_source_audience(
+    setup_target: dict[str, Any], monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    setup_target["result"].video_id = "other123456"
+
+    def fake_produce(_settings: Any, _service: Any, _folder: str, **kwargs: Any) -> Any:
+        return None if kwargs.get("channel_videos") is not None else setup_target["result"]
+
+    monkeypatch.setattr(cli, "produce_next_short", fake_produce)
+    outcome = CliRunner().invoke(cli.app, ["drive-produce", "--execute-private-upload"])
+    assert outcome.exit_code == 1
+    assert "audience is unknown" in outcome.output
     assert setup_target["published"] == []
