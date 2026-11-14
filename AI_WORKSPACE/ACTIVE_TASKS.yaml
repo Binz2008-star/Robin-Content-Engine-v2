@@ -3302,3 +3302,47 @@ tasks:
 #
 #   - feat/studio-ui
 #   - fix/studio-copilot-review
+
+  - id: RCE-20261115-ARCHIVE-GGG
+    title: Target owned Ggg archival footage with correct audience metadata
+    owner: chatgpt
+    status: active
+    branch: feat/archive-targeted-publishing
+    base_branch: main
+    base_sha: 2611da28495dfd9a6dcc07756f20dda6c11df52a
+    allowed_paths:
+      - src/robin_content_engine/cli.py
+      - src/robin_content_engine/uploader.py
+      - tests/test_targeted_drive_cli.py
+      - tests/test_uploader.py
+      - .github/workflows/daily-short.yml
+      - AI_WORKSPACE/ACTIVE_TASKS.yaml
+      - AI_WORKSPACE/HANDOFF.md
+    forbidden_paths:
+      - src/robin_content_engine/drive_runner.py
+      - src/robin_content_engine/publishing.py
+      - src/robin_content_engine/quality_gate.py
+      - schema.sql
+      - src/robin_content_engine/segment_ledger.py
+      - tests/test_drive_runner.py
+      - .env
+      - token.json
+      - client_secret*.json
+    merge_allowed: true
+    deploy_allowed: true
+    rationale: >-
+      Owner explicitly requested automatic clipping and publishing of older
+      self-owned Ggg videos 2026-11-15, not manual edits. Existing cloud runner
+      remains source of truth. Only select verified archive source IDs;
+      preserve private-first, daily cap, rights and quality gates. Match
+      resulting Shorts madeForKids metadata to archived source classification.
+    tests:
+      - pytest tests/test_targeted_drive_cli.py tests/test_uploader.py
+      - ruff check .
+      - mypy src
+      - GitHub Actions CI and Agent Scope Guard
+    stop_conditions:
+      - Never merge if CI is red or source-audience claim is unverified.
+      - Do not expand daily publishing cap or bypass rights checks.
+      - Do not publish if missing matching source footage.
+      - Maintain private-first upload, expected channel id, and receipt.
