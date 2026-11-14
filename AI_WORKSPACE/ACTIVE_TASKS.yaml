@@ -3325,7 +3325,8 @@ tasks:
       - .env
       - token.json
       - client_secret*.json
-    merge_allowed: false
+    merge_allowed: true
+    merge_authority_note: Owner authorized merging Robinzo safe fixes; only after CI and scope guard green.
     deploy_allowed: false
     note: >-
       Operator requested GitHub audit and fixes for Robinzo channel.
