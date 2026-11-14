@@ -2483,3 +2483,22 @@ Tests: YAML parse; Git Bash simulation (allowed pass; quality_gate.py,
   df1383a.
 Deploy authorized: no
 Merge authorized: yes (owner direct chat 2026-10-21)
+
+---
+
+## RCE-20261114-PRIVACYREPORT — 2026-11-14
+
+Task ID: RCE-20261114-PRIVACYREPORT
+Agent: chatgpt
+Branch: fix/publish-final-privacy-report
+Base SHA: 2611da28495dfd9a6dcc07756f20dda6c11df52a
+Current HEAD: 42b8e6e69f8356409039c1da5a7992604434a1a1 (before this handoff append)
+PR: #36 (open, draft; no merge)
+Status: review
+Files changed: src/robin_content_engine/publishing.py, tests/test_publishing.py, AI_WORKSPACE/ACTIVE_TASKS.yaml, AI_WORKSPACE/HANDOFF.md
+Tests: Added regression tests for successful public flip and failure; local execution unavailable because this workspace cannot reach the repo via Git. No passing result claimed.
+CI: PR #36 Agent Scope Guard completed/success; CI in_progress at handoff.
+Known blockers: No trusted direct read of final YouTube privacy at runtime. The uploading service returned the original private UploadResult even when its own receipt recorded a successful public flip; now changed to return the final receipt state. Monitor tests and inspect the PR after CI completes.
+Next action: Verify CI; review PR #36. Owner authorization required before merge; deploying a runner change requires separate approval. Runtime inefficiency investigated separately in issue #37 (20 exhausted source events; ~45-minute run).
+Merge authorized: no
+Deploy authorized: no
