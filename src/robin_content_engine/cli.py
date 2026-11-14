@@ -1789,6 +1789,24 @@ def drive_produce_command(
     if result is None:
         typer.echo("No unused footage left in the Drive export - nothing produced.")
         return
+    if target_ids and result.video_id not in source_audience:
+        # The targeted sources may be exhausted. Preserve the actual audience
+        # classification of the fallback source rather than uploading it with
+        # YouTubeUploader's historical default (not made for kids).
+        try:
+            with psycopg.connect(settings.database_url) as conn:
+                audience_row = conn.execute(
+                    "SELECT made_for_kids FROM youtube_videos "
+                    "WHERE video_id = %s AND is_current = TRUE",
+                    (result.video_id,),
+                ).fetchone()
+        except psycopg.Error as exc:
+            typer.echo("Could not verify fallback source audience; upload refused.", err=True)
+            raise typer.Exit(code=1) from exc
+        if audience_row is None or audience_row[0] is None:
+            typer.echo("Fallback source audience is unknown; upload refused.", err=True)
+            raise typer.Exit(code=1)
+        source_audience[result.video_id] = bool(audience_row[0])
     summary = {
         "job_id": result.job_id,
         "video_id": result.video_id,
