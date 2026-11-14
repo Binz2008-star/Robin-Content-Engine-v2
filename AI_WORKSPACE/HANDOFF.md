@@ -2502,3 +2502,22 @@ Known blockers: CI safety failure in PR #36, test_truncated_file_fails_ffmpeg_de
 Next action: Verify PR #39 CI, evaluate possible false positives on healthy shorts, merge only with operator authorization and completed tests. Re-run PR #36 against fixed main; do not bypass a failing CI check or publish experimental footage.
 Merge authorized: no (for new safety task)
 Deploy authorized: no
+
+---
+
+## RCE-20261115-FFMPEG-INTEGRITY — replacement branch scope correction
+
+Task ID: RCE-20261115-FFMPEG-INTEGRITY
+Agent: chatgpt
+Branch: fix/ffmpeg-truncated-media-gate
+Base SHA: 2611da28495dfd9a6dcc07756f20dda6c11df52a
+Current HEAD: 165cc2d6e009e452e4b3c47089cd8f7f40e0cecf (before this append)
+PR: #41 (open draft, replaces #39)
+Status: review
+Files changed: quality_gate.py, test_quality_gate.py, AI_WORKSPACE/ACTIVE_TASKS.yaml, AI_WORKSPACE/HANDOFF.md
+Tests: Synthetic FFmpeg check verified; full GitHub pytest pending at handoff.
+CI: Initial PR #39 Agent Scope Guard rejected quality_gate.py because branch name fix/shorts-* is protected; PR #39 closed without merge. New PR #41 uses a separate task-named branch, no guard changes.
+Known blockers: GitHub CI must pass including previously failing truncated file regression.
+Next action: Review the source changes and CI. PR #41 and PR #36 remain unmerged; never bypass safety checks.
+Merge authorized: no for the new safety task
+Deploy authorized: no
