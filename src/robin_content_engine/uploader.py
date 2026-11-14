@@ -52,11 +52,13 @@ class YouTubeUploader:
         token_file: Path,
         privacy_status: str,
         category_id: str,
+        made_for_kids: bool = False,
     ) -> None:
         self.client_secret_file = client_secret_file
         self.token_file = token_file
         self.privacy_status = privacy_status
         self.category_id = category_id
+        self.made_for_kids = made_for_kids
         self._auth = YouTubeAuth(client_secret_file, token_file)
 
     def upload(self, video_path: Path, content: UploadableContent) -> UploadResult:
@@ -88,7 +90,7 @@ class YouTubeUploader:
                 },
                 "status": {
                     "privacyStatus": self.privacy_status,
-                    "selfDeclaredMadeForKids": False,
+                    "selfDeclaredMadeForKids": self.made_for_kids,
                 },
             },
             media_body=MediaFileUpload(
