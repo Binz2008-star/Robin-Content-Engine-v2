@@ -41,9 +41,10 @@ jobs:
       DEEPSEEK_API_KEY: ""
       GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
       DRIVE_TAKEOUT_FOLDER_ID: ${{ vars.DRIVE_TAKEOUT_FOLDER_ID }}
-      # Prioritize two existing, channel-owned Fortnite Ggg recordings.
-      # If both sources have no unused matching footage, rotate normally.
-      DRIVE_TARGET_SOURCE_VIDEO_IDS: "MrZkqujTwdg,knFnj6dQURg"
+      # Prioritize five owner-uploaded archival recordings by YouTube ID.
+      # Takeout matching and quality checks must verify original media first.
+      # Keep the source's Made for Kids classification and existing daily cap.
+      DRIVE_TARGET_SOURCE_VIDEO_IDS: "MrZkqujTwdg,knFnj6dQURg,4GY0WKVLhuY,gutBdq-RckA,B7phw0z5GqI"
       YOUTUBE_EXPECTED_CHANNEL_ID: ${{ vars.YOUTUBE_EXPECTED_CHANNEL_ID }}
       YOUTUBE_AI_METADATA: "false"
       YOUTUBE_METADATA_LANGUAGE: ${{ vars.YOUTUBE_METADATA_LANGUAGE || 'arabic' }}

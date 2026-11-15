@@ -2567,3 +2567,39 @@ Archive target branch synchronized to clean media-integrity base 20576d7262d15f4
 
 
 Archive targeting PR #42 rebased via merge-on-main at 3a1b6def0b5a9ab04a6d26d56a36b566b7a3771c, after PR #36 privacy-state reporting fix was merged. Existing file scope unchanged; no source code deployed at this step. Full PR CI and scope guard must pass before merge.
+
+---
+
+## RCE-20261115-ARCHIVED-GAMEPLAY-TARGET — 2026-11-15
+
+Task ID: RCE-20261115-ARCHIVED-GAMEPLAY-TARGET
+Agent: chatgpt
+Branch: feat/archived-gameplay-target
+Base SHA: e647cdbd038258c45fe869afeb023fedd1a9c08c
+Current HEAD: e77ae7eede7e3d5a03fe2a596c4e7f73c4a64a4e (before this handoff)
+Status: implementing / PR pending
+Scope: .github/workflows/daily-short.yml, tests/test_targeted_drive_cli.py, AI_WORKSPACE/ACTIVE_TASKS.yaml, AI_WORKSPACE/HANDOFF.md
+Change: Included the owner's existing source 4GY0WKVLhuY in DRIVE_TARGET_SOURCE_VIDEO_IDS after MrZkqujTwdg and knFnj6dQURg. No change to schedule, cap, title-generation model, uploader, quality gate, or workflow execution mode. Added regression fixture and an explicit archive-source/audience test for three known channel source IDs.
+Source evidence: Neon youtube_videos inventory shows 4GY0WKVLhuY belongs to UCIcvbGsmSwMDXxjWXq4QG8A, title Archived Gameplay Clip, duration 633s, is_current=true, privacy_status=public, made_for_kids=true; sync timestamp 2026-08-28. This metadata alone does not prove a matching original video exists in Drive Takeout. Runtime matcher must verify filenames, video duration, and unused segment before packaging/publishing.
+Testing: Full CI, mypy, Ruff, pytest and Agent Scope Guard to be verified from GitHub Actions on final commit. Existing previous PR #42 CI/Scope Guard passed before this delta; they do not validate this change.
+Next action: Check latest-head CI and Agent Scope Guard, PR diff, then merge only if all green and merge allowed. Verify actual cloud runner and queue for source 4GY0WKVLhuY; do not infer a posted video from a workflow commit.
+Merge/deploy authority: owner explicitly approved adding and automatically publishing this additional channel-owned source in this chat. Private-first, daily cap and content/rights gates remain mandatory.
+
+---
+
+## RCE-20261115-ARCHIVED-GAMEPLAY-TARGET — second source expansion (2026-11-15)
+
+Task ID: RCE-20261115-ARCHIVED-GAMEPLAY-TARGET
+Agent: chatgpt
+Branch: feat/archived-gameplay-target
+Base SHA: e647cdbd038258c45fe869afeb023fedd1a9c08c
+Source HEAD before extension: b158b46ba4982aedb446345905a896d619f7ae16
+PR: #43 (draft until latest CI + Agent Scope Guard green)
+Status: review
+Authorized source priority: MrZkqujTwdg, knFnj6dQURg, 4GY0WKVLhuY, gutBdq-RckA, B7phw0z5GqI
+Owner decision: The user added gutBdq-RckA and then B7phw0z5GqI as more owned live/archive sources in the same ongoing task. No new schedule or uploader behavior requested.
+Verification: Neon youtube_videos snapshot (last synced 2026-08-28) shows both new videos belong to the same channel, are current/public and made_for_kids=true. gutBdq-RckA has 2333-second duration, B7phw0z5GqI has 7514-second duration. Recording tags do not prove live current status, existence of original video bytes in Takeout, or ownership of any music inside footage.
+Files: .github/workflows/daily-short.yml and tests/test_targeted_drive_cli.py updated, plus registry and append-only handoff. Existing private-first upload, fixed daily cap, audience verification, candidate ledger, channel assertion and quality gates unchanged.
+Tests: Added parameterized target selection tests for both newly requested sources, expanded fixture and negative audience test to all five IDs. CI and Scope Guard need verification on this exact HEAD before merge.
+Next step: Latest-head CI/Scope Guard green then merge PR #43 if current main/PR state unchanged; verify cloud runner output and Neon video_queue before claiming Shorts published.
+Merge authorized: yes, conditional on green CI and scope controls. Deploy authorized: yes with unchanged schedule and safe runner.
