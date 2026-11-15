@@ -41,10 +41,10 @@ jobs:
       DEEPSEEK_API_KEY: ""
       GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
       DRIVE_TAKEOUT_FOLDER_ID: ${{ vars.DRIVE_TAKEOUT_FOLDER_ID }}
-      # Prioritize three owned archival recordings by YouTube video ID.
-      # The Drive Takeout matcher verifies exact original footage; otherwise rotate.
-      # The uploader keeps the source video's Made for Kids classification.
-      DRIVE_TARGET_SOURCE_VIDEO_IDS: "MrZkqujTwdg,knFnj6dQURg,4GY0WKVLhuY"
+      # Prioritize five owner-uploaded archival recordings by YouTube ID.
+      # Takeout matching and quality checks must verify original media first.
+      # Keep the source's Made for Kids classification and existing daily cap.
+      DRIVE_TARGET_SOURCE_VIDEO_IDS: "MrZkqujTwdg,knFnj6dQURg,4GY0WKVLhuY,gutBdq-RckA,B7phw0z5GqI"
       YOUTUBE_EXPECTED_CHANNEL_ID: ${{ vars.YOUTUBE_EXPECTED_CHANNEL_ID }}
       YOUTUBE_AI_METADATA: "false"
       YOUTUBE_METADATA_LANGUAGE: ${{ vars.YOUTUBE_METADATA_LANGUAGE || 'arabic' }}

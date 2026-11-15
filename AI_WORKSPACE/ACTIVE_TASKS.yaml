@@ -3431,7 +3431,7 @@ tasks:
       - Maintain private-first upload, expected channel id, and receipt.
 
   - id: RCE-20261115-ARCHIVED-GAMEPLAY-TARGET
-    title: Add owned Archived Gameplay Clip to automatic Shorts source priorities
+    title: Add three owned archived gameplays to automatic Shorts source priorities
     status: review
     pr: 43
     owner: chatgpt
@@ -3456,15 +3456,18 @@ tasks:
     merge_allowed: true
     deploy_allowed: true
     authority: >-
-      Owner explicitly said yes on 2026-11-15 to add their existing
-      https://youtube.com/live/4GY0WKVLhuY archived gameplay recording
-      to the automatic Shorts clipping and publishing list beside both Ggg videos.
-      Merge/deploy only after green latest-head CI and Agent Scope Guard.
+      Owner explicitly said yes on 2026-11-15 to include owned
+      4GY0WKVLhuY; subsequently requested adding gutBdq-RckA ("this as well")
+      and B7phw0z5GqI (a further link) as additional automatic Shorts sources,
+      beside the existing two Ggg videos. All five are recorded under the
+      same channel. Merge/deploy only after green latest-head CI and Scope Guard.
     source_evidence: >-
-      Existing channel inventory in Neon lists 4GY0WKVLhuY as is_current,
-      public, duration_seconds 633, title Archived Gameplay Clip, made_for_kids true,
-      and channel_id UCIcvbGsmSwMDXxjWXq4QG8A. Video bytes not separately
-      verified; existing Drive/Takeout source matcher must fail closed.
+      Existing channel inventory in Neon lists 4GY0WKVLhuY (633s,
+      Archived Gameplay Clip), gutBdq-RckA (2333s, Arabic archived gameplay),
+      and B7phw0z5GqI (7514s, Apex Legends session) as is_current,
+      public, made_for_kids true, channel_id UCIcvbGsmSwMDXxjWXq4QG8A.
+      This is a stored 2026-08-28 snapshot, not a new rights audit or proof
+      that source MP4 bytes exist in Drive; Takeout matching must fail closed.
     tests:
       - pytest tests/test_targeted_drive_cli.py
       - ruff check .
