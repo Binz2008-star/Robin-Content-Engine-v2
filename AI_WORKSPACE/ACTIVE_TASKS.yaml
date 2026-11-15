@@ -3429,3 +3429,48 @@ tasks:
       - Do not expand daily publishing cap or bypass rights checks.
       - Do not publish if missing matching source footage.
       - Maintain private-first upload, expected channel id, and receipt.
+
+  - id: RCE-20261115-ARCHIVED-GAMEPLAY-TARGET
+    title: Add owned Archived Gameplay Clip to automatic Shorts source priorities
+    status: active
+    owner: chatgpt
+    branch: feat/archived-gameplay-target
+    base_branch: main
+    base_sha: e647cdbd038258c45fe869afeb023fedd1a9c08c
+    allowed_paths:
+      - .github/workflows/daily-short.yml
+      - tests/test_targeted_drive_cli.py
+      - AI_WORKSPACE/ACTIVE_TASKS.yaml
+      - AI_WORKSPACE/HANDOFF.md
+    forbidden_paths:
+      - src/robin_content_engine/cli.py
+      - src/robin_content_engine/uploader.py
+      - src/robin_content_engine/drive_runner.py
+      - src/robin_content_engine/quality_gate.py
+      - src/robin_content_engine/publishing.py
+      - schema.sql
+      - .env
+      - token.json
+      - client_secret*.json
+    merge_allowed: true
+    deploy_allowed: true
+    authority: >-
+      Owner explicitly said yes on 2026-11-15 to add their existing
+      https://youtube.com/live/4GY0WKVLhuY archived gameplay recording
+      to the automatic Shorts clipping and publishing list beside both Ggg videos.
+      Merge/deploy only after green latest-head CI and Agent Scope Guard.
+    source_evidence: >-
+      Existing channel inventory in Neon lists 4GY0WKVLhuY as is_current,
+      public, duration_seconds 633, title Archived Gameplay Clip, made_for_kids true,
+      and channel_id UCIcvbGsmSwMDXxjWXq4QG8A. Video bytes not separately
+      verified; existing Drive/Takeout source matcher must fail closed.
+    tests:
+      - pytest tests/test_targeted_drive_cli.py
+      - ruff check .
+      - mypy
+      - GitHub Actions CI and Agent Scope Guard
+    stop_conditions:
+      - Do not change schedule, daily upload cap, privacy or source-rights gates.
+      - Do not guess archive matches or download third-party YouTube videos.
+      - Do not publish unless a unique owned source and quality gate are verified.
+      - Stop merge on failing checks or changed main SHA; no force pushes.
