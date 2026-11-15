@@ -2543,3 +2543,27 @@ Deploy authorized: no
 
 
 Registry merge_authority correction: owner explicitly authorized this merge, contingent on green CI; prior draft-only stop condition superseded. Synchronized with main at 20576d7262d15f419d30b8ea378518687b478fda.
+
+---
+
+## RCE-20261115-ARCHIVE-GGG — 2026-11-15
+
+Task ID: RCE-20261115-ARCHIVE-GGG
+Agent: chatgpt
+Branch: feat/archive-targeted-publishing
+Base SHA: 2611da28495dfd9a6dcc07756f20dda6c11df52a
+Current HEAD: a3bb9bbf8dbd9b9e4c71e07262081e3f2588b777 (before handoff)
+PR: #42 (draft)
+Status: review
+Files changed: .github/workflows/daily-short.yml, src/robin_content_engine/cli.py, src/robin_content_engine/uploader.py, tests/test_targeted_drive_cli.py, tests/test_uploader.py, AI_WORKSPACE/ACTIVE_TASKS.yaml, AI_WORKSPACE/HANDOFF.md
+Tests: Added fake-controlled source/rollover/audience tests and uploader-level madeForKids test. No real YouTube publish invoked. Local pytest/ruff/mypy unavailable; GitHub CI launched but not yet complete at handoff.
+CI: Awaiting latest PR #42 CI and Agent Scope Guard. Parent PR #41 (separate fail-closed FFmpeg integrity fix) latest earlier head a41ce77 CI and guard green; main still unchanged. PR #42 itself based on main and its existing truncated-MP4 test may remain red until #41 merges.
+Known blockers: GitHub workflow_dispatch cannot be invoked from the available GitHub connector; scheduled Daily Short on main only runs merged code. User's Google Takeout index lists Ggg.mp4 and Ggg(1-3).mp4 but full source video bytes/durations inside huge ZIP parts have not been independently inspected. Screenshot and Neon identify original Ggg sources MrZkqujTwdg (6017s) and knFnj6dQURg (1935s) as Made for Kids, both currently public. The new targeted path preserves that boolean on initial private upload rather than hard-coded false.
+Next action: Wait for verified CI on PR #42; merge approved code only after checks, sequencing #41 quality gate before #42 to clear baseline test. Verify actual Daily Short upload by YouTube video ID, source window and final visibility. No schedule or daily cap increase.
+Merge authorized: yes by owner requests "Merge also" / "Do it" / "publish them", conditional on passing tests and preserving safety
+Deploy authorized: yes for targeted scheduled publishing after successful verification
+
+Archive target branch synchronized to clean media-integrity base 20576d7262d15f419d30b8ea378518687b478fda; FFmpeg MP4 regression must pass before publishing.
+
+
+Archive targeting PR #42 rebased via merge-on-main at 3a1b6def0b5a9ab04a6d26d56a36b566b7a3771c, after PR #36 privacy-state reporting fix was merged. Existing file scope unchanged; no source code deployed at this step. Full PR CI and scope guard must pass before merge.
