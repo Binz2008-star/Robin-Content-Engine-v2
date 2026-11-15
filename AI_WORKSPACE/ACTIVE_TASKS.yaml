@@ -3432,7 +3432,8 @@ tasks:
 
   - id: RCE-20261115-ARCHIVED-GAMEPLAY-TARGET
     title: Add owned Archived Gameplay Clip to automatic Shorts source priorities
-    status: active
+    status: review
+    pr: 43
     owner: chatgpt
     branch: feat/archived-gameplay-target
     base_branch: main
