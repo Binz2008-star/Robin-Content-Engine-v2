@@ -21,6 +21,7 @@ from robin_content_engine.drive_runner import ChannelVideo, GameEvidence  # noqa
 
 TARGET_1 = "MrZkqujTwdg"
 TARGET_2 = "knFnj6dQURg"
+TARGET_ARCHIVE = "4GY0WKVLhuY"
 
 
 class FakeConnection:
@@ -39,7 +40,7 @@ class FakeConnection:
     def execute(self, query: str, params: object) -> FakeConnection:
         assert "made_for_kids" in query
         if "ANY(%s)" in query:
-            assert set(params[0]) == {TARGET_1, TARGET_2}  # type: ignore[index]
+            assert set(params[0]) == {TARGET_1, TARGET_2, TARGET_ARCHIVE}  # type: ignore[index]
         else:
             assert params == ("other123456",)
         return self
@@ -55,7 +56,7 @@ class FakeConnection:
 def setup_target(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> dict[str, Any]:
     monkeypatch.setenv("GOOGLE_SERVICE_ACCOUNT_JSON", '{"type":"service_account"}')
     monkeypatch.setenv("DRIVE_TAKEOUT_FOLDER_ID", "drive-folder")
-    monkeypatch.setenv("DRIVE_TARGET_SOURCE_VIDEO_IDS", f"{TARGET_1},{TARGET_2}")
+    monkeypatch.setenv("DRIVE_TARGET_SOURCE_VIDEO_IDS", f"{TARGET_1},{TARGET_2},{TARGET_ARCHIVE}")
     settings = SimpleNamespace(database_url="db", youtube_max_uploads_per_day=3)
     monkeypatch.setattr(cli, "Settings", lambda: settings)
     monkeypatch.setattr(cli, "db_upload_allowed", lambda _settings: True)
@@ -66,12 +67,13 @@ def setup_target(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> dict[str, A
         lambda _settings: [
             ChannelVideo(TARGET_1, "Ggg", 6017, ("#PS5Live", "Fortnite")),
             ChannelVideo(TARGET_2, "Ggg", 1935, ("#PS5Live", "Fortnite")),
+            ChannelVideo(TARGET_ARCHIVE, "Archived Gameplay Clip", 633, ("archive", "gameplay")),
             ChannelVideo("other123456", "Unrelated", 300, ()),
         ],
     )
     monkeypatch.setattr(
         psycopg, "connect",
-        lambda _db: FakeConnection([(TARGET_1, True), (TARGET_2, True)]),
+        lambda _db: FakeConnection([(TARGET_1, True), (TARGET_2, True), (TARGET_ARCHIVE, True)]),
     )
     calls: dict[str, Any] = {"selections": [], "published": []}
     result = SimpleNamespace(
@@ -108,8 +110,27 @@ def test_targeted_archive_selects_exact_ids_and_preserves_kids_setting(
     outcome = CliRunner().invoke(cli.app, ["drive-produce", "--execute-private-upload"])
 
     assert outcome.exit_code == 0, outcome.output
-    assert setup_target["selections"] == [[TARGET_1, TARGET_2]]
+    assert setup_target["selections"] == [[TARGET_1, TARGET_2, TARGET_ARCHIVE]]
     assert setup_target["published"] == [True]
+
+
+
+def test_owner_archived_gameplay_source_retains_kids_setting(
+    setup_target: dict[str, Any],
+) -> None:
+    """A non-Fortnite owned archive can be the selected target safely."""
+    result = setup_target["result"]
+    result.video_id = TARGET_ARCHIVE
+    result.game = None
+    result.evidence = GameEvidence.NONE
+    result.source_title = "Archived gameplay"
+
+    outcome = CliRunner().invoke(cli.app, ["drive-produce", "--execute-private-upload"])
+
+    assert outcome.exit_code == 0, outcome.output
+    assert setup_target["selections"] == [[TARGET_1, TARGET_2, TARGET_ARCHIVE]]
+    assert setup_target["published"] == [True]
+    assert f"from {TARGET_ARCHIVE}" in outcome.output
 
 
 def test_targeted_archive_uses_existing_rotation_when_target_exhausted(
@@ -123,7 +144,7 @@ def test_targeted_archive_uses_existing_rotation_when_target_exhausted(
     monkeypatch.setattr(cli, "produce_next_short", fake_produce)
     outcome = CliRunner().invoke(cli.app, ["drive-produce", "--execute-private-upload"])
     assert outcome.exit_code == 0, outcome.output
-    assert setup_target["selections"] == [[TARGET_1, TARGET_2], None]
+    assert setup_target["selections"] == [[TARGET_1, TARGET_2, TARGET_ARCHIVE], None]
     assert setup_target["published"] == []
 
 
@@ -132,7 +153,7 @@ def test_targeted_archive_refuses_unknown_audience(
 ) -> None:
     monkeypatch.setattr(
         psycopg, "connect",
-        lambda _db: FakeConnection([(TARGET_1, None), (TARGET_2, True)]),
+        lambda _db: FakeConnection([(TARGET_1, True), (TARGET_2, True), (TARGET_ARCHIVE, None)]),
     )
     outcome = CliRunner().invoke(cli.app, ["drive-produce", "--execute-private-upload"])
     assert outcome.exit_code == 1
@@ -159,7 +180,7 @@ def test_fallback_upload_uses_actual_source_audience(
     monkeypatch.setattr(cli, "produce_next_short", fake_produce)
     outcome = CliRunner().invoke(cli.app, ["drive-produce", "--execute-private-upload"])
     assert outcome.exit_code == 0, outcome.output
-    assert setup_target["selections"] == [[TARGET_1, TARGET_2], None]
+    assert setup_target["selections"] == [[TARGET_1, TARGET_2, TARGET_ARCHIVE], None]
     assert setup_target["published"] == [True]
 
 
